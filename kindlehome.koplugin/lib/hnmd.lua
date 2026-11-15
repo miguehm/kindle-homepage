@@ -59,9 +59,12 @@ function Hnmd.fetch(config, opts)
     local max_bytes = opts.max_bytes or (config and config:get("http_max_bytes")) or 524288
     local api_key = config and config:get("hnmd_api_key") or ""
 
+    local cfg_max = tonumber(max_bytes) or 524288
+    if cfg_max < 16384 then cfg_max = 16384 end
+    if cfg_max > 1048576 then cfg_max = 1048576 end
     local res = Http.get_json(url, {
         timeout_s = timeout_s,
-        max_bytes = math.min(tonumber(max_bytes) or 524288, 524288),
+        max_bytes = cfg_max,
         retries = 1,
         bearer_token = (type(api_key) == "string" and api_key ~= "") and api_key or nil,
         accept = "application/json",

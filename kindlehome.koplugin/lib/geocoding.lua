@@ -27,9 +27,12 @@ function Geocoding.search_by_name(name, opts)
     local count = tonumber(opts.count) or 1
     local url = "https://geocoding-api.open-meteo.com/v1/search?name=" .. urlencode(name)
         .. "&count=" .. tostring(count) .. "&language=en&format=json"
+    local max_bytes = tonumber(opts.max_bytes) or 131072
+    if max_bytes < 16384 then max_bytes = 16384 end
+    if max_bytes > 1048576 then max_bytes = 1048576 end
     local res = Http.get_json(url, {
         timeout_s = opts.timeout_s or 10,
-        max_bytes = opts.max_bytes or 131072,
+        max_bytes = max_bytes,
         retries = 1,
     })
     if not res.ok then

@@ -12,21 +12,10 @@ local function fmt_age(fetched_at)
     return nil
 end
 
-local function status_message(err_kind, env_status)
-    if err_kind == "http_401" then
-        return "Invalid API key. Check Kindle Home HN settings."
-    elseif err_kind == "http_503" then
-        return "hnmd server is starting, try again in a few minutes."
-    elseif err_kind == "offline" or err_kind == "timeout" or err_kind == "network" then
-        return "Offline or network error. Showing cached HN if available."
-    elseif err_kind == "parse" or err_kind == "too_large" then
-        return "HN data error. Try refreshing."
-    elseif err_kind == "budget_exceeded" then
-        return "Refresh budget exceeded for HN."
-    elseif env_status == "error" then
-        return "HN unavailable."
-    end
-    return nil
+local Messages = require("ui/messages")
+
+local function status_message(err_kind, env_status, has_cache)
+    return Messages.hn(err_kind, env_status, has_cache)
 end
 
 function HnmdState.load(config, paths, opts)
@@ -58,7 +47,7 @@ function HnmdState.load(config, paths, opts)
     local is_stale = res.stale or (env and env.status == "stale") or false
     local err_kind = res.error_kind or (env and env.error and env.error.kind) or nil
     local env_status = env and env.status or nil
-    local msg = status_message(err_kind, env_status)
+    local msg = status_message(err_kind, env_status, #items > 0)
 
     if #items > 0 or (payload and type(payload) == "table") then
         local status = "ok"
@@ -85,11 +74,7 @@ function HnmdState.load(config, paths, opts)
         }
     end
 
-    if not msg then
-        if err_kind == "http_401" then msg = "Invalid API key. Check Kindle Home HN settings."
-        elseif err_kind == "http_503" then msg = "hnmd server is starting, try again in a few minutes."
-        else msg = "HN unavailable." end
-    end
+    if not msg then msg = Messages.hn(err_kind, "error", false) or "HN unavailable." end
     Logger.warn("hnmd_state", "unavailable", { kind = err_kind })
     return {
         status = "error",

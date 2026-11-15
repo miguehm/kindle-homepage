@@ -9,6 +9,9 @@ local DEFAULTS = {
     refresh_on_open = true,
     show_battery = true,
     show_network = true,
+    show_weather = true,
+    show_hn = true,
+    show_digest = true,
     open_in_reader_enabled = false,
     -- Rutas
     storage_mode = "documents", -- "documents" | "datadir"
@@ -78,6 +81,7 @@ end
 
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
+        or key == "show_weather" or key == "show_hn" or key == "show_digest"
         or key == "weather_enabled" or key == "hnmd_enabled" or key == "open_in_reader_enabled" then
         return as_bool(value, default)
     elseif key == "storage_mode" then

@@ -96,18 +96,10 @@ function WeatherState.load(config, paths, opts)
         }
     end
 
-    local msg = "Weather: unavailable."
-    if err_kind == "offline" or err_kind == "timeout" or err_kind == "network" then
-        msg = "Weather: offline or network error. Turn on WiFi and refresh."
-    elseif err_kind == "http_other" or err_kind == "http_503" then
-        msg = "Weather: service unavailable. Try again later."
-    elseif err_kind == "parse" or err_kind == "too_large" then
-        msg = "Weather: data error. Try refreshing."
-    elseif err_kind == "budget_exceeded" then
-        msg = "Weather: refresh budget exceeded."
-    end
+    local Messages = require("ui/messages")
+    local msg = Messages.weather(err_kind, "error") or "Weather unavailable."
     Logger.warn("weather_state", "unavailable", { kind = err_kind })
-    return { status = "error", line = msg, payload = nil, error_kind = err_kind }
+    return { status = "error", line = msg, message = msg, payload = nil, error_kind = err_kind }
 end
 
 return WeatherState

@@ -1,13 +1,73 @@
 local UIManager = require("ui/uimanager")
 local InputDialog = require("ui/widget/inputdialog")
 local InfoMessage = require("ui/widget/infomessage")
+local _ = require("gettext")
+
 local Geocoding = require("lib/geocoding")
 local Logger = require("lib/logger")
+local Messages = require("ui/messages")
 
 local Menus = {}
 
 local function show_info(text, timeout)
-    UIManager:show(InfoMessage:new{ text = text, timeout = timeout or 3 })
+    UIManager:show(InfoMessage:new{ text = tostring(text or ""), timeout = timeout or 3 })
+end
+
+local function bool_text(v)
+    return v and _("On") or _("Off")
+end
+
+local function refresh_dashboard(main_instance)
+    if not (main_instance and main_instance.getDashboard) then return end
+    local d = main_instance:getDashboard()
+    if d then
+        pcall(function() d:refresh({ allow_network = false }) end)
+    end
+end
+
+local function mask_key(key)
+    if type(key) ~= "string" or key == "" then return _("(not set)") end
+    if #key <= 8 then return "********" end
+    return string.rep("*", math.min(12, #key - 4)) .. key:sub(-4)
+end
+
+local function prompt_text(title, input, hint, on_save, opts)
+    opts = opts or {}
+    local dialog
+    dialog = InputDialog:new{
+        title = title,
+        input = input or "",
+        input_hint = hint,
+        description = opts.description,
+        text_type = opts.text_type,
+        input_type = opts.input_type,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function() UIManager:close(dialog) end,
+                },
+                opts.extra_button,
+                {
+                    text = opts.save_text or _("Save"),
+                    is_enter_default = true,
+                    callback = function()
+                        local val = dialog:getInputText() or ""
+                        local ok, msg = on_save(val, dialog)
+                        if ok == false then
+                            show_info(msg or _("Invalid value."))
+                            return
+                        end
+                        UIManager:close(dialog)
+                        if msg then show_info(msg, opts.success_timeout or 3) end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
 end
 
 function Menus:edit_weather_latlon(config, on_done)
@@ -15,312 +75,295 @@ function Menus:edit_weather_latlon(config, on_done)
     local current_lon = config:get("weather_lon")
     local lat_str = current_lat ~= nil and tostring(current_lat) or ""
     local lon_str = current_lon ~= nil and tostring(current_lon) or ""
-    local dialog
-    dialog = InputDialog:new{
-        title = "Weather location (lat, lon)",
-        input = (lat_str ~= "" or lon_str ~= "") and (lat_str .. ", " .. lon_str) or "",
-        input_hint = "e.g. 19.4326, -99.1332",
-        buttons = {
-            {
-                {
-                    text = "Cancel",
-                    id = "close",
-                    callback = function() UIManager:close(dialog) end,
-                },
-                {
-                    text = "Save",
-                    is_enter_default = true,
-                    callback = function()
-                        local raw = dialog:getInputText() or ""
-                        local a, b = raw:match("^%s*([^,;]+)[,;]%s*(.+)%s*$")
-                        if not a or not b then
-                            show_info("Enter latitude and longitude separated by comma.")
-                            return
-                        end
-                        local lat = tonumber(a)
-                        local lon = tonumber(b)
-                        if not lat or not lon or lat < -90 or lat > 90 or lon < -180 or lon > 180 then
-                            show_info("Invalid coordinates.")
-                            return
-                        end
-                        config:set("weather_lat", lat)
-                        config:set("weather_lon", lon)
-                        config:flush()
-                        UIManager:close(dialog)
-                        Logger.info("menus", "weather_latlon_saved", { lat = lat, lon = lon })
-                        show_info("Weather location saved.")
-                        if on_done then on_done() end
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
+    local input = (lat_str ~= "" or lon_str ~= "") and (lat_str .. ", " .. lon_str) or ""
+    prompt_text(_("Weather location (lat, lon)"), input, "e.g. 19.4326, -99.1332", function(raw)
+        local a, b = raw:match("^%s*([^,;]+)[,;]%s*(.+)%s*$")
+        if not a or not b then return false, _("Enter latitude and longitude separated by comma.") end
+        local lat = tonumber(a)
+        local lon = tonumber(b)
+        if not lat or not lon or lat < -90 or lat > 90 or lon < -180 or lon > 180 then
+            return false, _("Invalid coordinates.")
+        end
+        config:set("weather_lat", lat)
+        config:set("weather_lon", lon)
+        config:flush()
+        Logger.info("menus", "weather_latlon_saved")
+        if on_done then on_done() end
+        return true, _("Weather location saved.")
+    end)
 end
 
 function Menus:edit_weather_place(config, on_done)
-    local dialog
-    dialog = InputDialog:new{
-        title = "Weather place name (search)",
-        input = config:get("weather_place_name") or "",
-        input_hint = "e.g. Mexico City",
-        buttons = {
-            {
-                {
-                    text = "Cancel",
-                    id = "close",
-                    callback = function() UIManager:close(dialog) end,
-                },
-                {
-                    text = "Search & save",
-                    is_enter_default = true,
-                    callback = function()
-                        local name = dialog:getInputText() or ""
-                        if name:match("^%s*$") then
-                            show_info("Enter a place name.")
-                            return
-                        end
-                        UIManager:close(dialog)
-                        local res = Geocoding.search_by_name(name, {
-                            timeout_s = config:get("http_timeout_s"),
-                            max_bytes = config:get("http_max_bytes"),
-                        })
-                        if not res.ok then
-                            local msg = "Place not found."
-                            if res.error_kind == "network" or res.error_kind == "timeout" then
-                                msg = "Network error. Turn on WiFi and try again."
-                            end
-                            show_info(msg, 4)
-                            Logger.warn("menus", "geocoding_failed", { kind = res.error_kind })
-                            return
-                        end
-                        config:set("weather_lat", res.lat)
-                        config:set("weather_lon", res.lon)
-                        config:set("weather_place_name", res.place_name or name)
-                        config:flush()
-                        Logger.info("menus", "weather_place_saved", { place = res.place_name, lat = res.lat, lon = res.lon })
-                        show_info("Location set: " .. tostring(res.place_name), 4)
-                        if on_done then on_done() end
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
-end
-
-local function mask_key(key)
-    if type(key) ~= "string" or key == "" then return "(not set)" end
-    if #key <= 8 then return "********" end
-    return string.rep("*", math.min(12, #key - 4)) .. key:sub(-4)
+    prompt_text(_("Weather place name (search)"), config:get("weather_place_name") or "", "e.g. Mexico City", function(name)
+        if name:match("^%s*$") then return false, _("Enter a place name.") end
+        local res = Geocoding.search_by_name(name, {
+            timeout_s = config:get("http_timeout_s"),
+            max_bytes = config:get("http_max_bytes"),
+        })
+        if not res.ok then
+            Logger.warn("menus", "geocoding_failed", { kind = res.error_kind })
+            local msg = Messages.for_kind(res.error_kind, _("Place not found."))
+            if res.error_kind == "network" or res.error_kind == "timeout" or res.error_kind == "offline" then
+                msg = Messages.for_kind(res.error_kind, _("Network error. Turn on WiFi and try again."))
+            elseif res.error_kind == "not_found" then
+                msg = _("Place not found.")
+            end
+            return false, msg
+        end
+        config:set("weather_lat", res.lat)
+        config:set("weather_lon", res.lon)
+        config:set("weather_place_name", res.place_name or name)
+        config:flush()
+        Logger.info("menus", "weather_place_saved")
+        if on_done then on_done() end
+        return true, _("Location set: ") .. tostring(res.place_name)
+    end, { save_text = _("Search & save"), success_timeout = 4 })
 end
 
 function Menus:edit_hnmd_base_url(config, on_done)
-    local dialog
-    dialog = InputDialog:new{
-        title = "HN base URL (hnmd)",
-        input = config:get("hnmd_base_url") or "https://hnmd.miguehm.com",
-        input_hint = "https://hnmd.miguehm.com",
-        buttons = {
-            {
-                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
-                {
-                    text = "Save",
-                    is_enter_default = true,
-                    callback = function()
-                        local val = dialog:getInputText() or ""
-                        config:set("hnmd_base_url", val)
-                        config:flush()
-                        UIManager:close(dialog)
-                        Logger.info("menus", "hnmd_base_url_saved")
-                        show_info("HN base URL saved.")
-                        if on_done then on_done() end
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
+    prompt_text(_("HN base URL (hnmd)"), config:get("hnmd_base_url") or "https://hnmd.miguehm.com", "https://hnmd.miguehm.com", function(val)
+        config:set("hnmd_base_url", val)
+        config:flush()
+        Logger.info("menus", "hnmd_base_url_saved")
+        if on_done then on_done() end
+        return true, _("HN base URL saved.")
+    end)
 end
 
 function Menus:edit_hnmd_api_key(config, on_done)
-    local dialog
-    dialog = InputDialog:new{
-        title = "HN API key (Bearer)",
-        input = config:get("hnmd_api_key") or "",
-        input_hint = "Paste API key (stored locally)",
+    prompt_text(_("HN API key (Bearer)"), config:get("hnmd_api_key") or "", _("Paste API key (stored locally)"), function(val)
+        config:set("hnmd_api_key", val)
+        config:flush()
+        Logger.info("menus", "hnmd_api_key_saved")
+        if on_done then on_done() end
+        return true, _("HN API key saved.")
+    end, {
         text_type = "password",
-        description = "Current: " .. mask_key(config:get("hnmd_api_key")),
-        buttons = {
-            {
-                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
-                {
-                    text = "Clear",
-                    callback = function()
-                        config:set("hnmd_api_key", "")
-                        config:flush()
-                        UIManager:close(dialog)
-                        Logger.info("menus", "hnmd_api_key_cleared")
-                        show_info("HN API key cleared.")
-                        if on_done then on_done() end
-                    end,
-                },
-                {
-                    text = "Save",
-                    is_enter_default = true,
-                    callback = function()
-                        local val = dialog:getInputText() or ""
-                        config:set("hnmd_api_key", val)
-                        config:flush()
-                        UIManager:close(dialog)
-                        Logger.info("menus", "hnmd_api_key_saved")
-                        show_info("HN API key saved.")
-                        if on_done then on_done() end
-                    end,
-                },
-            },
+        description = _("Current: ") .. mask_key(config:get("hnmd_api_key")),
+        extra_button = {
+            text = _("Clear"),
+            callback = function(dialog)
+                config:set("hnmd_api_key", "")
+                config:flush()
+                UIManager:close(dialog)
+                Logger.info("menus", "hnmd_api_key_cleared")
+                show_info(_("HN API key cleared."))
+                if on_done then on_done() end
+            end,
         },
-    }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
+    })
 end
 
-function Menus:edit_hnmd_max_items(config, on_done)
-    local dialog
-    dialog = InputDialog:new{
-        title = "HN max items (1-20)",
-        input = tostring(config:get("hnmd_max_items") or 10),
-        input_hint = "10",
-        input_type = "number",
-        buttons = {
-            {
-                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
-                {
-                    text = "Save",
-                    is_enter_default = true,
-                    callback = function()
-                        local n = tonumber(dialog:getInputText() or "")
-                        if not n then
-                            show_info("Enter a number between 1 and 20.")
-                            return
-                        end
-                        config:set("hnmd_max_items", n)
-                        config:flush()
-                        UIManager:close(dialog)
-                        Logger.info("menus", "hnmd_max_items_saved", { value = config:get("hnmd_max_items") })
-                        show_info("HN max items saved: " .. tostring(config:get("hnmd_max_items")))
-                        if on_done then on_done() end
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
+function Menus:edit_int(config, key, title, hint, minv, maxv, label, on_done)
+    prompt_text(title, tostring(config:get(key) or ""), hint, function(raw)
+        local n = tonumber(raw)
+        if not n then return false, _("Enter a number.") end
+        n = math.floor(n)
+        if n < minv or n > maxv then return false, string.format(_("Enter a value between %d and %d."), minv, maxv) end
+        config:set(key, n)
+        config:flush()
+        Logger.info("menus", "setting_saved", { key = key })
+        if on_done then on_done() end
+        return true, (label or key) .. ": " .. tostring(config:get(key))
+    end, { input_type = "number" })
+end
+
+function Menus:edit_documents_subdir(config, on_done)
+    prompt_text(_("Documents subdir"), config:get("documents_subdir") or "KindleHome", "KindleHome", function(val)
+        val = tostring(val or ""):gsub("[/\\]", ""):match("^%s*(.-)%s*$") or ""
+        if val == "" then val = "KindleHome" end
+        config:set("documents_subdir", val)
+        config:flush()
+        Logger.info("menus", "documents_subdir_saved")
+        if on_done then on_done() end
+        return true, _("Documents subdir saved.")
+    end)
 end
 
 function Menus:register(main_instance)
     local config = main_instance.config
+    local paths = main_instance.paths
     local menu_items = require("ui/elements/menu_items")
 
-    -- Extend Tools menu with Kindle Home settings
     menu_items.kindlehome_settings = {
-        text = "Kindle Home",
+        text = _("Kindle Home"),
         sorting_hint = "tools",
         sub_item_table = {
             {
-                text = "Weather: set location (search)",
-                keep_menu_open = true,
-                callback = function()
-                    Menus:edit_weather_place(config, function()
-                        local d = main_instance:getDashboard()
-                        if d then d:refresh() end
-                    end)
-                end,
+                text = _("Weather"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("Weather enabled: ") .. bool_text(config:get("weather_enabled")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("weather_enabled") and true or false end,
+                        callback = function()
+                            config:set("weather_enabled", not config:get("weather_enabled")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Show weather section: ") .. bool_text(config:get("show_weather")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("show_weather") and true or false end,
+                        callback = function()
+                            config:set("show_weather", not config:get("show_weather")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text = _("Set location (search)"),
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_weather_place(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Set coordinates (lat, lon)"),
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_weather_latlon(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Clear location"),
+                        keep_menu_open = true,
+                        callback = function()
+                            config:set("weather_lat", nil); config:set("weather_lon", nil); config:set("weather_place_name", ""); config:flush()
+                            show_info(_("Weather location cleared.")); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Weather TTL (minutes): ") .. tostring(config:get("weather_ttl_minutes")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "weather_ttl_minutes", _("Weather TTL (minutes)"), "60", 1, 10080, _("Weather TTL"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                },
             },
             {
-                text = "Weather: set coordinates (lat, lon)",
-                keep_menu_open = true,
-                callback = function()
-                    Menus:edit_weather_latlon(config, function()
-                        local d = main_instance:getDashboard()
-                        if d then d:refresh() end
-                    end)
-                end,
+                text = _("Hacker News"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("HN enabled: ") .. bool_text(config:get("hnmd_enabled")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("hnmd_enabled") and true or false end,
+                        callback = function()
+                            config:set("hnmd_enabled", not config:get("hnmd_enabled")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Show HN section: ") .. bool_text(config:get("show_hn")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("show_hn") and true or false end,
+                        callback = function()
+                            config:set("show_hn", not config:get("show_hn")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Base URL: ") .. tostring(config:get("hnmd_base_url")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_hnmd_base_url(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function() return _("API key: ") .. mask_key(config:get("hnmd_api_key")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_hnmd_api_key(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function() return _("Max items: ") .. tostring(config:get("hnmd_max_items")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "hnmd_max_items", _("HN max items (1-20)"), "10", 1, 20, _("HN max items"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function() return _("HN TTL (minutes): ") .. tostring(config:get("hnmd_ttl_minutes")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "hnmd_ttl_minutes", _("HN TTL (minutes)"), "30", 1, 10080, _("HN TTL"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Manual config note"),
+                        keep_menu_open = true,
+                        callback = function()
+                            show_info(_("API key/base URL can also be edited in settings/kindlehome.lua."), 5)
+                        end,
+                    },
+                },
             },
             {
-                text = "Weather: clear location",
-                keep_menu_open = true,
-                callback = function()
-                    config:set("weather_lat", nil)
-                    config:set("weather_lon", nil)
-                    config:set("weather_place_name", "")
-                    config:flush()
-                    show_info("Weather location cleared.")
-                    local d = main_instance:getDashboard()
-                    if d then d:refresh() end
-                end,
+                text = _("Sections"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("Show battery: ") .. bool_text(config:get("show_battery")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("show_battery") and true or false end,
+                        callback = function() config:set("show_battery", not config:get("show_battery")); config:flush(); refresh_dashboard(main_instance) end,
+                    },
+                    {
+                        text_func = function() return _("Show network: ") .. bool_text(config:get("show_network")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("show_network") and true or false end,
+                        callback = function() config:set("show_network", not config:get("show_network")); config:flush(); refresh_dashboard(main_instance) end,
+                    },
+                    {
+                        text_func = function() return _("Show digest section: ") .. bool_text(config:get("show_digest")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("show_digest") and true or false end,
+                        callback = function() config:set("show_digest", not config:get("show_digest")); config:flush(); refresh_dashboard(main_instance) end,
+                    },
+                },
             },
             {
-                text = "Weather enabled",
-                checked_func = function() return config:get("weather_enabled") and true or false end,
-                callback = function()
-                    config:set("weather_enabled", not config:get("weather_enabled"))
-                    config:flush()
-                    local d = main_instance:getDashboard()
-                    if d then d:refresh() end
-                end,
+                text = _("Refresh and network"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("Refresh on open: ") .. bool_text(config:get("refresh_on_open")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("refresh_on_open") and true or false end,
+                        callback = function() config:set("refresh_on_open", not config:get("refresh_on_open")); config:flush() end,
+                    },
+                    {
+                        text_func = function() return _("Refresh budget (s): ") .. tostring(config:get("refresh_budget_s")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "refresh_budget_s", _("Refresh budget (seconds)"), "20", 1, 120, _("Refresh budget"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function() return _("HTTP timeout (s): ") .. tostring(config:get("http_timeout_s")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "http_timeout_s", _("HTTP timeout (seconds)"), "10", 1, 60, _("HTTP timeout"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function() return _("HTTP max bytes: ") .. tostring(config:get("http_max_bytes")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "http_max_bytes", _("HTTP max bytes"), "524288", 16384, 10485760, _("HTTP max bytes"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                },
             },
             {
-                text = "HN enabled",
-                checked_func = function() return config:get("hnmd_enabled") and true or false end,
-                callback = function()
-                    config:set("hnmd_enabled", not config:get("hnmd_enabled"))
-                    config:flush()
-                    local d = main_instance:getDashboard()
-                    if d then d:refresh() end
-                end,
-            },
-            {
-                text = "HN: set base URL",
-                keep_menu_open = true,
-                callback = function()
-                    Menus:edit_hnmd_base_url(config, function()
-                        local d = main_instance:getDashboard()
-                        if d then d:refresh() end
-                    end)
-                end,
-            },
-            {
-                text_func = function() return "HN: set API key (" .. mask_key(config:get("hnmd_api_key")) .. ")" end,
-                keep_menu_open = true,
-                callback = function()
-                    Menus:edit_hnmd_api_key(config, function()
-                        local d = main_instance:getDashboard()
-                        if d then d:refresh() end
-                    end)
-                end,
-            },
-            {
-                text_func = function() return "HN: max items (" .. tostring(config:get("hnmd_max_items") or 10) .. ")" end,
-                keep_menu_open = true,
-                callback = function()
-                    Menus:edit_hnmd_max_items(config, function()
-                        local d = main_instance:getDashboard()
-                        if d then d:refresh() end
-                    end)
-                end,
-            },
-            {
-                text = "Refresh on open",
-                checked_func = function() return config:get("refresh_on_open") and true or false end,
-                callback = function()
-                    config:set("refresh_on_open", not config:get("refresh_on_open"))
-                    config:flush()
-                end,
+                text = _("Paths and storage"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("Storage mode: ") .. tostring(config:get("storage_mode")) end,
+                        keep_menu_open = true,
+                        callback = function()
+                            local current = config:get("storage_mode")
+                            config:set("storage_mode", current == "documents" and "datadir" or "documents")
+                            config:flush()
+                            show_info(_("Storage mode: ") .. tostring(config:get("storage_mode")))
+                            refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Documents subdir: ") .. tostring(config:get("documents_subdir")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_documents_subdir(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Show resolved paths"),
+                        keep_menu_open = true,
+                        callback = function()
+                            if not paths then return show_info(_("Paths unavailable.")) end
+                            local msg = table.concat({
+                                _("Cache: ") .. tostring(paths:cache_dir()),
+                                _("Content: ") .. tostring(paths:documents_root()),
+                                _("HN articles: ") .. tostring(paths:articles_hn_dir()),
+                                _("Digest: ") .. tostring(paths:digest_dir()),
+                            }, "\n")
+                            show_info(msg, 8)
+                        end,
+                    },
+                },
             },
         },
     }

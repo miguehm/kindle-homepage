@@ -12,6 +12,7 @@ local Refresh = require("lib/refresh")
 local Actions = require("ui/actions")
 local Menus = require("ui/menus")
 local Digest = require("lib/digest")
+local Messages = require("ui/messages")
 
 local KindleHome = WidgetContainer:extend{
     name = "kindlehome",
@@ -75,23 +76,25 @@ function KindleHome:request_dashboard_refresh(opts)
             UIManager:show(InfoMessage:new{ text = _("Refresh already in progress."), timeout = 2 })
             return
         end
-        local ok, err = pcall(function()
+        if opts.user_initiated then
+            UIManager:show(InfoMessage:new{ text = _("Refreshing…"), timeout = 1 })
+        end
+        local ok = pcall(function()
             dashboard:refresh({ allow_network = net_allowed })
         end)
         Refresh.finish()
         if not ok then
-            Logger.err("main", "refresh_failed", { err = tostring(err) })
-            UIManager:show(InfoMessage:new{ text = _("Refresh failed. Showing cached data if available."), timeout = 4 })
-            pcall(function() dashboard:show({ allow_network = false }) end)
+            Logger.err("main", "refresh_failed")
+            UIManager:show(InfoMessage:new{ text = Messages.refresh_result("exception"), timeout = 4 })
+            pcall(function() dashboard:show({ allow_network = false, refresh_hint = Messages.refresh_result("exception") }) end)
         end
     end
 
-    -- If network is needed but unavailable, prompt WiFi and refresh after callback, always fallback to cache.
+    -- Cache-first open: if user initiated while offline, prompt WiFi and fallback to cached state.
     if opts.user_initiated and not is_online() then
         local prompted = false
         local function after_prompt()
-            local net = is_online()
-            do_refresh(net)
+            do_refresh(is_online())
         end
         local ok_prompt = pcall(function()
             if NetworkMgr.promptWifiOn then
@@ -103,12 +106,10 @@ function KindleHome:request_dashboard_refresh(opts)
             end
         end)
         if ok_prompt and prompted then
-            -- Also show cached state immediately so UI is responsive.
-            pcall(function() dashboard:show({ allow_network = false, refresh_hint = "wifi_prompt" }) end)
+            pcall(function() dashboard:show({ allow_network = false, refresh_hint = Messages.for_kind("offline") }) end)
             return
         end
-        -- No prompt available: cache-only fallback with brief message.
-        UIManager:show(InfoMessage:new{ text = _("Offline. Turn on WiFi and refresh."), timeout = 3 })
+        UIManager:show(InfoMessage:new{ text = Messages.for_kind("offline"), timeout = 3 })
         do_refresh(false)
         return
     end
@@ -127,7 +128,7 @@ function KindleHome:registerActions()
         local doc, err = Digest.build_and_save(state or {}, self.paths)
         if not doc then
             UIManager:show(InfoMessage:new{ text = _("Could not save digest."), timeout = 3 })
-            Logger.err("main", "digest_generate_failed", { err = tostring(err) })
+            Logger.err("main", "digest_generate_failed")
             return
         end
         UIManager:show(InfoMessage:new{ text = _("Digest saved."), timeout = 2 })
@@ -234,6 +235,7 @@ function KindleHome:getDashboard()
 end
 
 function KindleHome:onKindlehomeShowDashboard()
+    -- Safe/idempotent open: Dispatcher/gesture/profile calls reuse dashboard flow.
     if self.config:get("refresh_on_open") then
         self:request_dashboard_refresh({ user_initiated = true, allow_network = is_online() })
     else

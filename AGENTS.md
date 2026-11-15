@@ -26,5 +26,5 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 
 ## Quality
 - No dead code; no silent broad exception swallowing that hides corruption/state bugs.
-- Keep UI messages brief/actionable (no stack traces to end users).
+- Keep UI messages brief/actionable (no stack traces to end users). Prefer centralized mapping in `ui/messages.lua` for user-facing states/errors.
 - Record deviations and verification runs in `PLAN.md` ledgers when work diverges or is validated.

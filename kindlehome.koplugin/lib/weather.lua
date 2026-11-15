@@ -65,9 +65,12 @@ function Weather.fetch(config, opts)
     )
     local timeout_s = opts.timeout_s or (config and config:get("http_timeout_s")) or 10
     local max_bytes = opts.max_bytes or (config and config:get("http_max_bytes")) or 131072
+    local cfg_max = tonumber(max_bytes) or 131072
+    if cfg_max < 16384 then cfg_max = 16384 end
+    if cfg_max > 1048576 then cfg_max = 1048576 end
     local res = Http.get_json(url, {
         timeout_s = timeout_s,
-        max_bytes = math.min(tonumber(max_bytes) or 131072, 524288),
+        max_bytes = cfg_max,
         retries = 1,
     })
     if not res.ok then

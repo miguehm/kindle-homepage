@@ -7,6 +7,7 @@ local _ = require("gettext")
 
 local MdToHtml = require("lib/render/md_to_html")
 local Logger = require("lib/logger")
+local Messages = require("ui/messages")
 
 local ArticleView = {}
 
@@ -29,16 +30,9 @@ local function can_open_in_reader()
 end
 
 function ArticleView:_build_state_error(kind)
-    local msg = "Content unavailable."
-    if kind == "no_markdown" then
-        msg = "No markdown available for this item."
-    elseif kind == "corrupted_file" then
-        msg = "Content file is unavailable or corrupted."
-    elseif kind == "not_found" then
-        msg = "Content file was not found."
-    elseif kind == "missing_path" then
-        msg = "Content path is missing."
-    end
+    local msg = Messages.reading(kind)
+    if kind == "missing_path" then msg = "Content path is missing." end
+    if kind == "render_error" then msg = "Content unavailable." end
     return MdToHtml.document({
         title = "Kindle Home",
         show_title = true,
