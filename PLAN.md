@@ -6,13 +6,14 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** solo planificación (`PLAN.md`), sin scaffold de plugin ni código implementado.
+- **Estado del repo:** scaffold Fase 0 y dashboard offline Fase 1 implementados en código (`kindlehome.koplugin/lib/{config,logger}.lua`, `ui/dashboard.lua`, `main.lua`); **pendiente verificación en Kindle real** (objetivo) y registro en ledger antes de avanzar a Fase 2.
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
+- **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
+- **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
 - **Idioma UI (MVP):** inglés. Usar `_()` donde aplique; fallback manual permitido si no se compila `l10n`.
-- **Entorno de desarrollo:** KOReader desktop Linux para iteración rápida; validación final en Kindle real.
 - **Rutas KOReader (referencia):**
-  - Dev: `~/.config/koreader/plugins/kindlehome.koplugin/`
-  - Kindle: `/mnt/us/koreader/plugins/kindlehome.koplugin/` (requiere reinicio de KOReader)
+  - Kindle (objetivo): `/mnt/us/koreader/plugins/kindlehome.koplugin/` (requiere reinicio de KOReader)
+  - Desktop auxiliar (opcional, solo dev): `~/.config/koreader/plugins/kindlehome.koplugin/`
   - Settings: `<DataStorage:getSettingsDir()>/kindlehome.lua` (vía `LuaSettings`)
   - Cache: `<DataStorage:getDataDir()>/cache/kindlehome/`
 - **Datos persistidos (default, visible al usuario):** `documents/KindleHome/` dentro del home de documentos de KOReader/Kindle.
@@ -156,27 +157,27 @@ repo/
 
 ### Fase 0 — Scaffold y panel mínimo (sin red)
 **Depende de:** —
-- [ ] **0.1** Crear estructura base `kindlehome.koplugin/` (`lib/`, `ui/`, `lib/rss/vendor/`, `lib/render/`) sin archivos basura.
-- [ ] **0.2** `_meta.lua`: `fullname`, `description` (EN, preparado para `_()`).
-- [ ] **0.3** `main.lua`: `WidgetContainer` (`name="kindlehome"`), registro en menú principal.
-- [ ] **0.4** Dispatcher: acción `kindlehome_show_dashboard` + handler `onKindlehomeShowDashboard`.
-- [ ] **0.5** `ui/dashboard.lua`: render HTML estático en `ScrollHtmlWidget` full-screen (acciones mínimas: Refresh stub, Close).
-- [ ] **0.6** Documentar en `README.md` (borrador) instalación dev/Kindle y reinicio requerido.
+- [x] **0.1** Crear estructura base `kindlehome.koplugin/` (`lib/`, `ui/`, `lib/rss/vendor/`, `lib/render/`) sin archivos basura.
+- [x] **0.2** `_meta.lua`: `fullname`, `description` (EN, preparado para `_()`).
+- [x] **0.3** `main.lua`: `WidgetContainer` (`name="kindlehome"`), registro en menú principal.
+- [x] **0.4** Dispatcher: acción `kindlehome_show_dashboard` + handler `onKindlehomeShowDashboard`.
+- [x] **0.5** `ui/dashboard.lua`: render HTML estático en `ScrollHtmlWidget` full-screen (acciones mínimas: Refresh stub, Close).
+- [x] **0.6** Documentar en `README.md` (borrador) instalación dev/Kindle y reinicio requerido.
 
-**Criterio de salida:** plugin carga, aparece en menú, abre/cierra dashboard sin errores en KOReader desktop.  
-**Verificación (ledger):** carga plugin, abrir/cerrar 3 veces, ejecutar acción Dispatcher, revisar log sin stack traces.
+**Criterio de salida:** plugin carga, aparece en menú y abre/cierra dashboard sin errores en **Kindle (objetivo)**; smoke test en desktop auxiliar opcional.  
+**Verificación (ledger):** en Kindle real (referencia) validar carga, abrir/cerrar 3 veces, ejecutar acción Dispatcher y revisar log sin stack traces; desktop solo como apoyo opcional.
 
 ### Fase 1 — Dashboard offline (hora, fecha, batería, red)
 **Depende de:** Fase 0
-- [ ] **1.1** `lib/config.lua` inicial con defaults y `LuaSettings` (`settings/kindlehome.lua`).
-- [ ] **1.2** Encabezado con fecha/hora legible en inglés.
-- [ ] **1.3** Estado de batería (`getCapacity`, `isCharging`) con fallback si no disponible.
-- [ ] **1.4** Estado de red (`NetworkMgr:isConnected`) y SSID si es seguro/posible.
-- [ ] **1.5** Contrato de refresco de vista: función única `refresh()` que reconstruye estado/HTML y reemplaza/reabre widget de forma controlada (documentar comportamiento de scroll).
-- [ ] **1.6** `lib/logger.lua` básico (niveles/eventos) sin datos sensibles.
+- [x] **1.1** `lib/config.lua` inicial con defaults y `LuaSettings` (`settings/kindlehome.lua`).
+- [x] **1.2** Encabezado con fecha/hora legible en inglés.
+- [x] **1.3** Estado de batería (`getCapacity`, `isCharging`) con fallback seguro si no disponible (comportamiento de referencia en Kindle).
+- [x] **1.4** Estado de red (`NetworkMgr:isConnected`) y SSID si es seguro/posible en Kindle; fallback seguro en otros entornos.
+- [x] **1.5** Contrato de refresco de vista: función única `refresh()` que reconstruye estado/HTML y reemplaza/reabre widget de forma controlada (documentar comportamiento de scroll).
+- [x] **1.6** `lib/logger.lua` básico (niveles/eventos) sin datos sensibles.
 
-**Criterio de salida:** dashboard muestra datos locales y se refresca sin crashear.  
-**Verificación:** cambiar WiFi/energía (si aplica en desktop), refrescar manualmente, confirmar actualización visible.
+**Criterio de salida:** dashboard muestra datos locales y se refresca sin crashear en **Kindle (objetivo)**.  
+**Verificación:** en Kindle real, cambiar WiFi/energía cuando aplique, refrescar manualmente y confirmar actualización visible; desktop auxiliar opcional solo para iteración rápida. *(Implementación en repo completada; verificación en dispositivo pendiente.)*
 
 ### Fase 2 — Base transversal (config/paths/cache/http) y contratos
 **Depende de:** Fase 1
@@ -285,14 +286,16 @@ repo/
 
 ## 7) Matriz de verificación mínima (por fase)
 
-- **F0–F1 (UI/local):** carga plugin, navegación básica, refresh, sin errores en log.
+> **Referencia:** la validación objetivo es **Kindle real** (e-ink/KOReader). Pruebas en desktop/PC son auxiliares y no sustituyen la verificación en Kindle.
+
+- **F0–F1 (UI/local):** en Kindle: carga plugin, navegación básica, refresh, sin errores en log (desktop auxiliar opcional).
 - **F2 (transversal):** timeout, HTTP 401/503/500 simulado o forzado, JSON inválido, caché corrupta, escritura atómica.
 - **F3 (lectura):** render MD básico, escape HTML, persistencia `.md/.html`, apertura/cierre overlay, fallback navegación.
 - **F4 (clima):** ubicación válida/inválida, geocoding OK/fail, online/offline, TTL expirado.
 - **F5 (hnmd):** 200, 401, 503 `warming_up`, red caída, item sin markdown/error, Ask HN `url=null`.
 - **F6 (RSS):** feed RSS/Atom válido, feed inválido, contenido HTML, límite por feed, cache/stale.
 - **F7–F8 (integración):** digest parcial/completo, refresh al abrir, gestos/profiles, reentrada.
-- **F9 (dispositivo):** smoke + regresión en Kindle real y tiempos aceptables.
+- **F9 (dispositivo):** smoke + regresión en **Kindle real** y tiempos aceptables (obligatorio para cierre MVP).
 
 ## 8) Riesgos, mitigaciones y decisiones abiertas
 
@@ -329,9 +332,10 @@ repo/
 
 ## 11) Criterios de aceptación del MVP (definición de terminado)
 
-- Dashboard abre desde menú/gesto y muestra hora/fecha + estado básico + secciones disponibles.
+- El plugin está enfocado y validado para **Kindle (KOReader, e-ink)**; no se considera objetivo de soporte PC/desktop.
+- Dashboard abre desde menú/gesto en Kindle y muestra hora/fecha + estado básico + secciones disponibles.
 - Clima, HN (`hnmd`) y RSS funcionan con **cache-first**, estados de error manejados y sin crashes offline.
 - HN soporta `hnmd_api_key` por UI y por `settings/kindlehome.lua`, con manejo correcto de `200/401/503 warming_up`.
 - Artículos HN/RSS y digest se pueden renderizar en overlay, persistir en `.md/.html` y reabrir.
 - Configuración y rutas están documentadas; no se registran secretos en logs; caché corrupta se recupera automáticamente.
-- Existe verificación registrada por fases críticas y smoke test en Kindle real.
+- Existe verificación registrada por fases críticas y **smoke/regresión en Kindle real** (obligatorio).
