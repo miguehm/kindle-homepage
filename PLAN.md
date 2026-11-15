@@ -6,7 +6,7 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** F0–F4 implementadas en código (scaffold, dashboard offline, base transversal, lectura/persistencia base y clima Open-Meteo+geocoding con cache-first/stale); **pendientes verificación en Kindle real/runtime KOReader y registro en ledger** para cerrar F1–F4 (gates F1/F2/F3 no cerrados).
+- **Estado del repo:** F0–F5 implementadas en código (scaffold, dashboard offline, base transversal, lectura/persistencia base, clima Open-Meteo+geocoding y HN/hnmd con cache-first/stale, UI/settings y apertura/persistencia de artículos markdown); **pendientes verificación en Kindle real/runtime KOReader y registro en ledger** para cerrar F1–F5 (gates/verificación F1–F4 no cerrados; F5 implementada pre-gates).
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
 - **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
 - **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
@@ -212,23 +212,25 @@ repo/
 
 ### Fase 5 — Hacker News vía `hnmd`
 **Depende de:** Fases 2, 3, 4 (integración visual en dashboard)
-- [ ] **5.1** Extender/confirmar config: `hnmd_enabled`, `hnmd_base_url` (default `https://hnmd.miguehm.com`), `hnmd_api_key`, `hnmd_max_items`, `hnmd_ttl_minutes`.
-- [ ] **5.2** UI ajustes HN: editar base URL, API key (enmascarada), max items, toggle; documentar edición manual en `settings/kindlehome.lua`.
-- [ ] **5.3** `lib/hnmd.lua`: GET `{base}/top` con `Authorization: Bearer` si aplica, parse/validación de respuesta (`generated_at,next_refresh_at,refresh_interval,count,items,last_refresh_error?`).
-- [ ] **5.4** Normalizar `NewsItem` → `HnItemView` y limitar por `hnmd_max_items` (orden `rank`).
-- [ ] **5.5** Cache `cache/hnmd.json`: snapshot + estado fetch, TTL configurable, stale fallback.
-- [ ] **5.6** Manejo HTTP/estado:
+- [x] **5.1** Extender/confirmar config: `hnmd_enabled`, `hnmd_base_url` (default `https://hnmd.miguehm.com`), `hnmd_api_key`, `hnmd_max_items`, `hnmd_ttl_minutes`.
+- [x] **5.2** UI ajustes HN: editar base URL, API key (enmascarada), max items, toggle; documentar edición manual en `settings/kindlehome.lua`.
+- [x] **5.3** `lib/hnmd.lua`: GET `{base}/top` con `Authorization: Bearer` si aplica, parse/validación de respuesta (`generated_at,next_refresh_at,refresh_interval,count,items,last_refresh_error?`).
+- [x] **5.4** Normalizar `NewsItem` → `HnItemView` y limitar por `hnmd_max_items` (orden `rank`).
+- [x] **5.5** Cache `cache/hnmd.json`: snapshot + estado fetch, TTL configurable, stale fallback.
+- [x] **5.6** Manejo HTTP/estado:
   - `200`: render + cache ok.
   - `503 warming_up`: mensaje y uso de caché si existe.
   - `401`: banner accionable a Settings, sin reintentos automáticos.
   - red/timeout/parse/otros: mensaje breve + caché si existe.
-- [ ] **5.7** Dashboard sección HN: lista con rank, título, score/comentarios/autor/dominio; marcar `status!=ok` o markdown vacío.
-- [ ] **5.8** Lectura de artículo HN: usar `article_view` + `md_to_html` con markdown del servidor; guardar `.md/.html` en `articles/hn/`.
-- [ ] **5.9** Caso `url == null` (Ask HN): no intentar fetch externo; mostrar solo contenido `hnmd`.
+- [x] **5.7** Dashboard sección HN: lista con rank, título, score/comentarios/autor/dominio; marcar `status!=ok` o markdown vacío.
+- [x] **5.8** Lectura de artículo HN: usar `article_view` + `md_to_html` con markdown del servidor; guardar `.md/.html` en `articles/hn/`.
+- [x] **5.9** Caso `url == null` (Ask HN): no intentar fetch externo; mostrar solo contenido `hnmd`.
 - [ ] **5.10** (Opcional MVP+) abrir URL externa en overlay con descarga limitada/timeout y error claro; si se pospone, documentar como no soportado.
 
+> **Nota (2026-11-15):** base F5 implementada en repo (`lib/hnmd.lua`, `lib/hnmd_state.lua`, ajustes en `lib/config.lua`/`ui/menus.lua`/`ui/actions.lua`/`ui/dashboard.lua`/`main.lua`, docs README). Cache-first/stale vía `lib/cache.lua`/`lib/refresh.lua`, HTTP vía `lib/http.lua` (Bearer opcional, sin retry en 401), navegación por acciones Lua `open_hn:<id>` con fallback, persistencia `.md/.html` en `articles/hn/`. 5.10 (URL externa) queda pospuesto/documentado como no soportado. **Verificación runtime KOReader/Kindle y cierre formal pendientes**; gates F1–F4 previos permanecen abiertos.
+
 **Criterio de salida:** HN lista y abre artículos `markdown` desde `hnmd` con cache y manejo correcto de `401/503`.  
-**Verificación:** 200, 401, 503 warming_up, sin red con caché, item `status:error`/sin markdown, Ask HN (`url=null`).
+**Verificación:** 200, 401, 503 warming_up, sin red con caché, item `status:error`/sin markdown, Ask HN (`url=null`). *(implementación en repo; pendiente validación en dispositivo/entorno KOReader)*
 
 ### Fase 6 — Digest y pulido de lectura
 **Depende de:** Fases 4, 5
@@ -301,6 +303,7 @@ repo/
 | 2026-11-15 | Global / R1–R5 | Retiro de soporte RSS/Atom; renumeración de fases (antigua F6 RSS eliminada, F7→F6, F8→F7, F9→F8); actualización de contratos/arquitectura/criterios y limpieza de defaults/rutas RSS en repo | Solicitud explícita: solo HN vía `https://hnmd.miguehm.com/top` | Medio (simplifica alcance; elimina código/config RSS planificado) | ✔ resuelta (plan + repo base) | R1–R5 aplicados; registrar verificación adicional en §10 según corresponda |
 | 2026-11-15 | F3 (pre-gate F1/F2) | Implementación de base Fase 3 en repo antes de cerrar verificación F1 en Kindle y verificación/cierre formal F2 | Avance solicitado de “siguiente fase pendiente” para disponer de renderer/navegación/persistencia reutilizables | Medio (riesgo de integración no validada en dispositivo/runtime) | ⏸ diferida (verificación) | Completar gates F1/F2 y ejecutar verificación F3 en KOReader (Kindle objetivo + auxiliar opcional), registrar en §10; no considerar fase cerrada hasta evidencia |
 | 2026-11-15 | F4 (pre-gate F1/F2/F3) | Implementación de base Fase 4 (clima Open-Meteo/geocoding/cache/UI) en repo antes de cerrar verificación runtime F1–F3 y ledgers | Continuación solicitada de fase pendiente para habilitar integración clima en dashboard | Medio (riesgo de regresión/integración no validada en KOReader/Kindle; dependencias de APIs externas no probadas en dispositivo) | ⏸ diferida (verificación) | Ejecutar y registrar verificación F4 (§6/§7: ubicación válida/inválida, online/offline, TTL, geocoding, stale/prompt WiFi) y cerrar gates F1–F3 en §10; revisar comportamiento de `NetworkMgr:promptWifiOn` en Kindle real |
+| 2026-11-15 | F5 (pre-gate F1–F4) | Implementación de base Fase 5 (hnmd client/cache/state, settings/UI, dashboard HN, lectura/persistencia markdown) en repo antes de cerrar verificación runtime F1–F4 y ledgers | Continuación solicitada de fase pendiente para integrar HN vía hnmd | Medio (riesgo de integración no validada en KOReader/Kindle; dependencia externa hnmd/auth/estados no probados en dispositivo) | ⏸ diferida (verificación) | Ejecutar y registrar verificación F5 (§6/§7: 200, 401 sin retry, 503 warming_up, offline con caché, item error/sin markdown, Ask HN url=null, TTL/presupuesto/reentrada) y cerrar gates F1–F4 en §10; mantener 5.10 pospuesto salvo decisión explícita |
 | YYYY-MM-DD | F0/0.x | (ej.) Se cambió ruta de cache | (motivo) | (bajo/medio/alto) | ⏸ diferida / ✔ resuelta | (acción tomada o pendiente) |
 
 ## 10) Ledger de verificación (plantilla)
@@ -312,6 +315,7 @@ repo/
 | 2026-11-15 | Cambio de alcance (sin RSS) | Linux dev (repo) | Búsqueda `rss/RSS/FeedItemView/open_rss/articles/rss` en repo; revisión de `config.lua`, `paths.lua`, `README.md`, `PLAN.md` tras R1–R5 | PASS | `grep` sin coincidencias en `kindlehome.koplugin/README.md/AGENTS.md`; claves/rutas RSS removidas. Sin runtime KOReader en este entorno. | Gates previos siguen pendientes: verificación F1 en Kindle real y cierre/ledger F2 (§6 F1/F2) |
 | 2026-11-15 | F3 (impl. base) | Linux dev (repo) | Sintaxis Lua (`luac -p`) de módulos nuevos/modificados F3 (`lib/render/md_to_html.lua`, `lib/article_store.lua`, `ui/actions.lua`, `ui/article_view.lua`, `ui/dashboard.lua`, `main.lua`, `lib/config.lua`); revisión de wiring y contratos (escape/sanitización básica links, atomic write, rutas internas, open_in_reader flag off) | PASS (sintaxis/wiring estático) | Sin runtime KOReader en entorno; no valida `UIManager/ScrollHtmlWidget/ReaderUI` en dispositivo. | Pendiente: verificación funcional F3 + gates F1/F2 en KOReader (Kindle objetivo) y registro de resultados |
 | 2026-11-15 | F4 (impl. base) | Linux dev (repo) | Sintaxis Lua (`luac -p`) de módulos F4/nuevos o modificados (`lib/wmo.lua`, `lib/geocoding.lua`, `lib/weather.lua`, `lib/weather_state.lua`, `ui/menus.lua`, `ui/dashboard.lua`, `main.lua`) y revisión estática de contratos (cache-first/stale vía `refresh/cache`, uso de `lib/http`, presupuesto/reentrada, mensajes UI breves, sin secretos en logs) | PASS (sintaxis/wiring estático) | Sin runtime KOReader ni red real/Kindle en entorno; no valida Open-Meteo/geocoding en dispositivo, prompts WiFi, ni render/timings en e-ink. | Pendiente: verificación funcional F4 (ubicación válida/inválida, online/offline, TTL, caché vigente/expirada, geocoding OK/fail) y gates F1–F3 en KOReader (Kindle objetivo) |
+| 2026-11-15 | F5 (impl. base) | Linux dev (repo) | Sintaxis Lua (`luac -p`) de módulos F5 nuevos/modificados (`lib/hnmd.lua`, `lib/hnmd_state.lua`, `ui/menus.lua`, `ui/dashboard.lua`, `main.lua`, `ui/actions.lua`) y revisión estática de contratos (HTTP vía `lib/http.lua` con Bearer opcional/retry transitorio sin 401, cache-first/stale/envelope, rutas/actions Lua, persistencia atómica artículos HN, API key enmascarada en UI y no registrada en logs, manejo Ask HN/url null sin fetch externo, 5.10 pospuesto) | PASS (sintaxis/wiring estático) | Sin runtime KOReader/Kindle ni endpoint hnmd real verificado en dispositivo; no valida 200/401/503 warming_up en vivo, UI e-ink, prompts/refresh behavior, ni lectura/persistencia en filesystem objetivo. | Pendiente: verificación funcional F5 y gates F1–F4 en KOReader (Kindle objetivo), registrar evidencia y actualizar estado de cierre |
 | YYYY-MM-DD | F0 | KOReader desktop Linux / Kindle FW ... | Carga plugin, abrir/cerrar dashboard | PASS/FAIL | log, screenshot, pasos | (si aplica) |
 
 ## 11) Criterios de aceptación del MVP (definición de terminado)
