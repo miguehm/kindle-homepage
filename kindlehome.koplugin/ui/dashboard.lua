@@ -10,6 +10,7 @@ local MdToHtml = require("lib/render/md_to_html")
 local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local WeatherState = require("lib/weather_state")
+local HnmdState = require("lib/hnmd_state")
 
 local Dashboard = {}
 
@@ -23,6 +24,10 @@ function Dashboard:new(opts)
         widget = nil,
         article_store = opts.paths and ArticleStore:new(opts.paths) or nil,
         last_test_doc = nil,
+        hn_state = nil,
+        hn_items = {},
+        hn_item_index = {},
+        last_state = nil,
     }
     setmetatable(o, self)
     self.__index = self
@@ -113,7 +118,7 @@ function Dashboard:load_weather(opts)
         local ok_conn, conn = pcall(function() return NetworkMgr:isConnected() end)
         allow_network = ok_conn and conn and true or false
     end
-    local budget = Refresh.new_budget(self.config and self.config:get("refresh_budget_s") or 20)
+    local budget = opts.budget or Refresh.new_budget(self.config and self.config:get("refresh_budget_s") or 20)
     local ok, res = pcall(WeatherState.load, self.config, self.paths, {
         allow_network = allow_network,
         budget = budget,
@@ -125,21 +130,84 @@ function Dashboard:load_weather(opts)
     return res
 end
 
+function Dashboard:load_hn(opts)
+    opts = opts or {}
+    local allow_network = opts.allow_network
+    if allow_network == nil then
+        local ok_conn, conn = pcall(function() return NetworkMgr:isConnected() end)
+        allow_network = ok_conn and conn and true or false
+    end
+    local budget = opts.budget or Refresh.new_budget(self.config and self.config:get("refresh_budget_s") or 20)
+    local ok, res = pcall(HnmdState.load, self.config, self.paths, {
+        allow_network = allow_network,
+        budget = budget,
+    })
+    if not ok then
+        Logger.err("dashboard", "hn_load_exception", { err = tostring(res) })
+        return { status = "error", line = "HN unavailable.", items = {} }
+    end
+    self.hn_state = res
+    self.hn_items = (res and type(res.items) == "table") and res.items or {}
+    self.hn_item_index = {}
+    for _, item in ipairs(self.hn_items) do
+        if item and item.id ~= nil then
+            self.hn_item_index[tostring(item.id)] = item
+        end
+    end
+    return res
+end
+
+function Dashboard:get_hn_item(id)
+    if id == nil then return nil end
+    return self.hn_item_index and self.hn_item_index[tostring(id)] or nil
+end
+
+function Dashboard:get_hn_actions()
+    local acts = {}
+    for _, item in ipairs(self.hn_items or {}) do
+        local id = tostring(item.id or "")
+        if id ~= "" then
+            local rank = tonumber(item.rank) or 0
+            local title = tostring(item.title or "(untitled)")
+            if #title > 42 then title = title:sub(1, 39) .. "..." end
+            local label = string.format("HN %s: %s", rank > 0 and tostring(rank) or "?", title)
+            table.insert(acts, {
+                text = label,
+                callback = function()
+                    if self.actions then
+                        self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:" .. id, id)
+                    else
+                        self:open_hn_item(id)
+                    end
+                end,
+            })
+        end
+    end
+    return acts
+end
+
 function Dashboard:build_state(opts)
+    opts = opts or {}
     local date_str, time_str = get_clock_state()
-    local weather = self:load_weather(opts or {})
+    local budget = Refresh.new_budget(self.config and self.config:get("refresh_budget_s") or 20)
+    local weather = self:load_weather({ allow_network = opts.allow_network, budget = budget })
+    local hn = self:load_hn({ allow_network = opts.allow_network, budget = budget })
     local state = {
         date = date_str,
         time = time_str,
         battery = get_battery_state(self.config),
         network = get_network_state(self.config),
         weather = weather,
+        hn = hn,
     }
+    self.last_state = state
     Logger.info("dashboard", "state_built", {
         has_time = state.time ~= "Time unavailable",
         battery = state.battery,
         network = state.network,
         weather = weather and weather.status or "nil",
+        hn = hn and hn.status or "nil",
+        hn_items = hn and #(hn.items or {}) or 0,
     })
     return state
 end
@@ -174,6 +242,59 @@ local function build_html(state)
         weather_note = "Showing cached weather."
     end
 
+    local hn = state.hn or { status = "error", line = "HN unavailable.", items = {} }
+    local hn_meta = ""
+    if hn.fetched_at then
+        local ts = fmt_epoch(hn.fetched_at)
+        if ts then
+            hn_meta = "Last update: " .. escape_html(ts)
+            if hn.stale then hn_meta = hn_meta .. " (cached)" end
+        end
+    end
+    local hn_note = ""
+    if hn.error_kind == "http_401" then
+        hn_note = "Invalid API key. Open Kindle Home settings to update HN API key."
+    elseif hn.error_kind == "http_503" then
+        hn_note = "hnmd server is starting, try again in a few minutes."
+    elseif hn.stale and not hn.message then
+        hn_note = "Showing cached HN data."
+    elseif hn.message and hn.status == "error" then
+        hn_note = hn.message
+    elseif hn.message and hn.status == "stale" then
+        hn_note = hn.message
+    end
+
+    local hn_items_html = {}
+    local items = hn.items or {}
+    if #items == 0 then
+        table.insert(hn_items_html, "<div class='muted'>No HN items to show.</div>")
+    else
+        table.insert(hn_items_html, "<div class='muted'>Open articles via action buttons below (HN &lt;rank&gt;: ...).</div>")
+        for _, item in ipairs(items) do
+            local title = escape_html(item.title or "(untitled)")
+            local rank = tonumber(item.rank) and tostring(item.rank) or "?"
+            local meta_parts = {}
+            if tonumber(item.score) then table.insert(meta_parts, tostring(item.score) .. " pts") end
+            if tonumber(item.descendants) then table.insert(meta_parts, tostring(item.descendants) .. " comments") end
+            if item.by and item.by ~= "" then table.insert(meta_parts, "by " .. escape_html(item.by)) end
+            if item.domain and item.domain ~= "" then table.insert(meta_parts, escape_html(item.domain)) end
+            local status_tag = ""
+            if item.status and item.status ~= "ok" then
+                status_tag = " <span class='muted'>[status:" .. escape_html(tostring(item.status)) .. "]</span>"
+            elseif not item.has_markdown then
+                status_tag = " <span class='muted'>[no markdown]</span>"
+            end
+            if item.url == nil then
+                table.insert(meta_parts, "Ask HN")
+            end
+            local meta_line = table.concat(meta_parts, " · ")
+            table.insert(hn_items_html, "<div class='label'><b>" .. escape_html(rank) .. ".</b> " .. title .. status_tag .. "</div>")
+            if meta_line ~= "" then
+                table.insert(hn_items_html, "<div class='muted'>" .. meta_line .. "</div>")
+            end
+        end
+    end
+
     return table.concat({
         "<html><head><style>",
         "body{font-family:sans-serif;margin:24px;color:#111;background:#fff;}",
@@ -197,12 +318,98 @@ local function build_html(state)
         weather_note ~= "" and ("<div class='muted'>" .. escape_html(weather_note) .. "</div>") or "",
         "</div>",
         "<div class='section'>",
-        "<div class='label'><b>Reading:</b> renderer, article overlay and persistence scaffold (Phase 3).</div>",
+        "<div class='label'><b>Hacker News</b></div>",
+        "<div class='label'>", escape_html(hn.line or "HN unavailable."), "</div>",
+        hn_meta ~= "" and ("<div class='muted'>" .. hn_meta .. "</div>") or "",
+        hn_note ~= "" and ("<div class='muted'>" .. escape_html(hn_note) .. "</div>") or "",
+        table.concat(hn_items_html),
+        "</div>",
+        "<div class='section'>",
+        "<div class='label'><b>Reading:</b> HN articles render from hnmd markdown and persist as .md/.html (Phase 5 base).</div>",
         table.concat(links),
         "</div>",
-        "<p class='muted'>Refresh updates local status and weather (cache-first). Scroll position may reset on refresh. Navigation uses internal actions (Lua), not HTML taps.</p>",
+        "<p class='muted'>Refresh updates local status, weather and HN (cache-first). Scroll position may reset on refresh. Navigation uses internal actions (Lua), not HTML taps.</p>",
         "</body></html>",
     })
+end
+
+function Dashboard:open_hn_item(id)
+    if id == "test-phase3" then
+        self:open_test_article()
+        return
+    end
+    local item = self:get_hn_item(id)
+    if not item then
+        if self.article_view then
+            self.article_view:show({
+                title = "Article unavailable",
+                status = "not_found",
+                meta = { id = tostring(id or ""), status = "not_found", source = "hn" },
+            })
+        end
+        return
+    end
+
+    local meta = {
+        id = tostring(item.id or ""),
+        title = tostring(item.title or "HN article"),
+        source = "hnmd",
+        date = item.published_at or os.date("%Y-%m-%d"),
+        status = tostring(item.status or "ok"),
+        hn_url = item.hn_url,
+        url = item.url,
+        by = item.by,
+        score = item.score,
+        descendants = item.descendants,
+        domain = item.domain,
+    }
+
+    if item.status ~= "ok" or not item.has_markdown or item.markdown == "" then
+        if self.article_view then
+            self.article_view:show({
+                title = meta.title,
+                status = "no_markdown",
+                meta = meta,
+                md = (item.markdown and item.markdown ~= "") and item.markdown or nil,
+            })
+        end
+        return
+    end
+
+    local doc = nil
+    if self.paths and self.article_store then
+        self.paths:ensure_base_dirs()
+        self.paths:ensure_dir(self.paths:articles_hn_dir())
+        local saved, err = self.article_store:save({ kind = "hn", meta = meta, md = item.markdown })
+        if saved then
+            doc = {
+                kind = "hn",
+                id = meta.id,
+                title = meta.title,
+                meta = meta,
+                md = item.markdown,
+                html = saved.html,
+                html_path = saved.html_path,
+                md_path = saved.md_path,
+                status = "ok",
+            }
+        else
+            Logger.err("dashboard", "hn_article_save_failed", { id = meta.id, err = tostring(err) })
+            doc = { title = meta.title, meta = meta, md = item.markdown, status = "ok" }
+        end
+    else
+        doc = { title = meta.title, meta = meta, md = item.markdown, status = "ok" }
+    end
+
+    if self.widget then
+        UIManager:close(self.widget)
+        self.widget = nil
+    end
+    if self.article_view then
+        self.article_view:show(doc)
+    else
+        Logger.warn("dashboard", "no_article_view")
+    end
 end
 
 function Dashboard:ensure_test_article()
@@ -298,6 +505,32 @@ function Dashboard:show(opts)
     local state = self:build_state(opts)
     state.test_article_ready = self.last_test_doc ~= nil
     local html = build_html(state)
+
+    local actions = {
+        {
+            text = _("Refresh"),
+            callback = function()
+                if self.actions then self.actions:dispatch("refresh", { source = "dashboard", dashboard = self, user_initiated = true }) else self:refresh(opts) end
+            end,
+        },
+        {
+            text = _("Open test article"),
+            callback = function()
+                if self.actions then self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:test-phase3", "test-phase3")
+                else self:open_test_article() end
+            end,
+        },
+    }
+    for _, act in ipairs(self:get_hn_actions()) do
+        table.insert(actions, act)
+    end
+    table.insert(actions, {
+        text = _("Close"),
+        callback = function()
+            if self.actions then self.actions:dispatch("close", { source = "dashboard", dashboard = self }) else self:close() end
+        end,
+    })
+
     self.widget = ScrollHtmlWidget:new{
         html_body = html,
         css = "",
@@ -305,27 +538,7 @@ function Dashboard:show(opts)
         title = _("Kindle Home"),
         width = Screen:getWidth(),
         height = Screen:getHeight(),
-        actions = {
-            {
-                text = _("Refresh"),
-                callback = function()
-                    if self.actions then self.actions:dispatch("refresh", { source = "dashboard", dashboard = self, user_initiated = true }) else self:refresh(opts) end
-                end,
-            },
-            {
-                text = _("Open test article"),
-                callback = function()
-                    if self.actions then self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:test-phase3", "test-phase3")
-                    else self:open_test_article() end
-                end,
-            },
-            {
-                text = _("Close"),
-                callback = function()
-                    if self.actions then self.actions:dispatch("close", { source = "dashboard", dashboard = self }) else self:close() end
-                end,
-            },
-        },
+        actions = actions,
     }
     UIManager:show(self.widget)
     Logger.info("dashboard", "shown", { weather = state.weather and state.weather.status })

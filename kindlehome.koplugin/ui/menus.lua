@@ -111,11 +111,122 @@ function Menus:edit_weather_place(config, on_done)
     dialog:onShowKeyboard()
 end
 
+local function mask_key(key)
+    if type(key) ~= "string" or key == "" then return "(not set)" end
+    if #key <= 8 then return "********" end
+    return string.rep("*", math.min(12, #key - 4)) .. key:sub(-4)
+end
+
+function Menus:edit_hnmd_base_url(config, on_done)
+    local dialog
+    dialog = InputDialog:new{
+        title = "HN base URL (hnmd)",
+        input = config:get("hnmd_base_url") or "https://hnmd.miguehm.com",
+        input_hint = "https://hnmd.miguehm.com",
+        buttons = {
+            {
+                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
+                {
+                    text = "Save",
+                    is_enter_default = true,
+                    callback = function()
+                        local val = dialog:getInputText() or ""
+                        config:set("hnmd_base_url", val)
+                        config:flush()
+                        UIManager:close(dialog)
+                        Logger.info("menus", "hnmd_base_url_saved")
+                        show_info("HN base URL saved.")
+                        if on_done then on_done() end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function Menus:edit_hnmd_api_key(config, on_done)
+    local dialog
+    dialog = InputDialog:new{
+        title = "HN API key (Bearer)",
+        input = config:get("hnmd_api_key") or "",
+        input_hint = "Paste API key (stored locally)",
+        text_type = "password",
+        description = "Current: " .. mask_key(config:get("hnmd_api_key")),
+        buttons = {
+            {
+                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
+                {
+                    text = "Clear",
+                    callback = function()
+                        config:set("hnmd_api_key", "")
+                        config:flush()
+                        UIManager:close(dialog)
+                        Logger.info("menus", "hnmd_api_key_cleared")
+                        show_info("HN API key cleared.")
+                        if on_done then on_done() end
+                    end,
+                },
+                {
+                    text = "Save",
+                    is_enter_default = true,
+                    callback = function()
+                        local val = dialog:getInputText() or ""
+                        config:set("hnmd_api_key", val)
+                        config:flush()
+                        UIManager:close(dialog)
+                        Logger.info("menus", "hnmd_api_key_saved")
+                        show_info("HN API key saved.")
+                        if on_done then on_done() end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function Menus:edit_hnmd_max_items(config, on_done)
+    local dialog
+    dialog = InputDialog:new{
+        title = "HN max items (1-20)",
+        input = tostring(config:get("hnmd_max_items") or 10),
+        input_hint = "10",
+        input_type = "number",
+        buttons = {
+            {
+                { text = "Cancel", id = "close", callback = function() UIManager:close(dialog) end },
+                {
+                    text = "Save",
+                    is_enter_default = true,
+                    callback = function()
+                        local n = tonumber(dialog:getInputText() or "")
+                        if not n then
+                            show_info("Enter a number between 1 and 20.")
+                            return
+                        end
+                        config:set("hnmd_max_items", n)
+                        config:flush()
+                        UIManager:close(dialog)
+                        Logger.info("menus", "hnmd_max_items_saved", { value = config:get("hnmd_max_items") })
+                        show_info("HN max items saved: " .. tostring(config:get("hnmd_max_items")))
+                        if on_done then on_done() end
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
 function Menus:register(main_instance)
     local config = main_instance.config
     local menu_items = require("ui/elements/menu_items")
 
-    -- Extend Tools menu with Kindle Home settings (minimal F4 fields)
+    -- Extend Tools menu with Kindle Home settings
     menu_items.kindlehome_settings = {
         text = "Kindle Home",
         sorting_hint = "tools",
@@ -161,6 +272,46 @@ function Menus:register(main_instance)
                     config:flush()
                     local d = main_instance:getDashboard()
                     if d then d:refresh() end
+                end,
+            },
+            {
+                text = "HN enabled",
+                checked_func = function() return config:get("hnmd_enabled") and true or false end,
+                callback = function()
+                    config:set("hnmd_enabled", not config:get("hnmd_enabled"))
+                    config:flush()
+                    local d = main_instance:getDashboard()
+                    if d then d:refresh() end
+                end,
+            },
+            {
+                text = "HN: set base URL",
+                keep_menu_open = true,
+                callback = function()
+                    Menus:edit_hnmd_base_url(config, function()
+                        local d = main_instance:getDashboard()
+                        if d then d:refresh() end
+                    end)
+                end,
+            },
+            {
+                text_func = function() return "HN: set API key (" .. mask_key(config:get("hnmd_api_key")) .. ")" end,
+                keep_menu_open = true,
+                callback = function()
+                    Menus:edit_hnmd_api_key(config, function()
+                        local d = main_instance:getDashboard()
+                        if d then d:refresh() end
+                    end)
+                end,
+            },
+            {
+                text_func = function() return "HN: max items (" .. tostring(config:get("hnmd_max_items") or 10) .. ")" end,
+                keep_menu_open = true,
+                callback = function()
+                    Menus:edit_hnmd_max_items(config, function()
+                        local d = main_instance:getDashboard()
+                        if d then d:refresh() end
+                    end)
                 end,
             },
             {

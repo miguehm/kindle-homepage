@@ -131,9 +131,15 @@ function KindleHome:registerActions()
     end)
     self.actions:register("open_hn", function(ctx, _, arg)
         local d = (ctx and ctx.dashboard) or self:getDashboard()
-        -- Phase 3: stable internal route with Lua fallback (no HTML taps dependency).
-        -- Current supported item: persisted test article (id test-phase3).
-        if arg == nil or arg == "" or arg == "test-phase3" then
+        if arg == nil or arg == "" then
+            d:open_test_article()
+            return
+        end
+        if type(d.open_hn_item) == "function" then
+            d:open_hn_item(arg)
+            return
+        end
+        if arg == "test-phase3" then
             d:open_test_article()
             return
         end
