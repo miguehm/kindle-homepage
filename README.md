@@ -1,10 +1,10 @@
 # Kindle Home (KOReader plugin)
 
-Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, and (planned) weather, Hacker News via `hnmd`, and RSS/Atom.
+Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, and (planned) weather and Hacker News via `hnmd` (`https://hnmd.miguehm.com/top`).
 
 ## Status
 
-Phase 1 (offline dashboard) and Phase 2 (transversal base: config/paths/cache/http/refresh, AGENTS) implemented in code. **F1 device verification on Kindle and F2 verification ledger still pending**. UI language: English.
+Phase 1 (offline dashboard) and Phase 2 (transversal base: config/paths/cache/http/refresh, AGENTS) implemented in code. **F1 device verification on Kindle and F2 verification ledger still pending**. UI language: English. RSS/Atom support removed from scope (HN-only via `hnmd`).
 
 ## Installation (Kindle — target)
 
