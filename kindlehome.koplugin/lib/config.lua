@@ -9,6 +9,7 @@ local DEFAULTS = {
     refresh_on_open = true,
     show_battery = true,
     show_network = true,
+    open_in_reader_enabled = false,
     -- Rutas
     storage_mode = "documents", -- "documents" | "datadir"
     documents_subdir = "KindleHome",
@@ -77,7 +78,7 @@ end
 
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
-        or key == "weather_enabled" or key == "hnmd_enabled" then
+        or key == "weather_enabled" or key == "hnmd_enabled" or key == "open_in_reader_enabled" then
         return as_bool(value, default)
     elseif key == "storage_mode" then
         if value == "documents" or value == "datadir" then return value end
@@ -135,7 +136,6 @@ function Config:get(key)
     if v ~= nil then return v end
     local d = DEFAULTS[key]
     if type(d) == "table" then
-        -- return a shallow copy for mutable defaults (feeds)
         local copy = {}
         for i, item in ipairs(d) do copy[i] = item end
         return copy
@@ -170,4 +170,3 @@ function Config:get_ttl_seconds(prefix)
 end
 
 return Config
-
