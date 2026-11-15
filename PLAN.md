@@ -6,7 +6,7 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** scaffold Fase 0 y dashboard offline Fase 1 implementados en código (`kindlehome.koplugin/lib/{config,logger}.lua`, `ui/dashboard.lua`, `main.lua`); **pendiente verificación en Kindle real** (objetivo) y registro en ledger antes de avanzar a Fase 2.
+- **Estado del repo:** F0–F4 implementadas en código (scaffold, dashboard offline, base transversal, lectura/persistencia base y clima Open-Meteo+geocoding con cache-first/stale); **pendientes verificación en Kindle real/runtime KOReader y registro en ledger** para cerrar F1–F4 (gates F1/F2/F3 no cerrados).
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
 - **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
 - **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
@@ -183,28 +183,32 @@ repo/
 **Verificación:** simular timeout, HTTP error, JSON inválido y caché corrupta (archivo truncado) sin crash.
 
 ### Fase 3 — Renderer, navegación y persistencia de lectura (prerrequisito)
-**Depende de:** Fase 2
-- [ ] **3.1** `lib/render/md_to_html.lua`: conversor MD simple → HTML seguro (escape, h1–h3, p, ul/ol/li, a, strong/em, code/pre, hr) + CSS inline e-ink.
-- [ ] **3.2** `ui/article_view.lua`: overlay de lectura reutilizable desde MD/HTML generado; cabecera de metadatos y cierre a dashboard.
-- [ ] **3.3** Persistencia de artículos: guardar `.md` y `.html` con metadatos mínimos (frontmatter o bloque inicial) en rutas canónicas.
-- [ ] **3.4** `ui/actions.lua`: ruteo de acciones internas (`open_hn:<id>`, `open_digest:<date>`), con **fallback sin deep-links HTML** (lista/botones Lua) si el widget no expone taps navegables.
-- [ ] **3.5** Contrato de “abrir en lector” (opcional, desactivado por defecto): wrapper aislado a `ReaderUI:showReader` con nota de comportamiento de retorno.
-- [ ] **3.6** Plantilla base de errores/estados vacíos en lectura (“content unavailable”, “no markdown”, “corrupted file”).
+**Depende de:** Fase 2 *(gate F1 en Kindle y verificación/cierre formal F2 siguen pendientes en ledger; implementación F3 avanzada en repo sin cerrar gates previos)*
+- [x] **3.1** `lib/render/md_to_html.lua`: conversor MD simple → HTML seguro (escape, h1–h3, p, ul/ol/li, a, strong/em, code/pre, hr) + CSS inline e-ink.
+- [x] **3.2** `ui/article_view.lua`: overlay de lectura reutilizable desde MD/HTML generado; cabecera de metadatos y cierre a dashboard.
+- [x] **3.3** Persistencia de artículos: guardar `.md` y `.html` con metadatos mínimos (frontmatter o bloque inicial) en rutas canónicas.
+- [x] **3.4** `ui/actions.lua`: ruteo de acciones internas (`open_hn:<id>`, `open_digest:<date>`), con **fallback sin deep-links HTML** (lista/botones Lua) si el widget no expone taps navegables.
+- [x] **3.5** Contrato de “abrir en lector” (opcional, desactivado por defecto): wrapper aislado a `ReaderUI:showReader` con nota de comportamiento de retorno.
+- [x] **3.6** Plantilla base de errores/estados vacíos en lectura (“content unavailable”, “no markdown”, “corrupted file”).
+
+> **Nota (2026-11-15):** base F3 implementada en repo (`lib/render/md_to_html.lua`, `lib/article_store.lua`, `ui/article_view.lua`, `ui/actions.lua`, wiring en `main.lua`/`ui/dashboard.lua`, config `open_in_reader_enabled` default off). Dashboard incluye acción interna de prueba para persistir/abrir artículo (MD→HTML) y retorno por rutas Lua estables. **Verificación en runtime KOReader/Kindle y cierre formal pendientes**; gates F1/F2 previos permanecen abiertos.
 
 **Criterio de salida:** se puede renderizar y abrir un artículo de prueba persistido (MD→HTML) y volver al dashboard por ruta interna estable.  
-**Verificación:** abrir/cerrar artículos de prueba, validar escape HTML, enlaces/encabezados básicos y fallback de navegación.
+**Verificación:** abrir/cerrar artículos de prueba, validar escape HTML, enlaces/encabezados básicos y fallback de navegación. *(pendiente ejecución/registro en dispositivo o entorno KOReader auxiliar)*
 
 ### Fase 4 — Clima (Open-Meteo + geocoding)
-**Depende de:** Fases 2, 3 (para render/UI común) y 1
-- [ ] **4.1** Config UI/campos: lat/lon manual y nombre de lugar.
-- [ ] **4.2** `lib/wmo.lua`: mapa WMO → texto EN.
-- [ ] **4.3** `lib/geocoding.lua` (recomendado): búsqueda por nombre → lat/lon/place.
-- [ ] **4.4** `lib/weather.lua`: fetch forecast Open-Meteo, normalización `WeatherView`, guardado en `cache/weather.json`.
-- [ ] **4.5** Integración en dashboard: actual + min/max; stale/cache timestamp; estado “configure location”.
-- [ ] **4.6** UX sin red: prompt “turn on WiFi and refresh” (`NetworkMgr:promptWifiOn`) con callback y fallback a caché.
+**Depende de:** Fases 2, 3 (para render/UI común) y 1 *(gates F1/F2 verificación y runtime F3 siguen pendientes en ledger; implementación F4 avanzada en repo sin cerrar gates previos)*
+- [x] **4.1** Config UI/campos: lat/lon manual y nombre de lugar (mínimo F4 vía `ui/menus.lua`: búsqueda lugar, lat/lon, limpiar, toggle; config ya saneada en `lib/config.lua`).
+- [x] **4.2** `lib/wmo.lua`: mapa WMO → texto EN.
+- [x] **4.3** `lib/geocoding.lua`: búsqueda por nombre → lat/lon/place (Open-Meteo geocoding API, errores tipados vía `lib/http.lua`).
+- [x] **4.4** `lib/weather.lua`: fetch forecast Open-Meteo, normalización `WeatherView`, guardado en `cache/weather.json` vía `lib/cache.lua`/`lib/weather_state.lua` + `lib/refresh.lua`.
+- [x] **4.5** Integración en dashboard: actual + min/max; stale/cache timestamp; estado “configure location”.
+- [x] **4.6** UX sin red: prompt “turn on WiFi and refresh” (`NetworkMgr:promptWifiOn`/fallback `runWhenOnline` cuando disponible) con callback y fallback a caché; refresh cache-first con presupuesto/reentrada.
 
-**Criterio de salida:** clima funciona online, degrada correctamente offline y respeta TTL/cache.  
-**Verificación:** con/sin ubicación, con/sin red, caché vigente y expirada.
+> **Nota (2026-11-15):** base F4 implementada en repo (`lib/wmo.lua`, `lib/geocoding.lua`, `lib/weather.lua`, `lib/weather_state.lua`, `ui/menus.lua`, integración en `main.lua`/`ui/dashboard.lua`/`ui/actions.lua` refresh flow). **Verificación runtime KOReader/Kindle y cierre formal pendientes**; gates F1/F2/F3 previos permanecen abiertos.
+
+**Criterio de salida:** clima funciona online, degrada correctamente offline y respeta TTL/cache. *(implementación en repo; pendiente validación en dispositivo/entorno KOReader)*  
+**Verificación:** con/sin ubicación, con/sin red, caché vigente y expirada. *(pendiente ejecución/registro)*
 
 ### Fase 5 — Hacker News vía `hnmd`
 **Depende de:** Fases 2, 3, 4 (integración visual en dashboard)
@@ -295,6 +299,8 @@ repo/
 | Fecha | Fase/Tarea | Desviación | Motivo | Impacto | Estado | Resolución / seguimiento |
 |---|---|---|---|---|---|---|
 | 2026-11-15 | Global / R1–R5 | Retiro de soporte RSS/Atom; renumeración de fases (antigua F6 RSS eliminada, F7→F6, F8→F7, F9→F8); actualización de contratos/arquitectura/criterios y limpieza de defaults/rutas RSS en repo | Solicitud explícita: solo HN vía `https://hnmd.miguehm.com/top` | Medio (simplifica alcance; elimina código/config RSS planificado) | ✔ resuelta (plan + repo base) | R1–R5 aplicados; registrar verificación adicional en §10 según corresponda |
+| 2026-11-15 | F3 (pre-gate F1/F2) | Implementación de base Fase 3 en repo antes de cerrar verificación F1 en Kindle y verificación/cierre formal F2 | Avance solicitado de “siguiente fase pendiente” para disponer de renderer/navegación/persistencia reutilizables | Medio (riesgo de integración no validada en dispositivo/runtime) | ⏸ diferida (verificación) | Completar gates F1/F2 y ejecutar verificación F3 en KOReader (Kindle objetivo + auxiliar opcional), registrar en §10; no considerar fase cerrada hasta evidencia |
+| 2026-11-15 | F4 (pre-gate F1/F2/F3) | Implementación de base Fase 4 (clima Open-Meteo/geocoding/cache/UI) en repo antes de cerrar verificación runtime F1–F3 y ledgers | Continuación solicitada de fase pendiente para habilitar integración clima en dashboard | Medio (riesgo de regresión/integración no validada en KOReader/Kindle; dependencias de APIs externas no probadas en dispositivo) | ⏸ diferida (verificación) | Ejecutar y registrar verificación F4 (§6/§7: ubicación válida/inválida, online/offline, TTL, geocoding, stale/prompt WiFi) y cerrar gates F1–F3 en §10; revisar comportamiento de `NetworkMgr:promptWifiOn` en Kindle real |
 | YYYY-MM-DD | F0/0.x | (ej.) Se cambió ruta de cache | (motivo) | (bajo/medio/alto) | ⏸ diferida / ✔ resuelta | (acción tomada o pendiente) |
 
 ## 10) Ledger de verificación (plantilla)
@@ -304,6 +310,8 @@ repo/
 | Fecha | Fase | Entorno | Qué se verificó | Resultado | Evidencia / notas | Flakes / pendientes |
 |---|---|---|---|---|---|---|
 | 2026-11-15 | Cambio de alcance (sin RSS) | Linux dev (repo) | Búsqueda `rss/RSS/FeedItemView/open_rss/articles/rss` en repo; revisión de `config.lua`, `paths.lua`, `README.md`, `PLAN.md` tras R1–R5 | PASS | `grep` sin coincidencias en `kindlehome.koplugin/README.md/AGENTS.md`; claves/rutas RSS removidas. Sin runtime KOReader en este entorno. | Gates previos siguen pendientes: verificación F1 en Kindle real y cierre/ledger F2 (§6 F1/F2) |
+| 2026-11-15 | F3 (impl. base) | Linux dev (repo) | Sintaxis Lua (`luac -p`) de módulos nuevos/modificados F3 (`lib/render/md_to_html.lua`, `lib/article_store.lua`, `ui/actions.lua`, `ui/article_view.lua`, `ui/dashboard.lua`, `main.lua`, `lib/config.lua`); revisión de wiring y contratos (escape/sanitización básica links, atomic write, rutas internas, open_in_reader flag off) | PASS (sintaxis/wiring estático) | Sin runtime KOReader en entorno; no valida `UIManager/ScrollHtmlWidget/ReaderUI` en dispositivo. | Pendiente: verificación funcional F3 + gates F1/F2 en KOReader (Kindle objetivo) y registro de resultados |
+| 2026-11-15 | F4 (impl. base) | Linux dev (repo) | Sintaxis Lua (`luac -p`) de módulos F4/nuevos o modificados (`lib/wmo.lua`, `lib/geocoding.lua`, `lib/weather.lua`, `lib/weather_state.lua`, `ui/menus.lua`, `ui/dashboard.lua`, `main.lua`) y revisión estática de contratos (cache-first/stale vía `refresh/cache`, uso de `lib/http`, presupuesto/reentrada, mensajes UI breves, sin secretos en logs) | PASS (sintaxis/wiring estático) | Sin runtime KOReader ni red real/Kindle en entorno; no valida Open-Meteo/geocoding en dispositivo, prompts WiFi, ni render/timings en e-ink. | Pendiente: verificación funcional F4 (ubicación válida/inválida, online/offline, TTL, caché vigente/expirada, geocoding OK/fail) y gates F1–F3 en KOReader (Kindle objetivo) |
 | YYYY-MM-DD | F0 | KOReader desktop Linux / Kindle FW ... | Carga plugin, abrir/cerrar dashboard | PASS/FAIL | log, screenshot, pasos | (si aplica) |
 
 ## 11) Criterios de aceptación del MVP (definición de terminado)
