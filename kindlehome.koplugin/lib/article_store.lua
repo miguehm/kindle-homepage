@@ -54,7 +54,11 @@ end
 function ArticleStore:_base_name(kind, meta)
     if kind == "digest" then
         local date = (meta and meta.date) or os.date("%Y-%m-%d")
-        return "digest-" .. tostring(date)
+        date = tostring(date)
+        if date:match("^%d%d%d%d%-%d%d%-%d%d$") then
+            return date
+        end
+        return "digest-" .. date
     end
     local id = meta and meta.id and tostring(meta.id) or tostring(os.time())
     local title = (meta and meta.title) or ("hn-" .. id)

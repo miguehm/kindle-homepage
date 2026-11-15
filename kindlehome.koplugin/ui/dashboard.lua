@@ -11,6 +11,7 @@ local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
+local Digest = require("lib/digest")
 
 local Dashboard = {}
 
@@ -192,13 +193,21 @@ function Dashboard:build_state(opts)
     local budget = Refresh.new_budget(self.config and self.config:get("refresh_budget_s") or 20)
     local weather = self:load_weather({ allow_network = opts.allow_network, budget = budget })
     local hn = self:load_hn({ allow_network = opts.allow_network, budget = budget })
+    local ok_date, date_iso = pcall(os.date, "%Y-%m-%d")
+    local digest_latest = nil
+    if self.paths then
+        local ok_d, p = pcall(Digest.latest, self.paths)
+        if ok_d and p then digest_latest = p end
+    end
     local state = {
         date = date_str,
         time = time_str,
+        date_iso = ok_date and date_iso or nil,
         battery = get_battery_state(self.config),
         network = get_network_state(self.config),
         weather = weather,
         hn = hn,
+        digest_latest = digest_latest,
     }
     self.last_state = state
     Logger.info("dashboard", "state_built", {
@@ -208,6 +217,7 @@ function Dashboard:build_state(opts)
         weather = weather and weather.status or "nil",
         hn = hn and hn.status or "nil",
         hn_items = hn and #(hn.items or {}) or 0,
+        digest_latest = digest_latest and digest_latest.date or nil,
     })
     return state
 end
@@ -295,6 +305,12 @@ local function build_html(state)
         end
     end
 
+    local digest = state.digest_latest
+    local digest_line = "Daily digest: not generated yet."
+    if digest and digest.date then
+        digest_line = "Daily digest available: " .. escape_html(digest.date) .. ". Use action button to open."
+    end
+
     return table.concat({
         "<html><head><style>",
         "body{font-family:sans-serif;margin:24px;color:#111;background:#fff;}",
@@ -325,10 +341,16 @@ local function build_html(state)
         table.concat(hn_items_html),
         "</div>",
         "<div class='section'>",
-        "<div class='label'><b>Reading:</b> HN articles render from hnmd markdown and persist as .md/.html (Phase 5 base).</div>",
+        "<div class='label'><b>Digest</b></div>",
+        "<div class='label'>", digest_line, "</div>",
+        "<div class='muted'>Generate/open uses cached local, weather, and HN state (partial data supported).</div>",
+        "</div>",
+        "<div class='section'>",
+        "<div class='label'><b>Reading</b></div>",
+        "<div class='muted'>HN articles and digests render in overlay and persist as .md/.html. Navigation uses internal Lua actions.</div>",
         table.concat(links),
         "</div>",
-        "<p class='muted'>Refresh updates local status, weather and HN (cache-first). Scroll position may reset on refresh. Navigation uses internal actions (Lua), not HTML taps.</p>",
+        "<p class='muted'>Refresh updates local status, weather and HN (cache-first). Scroll position may reset on refresh.</p>",
         "</body></html>",
     })
 end
@@ -514,13 +536,27 @@ function Dashboard:show(opts)
             end,
         },
         {
-            text = _("Open test article"),
+            text = _("Generate/open digest"),
             callback = function()
-                if self.actions then self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:test-phase3", "test-phase3")
-                else self:open_test_article() end
+                if self.actions then self.actions:dispatch("generate_digest", { source = "dashboard", dashboard = self }) end
             end,
         },
     }
+    if state.digest_latest and state.digest_latest.date then
+        table.insert(actions, {
+            text = _("Open latest digest"),
+            callback = function()
+                if self.actions then self.actions:dispatch("open_digest", { source = "dashboard", dashboard = self }, "open_digest:latest", "latest") end
+            end,
+        })
+    end
+    table.insert(actions, {
+        text = _("Open test article"),
+        callback = function()
+            if self.actions then self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:test-phase3", "test-phase3")
+            else self:open_test_article() end
+        end,
+    })
     for _, act in ipairs(self:get_hn_actions()) do
         table.insert(actions, act)
     end
