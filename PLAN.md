@@ -180,13 +180,15 @@ repo/
 **Verificación:** en Kindle real, cambiar WiFi/energía cuando aplique, refrescar manualmente y confirmar actualización visible; desktop auxiliar opcional solo para iteración rápida. *(Implementación en repo completada; verificación en dispositivo pendiente.)*
 
 ### Fase 2 — Base transversal (config/paths/cache/http) y contratos
-**Depende de:** Fase 1
-- [ ] **2.1** `lib/paths.lua`: resolución de rutas base, creación de directorios y helpers de nombres seguros.
-- [ ] **2.2** `lib/http.lua`: GET con timeout, límite de bytes, UA, parse JSON opcional y errores tipados.
-- [ ] **2.3** `lib/cache.lua`: envelope versionado, TTL, lectura tolerante, escritura atómica, recuperación ante corrupción.
-- [ ] **2.4** Ampliar `config.lua`: validación/saneamiento de claves, defaults completos MVP, helpers para TTL/presupuestos.
-- [ ] **2.5** Política común de refresh: cache-first, stale fallback, presupuesto por ciclo y protección contra reentrada.
-- [ ] **2.6** `AGENTS.md` (borrador): invariantes (timeouts/límites obligatorios, no loguear `hnmd_api_key`, rutas canónicas, no dead code).
+**Depende de:** Fase 1 *(gate: verificación F1 en Kindle real y ledger pendientes)*
+- [x] **2.1** `lib/paths.lua`: resolución de rutas base, creación de directorios y helpers de nombres seguros.
+- [x] **2.2** `lib/http.lua`: GET con timeout, límite de bytes, UA, parse JSON opcional y errores tipados.
+- [x] **2.3** `lib/cache.lua`: envelope versionado, TTL, lectura tolerante, escritura atómica, recuperación ante corrupción.
+- [x] **2.4** Ampliar `config.lua`: validación/saneamiento de claves, defaults completos MVP, helpers para TTL/presupuestos.
+- [x] **2.5** Política común de refresh: cache-first, stale fallback, presupuesto por ciclo y protección contra reentrada (`lib/refresh.lua`).
+- [x] **2.6** `AGENTS.md` (borrador): invariantes (timeouts/límites obligatorios, no loguear `hnmd_api_key`, rutas canónicas, no dead code).
+
+> **Nota (2026-11-15):** módulos transversales implementados en repo; verificación de casos F2 y cierre formal pendientes de registrar en ledger (desktop auxiliar para simulación + Kindle cuando aplique). No avanzar a F3 sin cumplir gate de F1.
 
 **Criterio de salida:** módulos transversales reutilizables con manejo de error/corrupción definido.  
 **Verificación:** simular timeout, HTTP error, JSON inválido y caché corrupta (archivo truncado) sin crash.

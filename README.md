@@ -4,7 +4,7 @@ Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **K
 
 ## Status
 
-Phase 1 (offline dashboard) implemented in code; **device verification on Kindle pending**. UI language: English.
+Phase 1 (offline dashboard) and Phase 2 (transversal base: config/paths/cache/http/refresh, AGENTS) implemented in code. **F1 device verification on Kindle and F2 verification ledger still pending**. UI language: English.
 
 ## Installation (Kindle — target)
 
@@ -19,6 +19,7 @@ KOReader on Linux desktop may be used only for quick iteration (not a supported 
 
 ## Notes
 
-- Current build: local dashboard with date/time, battery, and network status; refresh replaces the view (scroll may reset). No network fetch yet.
-- Settings: `<KOReader settings dir>/kindlehome.lua` (created/managed via `LuaSettings`).
-- Cache/data paths and online features follow `PLAN.md`.
+- Current build: local dashboard with date/time, battery, and network status; refresh replaces the view (scroll may reset). No network fetch integrated in UI yet.
+- Transversal modules: `lib/config.lua` (defaults/validation), `lib/paths.lua` (canonical paths, atomic writes helper), `lib/cache.lua` (versioned envelope, quarantine/recovery), `lib/http.lua` (timeouts/limits/typed errors), `lib/refresh.lua` (cache-first/stale/budget/reentry guard), `lib/logger.lua`.
+- Settings: `<KOReader settings dir>/kindlehome.lua` (managed via `LuaSettings`).
+- Cache: `<DataDir>/cache/kindlehome/*.json`; content paths per `storage_mode` follow `PLAN.md`/`AGENTS.md`.
