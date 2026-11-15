@@ -97,14 +97,6 @@ function Paths:articles_hn_dir()
     return join(self:documents_root(), "articles", "hn")
 end
 
-function Paths:articles_rss_dir(feed_slug)
-    local base = join(self:documents_root(), "articles", "rss")
-    if feed_slug and feed_slug ~= "" then
-        return join(base, slugify(feed_slug, "feed"))
-    end
-    return base
-end
-
 function Paths:digest_dir()
     return join(self:documents_root(), "digest")
 end

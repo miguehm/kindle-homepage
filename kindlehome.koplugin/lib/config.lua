@@ -24,10 +24,6 @@ local DEFAULTS = {
     hnmd_api_key = "",
     hnmd_max_items = 10,
     hnmd_ttl_minutes = 30,
-    -- RSS
-    rss_enabled = true,
-    rss_ttl_minutes = 60,
-    rss_feeds = {},
     -- Red
     http_timeout_s = 10,
     http_max_bytes = 524288, -- 512 KiB
@@ -79,31 +75,9 @@ local function sanitize_coord(v, minv, maxv)
     return v
 end
 
-local function sanitize_feeds(v)
-    if type(v) ~= "table" then return {} end
-    local out = {}
-    local n = 0
-    for _, feed in ipairs(v) do
-        if type(feed) == "table" then
-            n = n + 1
-            local id = as_string(feed.id, "")
-            if id == "" then id = "feed_" .. tostring(n) end
-            table.insert(out, {
-                id = id,
-                name = as_string(feed.name, ""),
-                url = as_string(feed.url, ""),
-                enabled = as_bool(feed.enabled, true),
-                max_items = clamp_int(feed.max_items, 1, 100, 20),
-                max_age_hours = (is_number(feed.max_age_hours) and math.floor(feed.max_age_hours)) or feed.max_age_hours,
-            })
-        end
-    end
-    return out
-end
-
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
-        or key == "weather_enabled" or key == "hnmd_enabled" or key == "rss_enabled" then
+        or key == "weather_enabled" or key == "hnmd_enabled" then
         return as_bool(value, default)
     elseif key == "storage_mode" then
         if value == "documents" or value == "datadir" then return value end
@@ -123,7 +97,7 @@ local function sanitize(key, value, default)
         return sanitize_base_url(value, default)
     elseif key == "hnmd_max_items" then
         return clamp_int(value, 1, 20, default)
-    elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" or key == "rss_ttl_minutes" then
+    elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" then
         return clamp_int(value, 1, 10080, default) -- up to 7 days
     elseif key == "http_timeout_s" then
         return clamp_int(value, 1, 60, default)
@@ -131,8 +105,6 @@ local function sanitize(key, value, default)
         return clamp_int(value, 16384, 10485760, default) -- 16 KiB .. 10 MiB
     elseif key == "refresh_budget_s" then
         return clamp_int(value, 1, 120, default)
-    elseif key == "rss_feeds" then
-        return sanitize_feeds(value)
     end
     return value == nil and default or value
 end
