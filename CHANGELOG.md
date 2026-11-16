@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1] - 2026-11-16
+
+### Fixed
+- **El dashboard y el fallback de artículos no desplazaban (parpadeaban sin cambiar el contenido).** `ScrollHtmlWidget` llama `UIManager:setDirty(self.dialog, ...)` al desplazar, pero `UIManager` solo marca como *dirty* los widgets presentes en `_window_stack`. `dialog` apuntaba al propio cuerpo (anidado en el `Shell`), así que se encolaba el refresh de e-ink pero nunca se pintaba la página siguiente. `Shell:init` cablea ahora `body.dialog`, `body.show_parent` y `body.htmlbox_widget.dialog` al `Shell`, que sí es el widget mostrado. Se eliminaron las auto-asignaciones `dialog = body/widget` en `ui/dashboard.lua` y `ui/article_view.lua`.
+
+### Added
+- `Logger.info("shell", "layout", …)` con `screen_w/h`, `header`, `footer`, `body_h` y `fullscreen` (estructurado, sin secretos) para confirmar el layout en dispositivo.
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (invariante 1 reescrito: el destino de repintado debe ser el widget de nivel superior; prohibida la auto-asignación de `dialog`), `scripts/smoke_ui.sh` PASS (8 smokes; dashboard/article/shell comprueban `dialog == shell` y `show_parent == shell`).
+- Diagnóstico en Kindle PW5 / KOReader v2026.07: pantalla 1236×1648, cuerpo ≈1400 → `getPages() = 4` (paginación correcta); swipe/tap producían flash sin repintado; sin tracebacks; artículos se abren en `ReaderUI`. Tras instalar 0.3.1 el dashboard vuelve a desplazarse (validado en dispositivo, navegación por flick/tap OK).
+
 ## [0.3.0] - 2026-11-16
 
 ### Changed
