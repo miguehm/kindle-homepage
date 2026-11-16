@@ -147,15 +147,19 @@ function Paths:article_md_path(item)
     return join(self:articles_hn_dir(), id .. "-" .. slug .. ".md")
 end
 
+-- Fallback "link card" written when an article cannot be downloaded. Kept
+-- separate from the canonical .md so it never counts as a local copy.
+function Paths:article_link_path(item)
+    local md = self:article_md_path(item)
+    if not md then return nil end
+    return (md:gsub("%.md$", "-links.md"))
+end
+
 -- Derived render opened by KOReader's native reader; KOReader's own file
 -- converter uses the same "<file>.html" convention.
 function Paths:article_html_path(md_path)
     if type(md_path) ~= "string" or md_path == "" then return nil end
     return md_path .. ".html"
-end
-
-function Paths:digest_dir()
-    return join(self:documents_root(), "digest")
 end
 
 function Paths:ensure_dir(path)

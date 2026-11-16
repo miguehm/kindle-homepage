@@ -109,16 +109,6 @@ function DashboardModel.build(state, opts)
         }
     end
 
-    local digest = nil
-    if state.show_digest ~= false then
-        local latest = state.digest_latest
-        digest = {
-            title = "DIGEST",
-            available = not not (latest and latest.date),
-            date = latest and latest.date and tostring(latest.date) or nil,
-        }
-    end
-
     local hint = non_empty(state.refresh_hint)
 
     return {
@@ -127,7 +117,6 @@ function DashboardModel.build(state, opts)
         hint = hint,
         weather = weather,
         hn = hn,
-        digest = digest,
         test_article = opts.test_article_ready == true,
         footer = "Tap a headline to read it. Actions are below.",
     }

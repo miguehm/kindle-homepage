@@ -45,10 +45,8 @@ local function fixture_state()
             fetched_at = NOW - 3600,
             stale = true,
         },
-        digest_latest = { date = "2026-11-16" },
         show_weather = true,
         show_hn = true,
-        show_digest = true,
         refresh_hint = "Offline. Turn on WiFi and refresh.",
     }
 end
@@ -71,17 +69,14 @@ assert(model.hn.items[1].meta:find("by user1", 1, true), "author missing")
 assert(model.hn.items[2].meta:find("Ask HN", 1, true), "Ask HN missing")
 assert(model.hn.items[2].meta:find("unavailable", 1, true), "unavailable flag missing")
 assert(model.hn.updated == "Updated 1 h ago · cached", "HN updated missing")
-assert(model.digest.available and model.digest.date == "2026-11-16", "digest state missing")
-assert(model.digest.link == nil and model.digest.url == nil, "digest must have no link")
-assert(not model.footer:find("Open latest digest", 1, true), "digest link in footer")
+assert(model.digest == nil, "digest must be gone from the model")
 assert(model.test_article == true, "test article row missing")
 
 local hidden = fixture_state()
 hidden.show_weather = false
 hidden.show_hn = false
-hidden.show_digest = false
 local hidden_model = DashboardModel.build(hidden, { now = NOW })
-assert(hidden_model.weather == nil and hidden_model.hn == nil and hidden_model.digest == nil, "hidden sections must be absent")
+assert(hidden_model.weather == nil and hidden_model.hn == nil, "hidden sections must be absent")
 
 local empty = fixture_state()
 empty.hn.items = {}
@@ -292,16 +287,13 @@ end
 package.preload["lib/hnmd_state"] = function()
     return { load = function() return fixture_state().hn end }
 end
-package.preload["lib/digest"] = function()
-    return { latest = function() return { date = "2026-11-16" } end }
-end
 package.preload["lib/article_store"] = function()
     return { new = function() return {} end }
 end
 
 local cfg = {
     show_battery = true, show_network = true, show_weather = true,
-    show_hn = true, show_digest = true, refresh_budget_s = 20,
+    show_hn = true, refresh_budget_s = 20,
     hnmd_max_items = 10, ui_font_scale = 1.0, ui_fullscreen = true,
     ui_show_test_article = true,
 }

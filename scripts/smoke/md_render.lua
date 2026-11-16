@@ -57,5 +57,21 @@ local doc = Md.document({ title = "T", body_html = html, show_title = false })
 assert(doc:find("<!DOCTYPE html>", 1, true), "document must include doctype")
 assert(doc:find("blockquote{", 1, true), "blockquote CSS missing")
 assert(doc:find("h4{", 1, true), "h4 CSS missing")
+assert(doc:find(Md.render_marker(), 1, true), "render marker missing")
+
+local linked = Md.document({
+    title = "Linked",
+    meta = {
+        source = "hnmd",
+        hn_url = "https://news.ycombinator.com/item?id=42",
+        url = "https://example.com/story",
+    },
+    body_html = "<p>x</p>",
+})
+assert(linked:find("<div>HN: <a href=", 1, true), "HN meta link missing")
+assert(linked:find('href="https://news.ycombinator.com/item?id=42"', 1, true), "HN href missing")
+assert(linked:find("<div>Article URL: <a href=", 1, true), "source meta link missing")
+assert(linked:find('href="https://example.com/story"', 1, true), "source href missing")
+assert(linked:find("<div>Source: hnmd</div>", 1, true), "Source label must stay distinct from source URL")
 
 print("OK md render smoke: html=" .. #html .. "B doc=" .. #doc .. "B")

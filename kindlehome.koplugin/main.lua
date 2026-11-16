@@ -11,7 +11,6 @@ local Paths = require("lib/paths")
 local Refresh = require("lib/refresh")
 local Actions = require("ui/actions")
 local Menus = require("ui/menus")
-local Digest = require("lib/digest")
 local Messages = require("ui/messages")
 
 local KindleHome = WidgetContainer:extend{
@@ -112,20 +111,6 @@ function KindleHome:registerActions()
         local user_initiated = ctx and (ctx.source == "dashboard" or ctx.source == "dispatcher" or ctx.user_initiated)
         self:request_dashboard_refresh({ user_initiated = user_initiated })
     end)
-    self.actions:register("generate_digest", function(ctx)
-        local dash = (ctx and ctx.dashboard) or self:getDashboard()
-        local state = dash and (dash.last_state or dash:build_state({ allow_network = false }))
-        local doc, err = Digest.build_and_save(state or {}, self.paths)
-        if not doc then
-            UIManager:show(InfoMessage:new{ text = _("Could not save digest."), timeout = 3 })
-            Logger.err("main", "digest_generate_failed")
-            return
-        end
-        UIManager:show(InfoMessage:new{ text = _("Digest saved."), timeout = 2 })
-        if self.actions then
-            self.actions:dispatch("open_digest:" .. tostring(doc.date or "latest"), { dashboard = dash, source = "action" })
-        end
-    end)
     self.actions:register("close", function(ctx)
         local src = ctx and ctx.source
         if src == "article_view" and self.article_view then
@@ -156,46 +141,6 @@ function KindleHome:registerActions()
                 meta = { id = arg, status = "not_found", source = "hn" },
             })
         end
-    end)
-    self.actions:register("open_digest", function(ctx, _, arg)
-        local which = arg
-        if which == nil or which == "" then which = "latest" end
-        local doc, err = Digest.load(self.paths, which)
-        if not doc then
-            -- try to generate today's digest from cached dashboard state when opening latest
-            if which == "latest" then
-                local dash = (ctx and ctx.dashboard) or self:getDashboard()
-                local state = dash and (dash.last_state or dash:build_state({ allow_network = false }))
-                if state then
-                    local generated, gerr = Digest.build_and_save(state, self.paths)
-                    if generated then
-                        doc = generated
-                        err = nil
-                    else
-                        err = gerr or err
-                    end
-                end
-            end
-        end
-        if not doc then
-            if self.article_view then
-                self.article_view:show({
-                    title = "Digest unavailable",
-                    status = (err == "not_found" and "not_found") or "content_unavailable",
-                    meta = { id = tostring(which), status = tostring(err or "not_found"), source = "digest" },
-                })
-            end
-            return
-        end
-        local dash = (ctx and ctx.dashboard) or self:getDashboard()
-        local view = self:getArticleView()
-        local keep_dashboard = view and type(view.will_open_in_reader) == "function"
-            and view:will_open_in_reader(doc)
-        doc.on_fallback = function()
-            if dash then dash:_teardown() end
-        end
-        if not keep_dashboard and dash then dash:_teardown() end
-        view:show(doc)
     end)
 end
 

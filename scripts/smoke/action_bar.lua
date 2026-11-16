@@ -84,8 +84,7 @@ local bar = ActionBar:new{
     config = { get = function() return 1.0 end },
     buttons = {
         { icon = "cre.render.reload", label = "Refresh", callback = function() tapped[1] = true end },
-        { icon = "book.opened", label = "Digest", callback = function() tapped[2] = true end },
-        { icon = "exit", label = "Exit", callback = function() tapped[3] = true end },
+        { icon = "exit", label = "Exit", callback = function() tapped[2] = true end },
     },
 }
 
@@ -95,14 +94,14 @@ local buttons = {}
 for _, widget in ipairs(row) do
     if widget.onTapActionButton then table.insert(buttons, widget) end
 end
-assert(#buttons == 3, "three buttons expected, got " .. #buttons)
+assert(#buttons == 2, "two buttons expected, got " .. #buttons)
 local total = 0
 for _, button in ipairs(buttons) do
     assert(button.width > 0 and button.height > 0, "button needs positive size")
     total = total + button.width
 end
 assert(total <= 1200, "buttons must fit the screen width")
-assert(buttons[1].label == "Refresh" and buttons[3].label == "Exit", "labels wired")
+assert(buttons[1].label == "Refresh" and buttons[2].label == "Exit", "labels wired")
 buttons[2]:onTapActionButton()
 assert(tapped[2] == true and not tapped[1], "tap should invoke only its own callback")
 assert(require("ui/uimanager")._state.dirty == 1, "tap should trigger a repaint")

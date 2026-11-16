@@ -1,5 +1,9 @@
 local MdToHtml = {}
 
+-- Persisted HTML carries a marker so old derived files can be regenerated when
+-- the meta/link contract changes without touching the canonical .md.
+local RENDER_MARKER = "<!--kh-meta-v2-->"
+
 -- Relative units only: KOReader's HTML layout passes a DPI-scaled
 -- `default_font_size`, while absolute CSS px would be interpreted as device
 -- pixels (tiny on a 300 ppi PaperWhite 5). The same stylesheet is reused for
@@ -197,11 +201,19 @@ local function meta_html(meta)
         if value == "" then return end
         table.insert(parts, "<div>" .. escape_html(label) .. ": " .. escape_html(value) .. "</div>")
     end
+    local function add_link(label, href)
+        local safe = sanitize_href(href)
+        if not safe then return end
+        table.insert(parts, "<div>" .. escape_html(label) .. ': <a href="' .. safe .. '">'
+            .. escape_html(safe) .. "</a></div>")
+    end
     add("Source", meta.source)
     add("Title", meta.title)
     add("Date", meta.date)
     add("ID", meta.id)
     add("Status", meta.status)
+    add_link("HN", meta.hn_url)
+    add_link("Article URL", meta.url)
     if #parts == 0 then return "" end
     return '<div class="meta">' .. table.concat(parts, "") .. "</div>"
 end
@@ -232,6 +244,7 @@ function MdToHtml.document(opts)
     local title = escape_html(opts.title or (opts.meta and opts.meta.title) or "Kindle Home")
     return table.concat({
         "<!DOCTYPE html><html><head><meta charset='utf-8'/>",
+        RENDER_MARKER,
         "<title>", title, "</title>",
         "<style>", EINK_CSS, (opts.css or ""), "</style>",
         "</head><body>",
@@ -242,6 +255,10 @@ end
 
 function MdToHtml.css()
     return EINK_CSS
+end
+
+function MdToHtml.render_marker()
+    return RENDER_MARKER
 end
 
 function MdToHtml.escape(s)

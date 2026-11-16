@@ -166,22 +166,6 @@ local function build_hn(model, config, inner_w, callbacks)
     return card(config, inner_w, content)
 end
 
-local function build_digest(model, config, inner_w)
-    local digest = model.digest
-    if not digest then return nil end
-    local content = VerticalGroup:new{ align = "left" }
-    local content_w = math.max(1, inner_w - 2 * (Size.border.window + px(config, CARD_PAD)))
-    table.insert(content, text_line(digest.title, config, FONT.card_title, true))
-    table.insert(content, gap(config, 5))
-    if digest.available then
-        add_text(content, "Available: " .. digest.date, content_w, config, FONT.body)
-    else
-        add_text(content, "Not generated yet.", content_w, config, FONT.body)
-        add_text(content, "Use the Digest button below to create today's summary.", content_w, config, FONT.meta)
-    end
-    return card(config, inner_w, content)
-end
-
 local function build_test(model, config, inner_w, callbacks)
     if not model.test_article then return nil end
     local content = VerticalGroup:new{ align = "left" }
@@ -220,7 +204,6 @@ function DashboardBody.build(model, config, width, height, callbacks)
     end
     add_section(build_weather(model, config, inner_w))
     add_section(build_hn(model, config, inner_w, callbacks))
-    add_section(build_digest(model, config, inner_w))
     add_section(build_test(model, config, inner_w, callbacks))
     add_section(full_width(inner_w, text_box(model.footer, inner_w, config, FONT.footer)))
 

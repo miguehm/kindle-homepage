@@ -9,7 +9,6 @@ local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
-local Digest = require("lib/digest")
 local Messages = require("ui/messages")
 local Shell = require("ui/shell")
 
@@ -189,12 +188,6 @@ function Dashboard:build_state(opts)
     local weather = self:load_weather({ allow_network = opts.allow_network, budget = budget })
     local hn = self:load_hn({ allow_network = opts.allow_network, budget = budget })
     local ok_date, date_iso = pcall(os.date, "%Y-%m-%d")
-    local digest_latest = nil
-    local show_digest = (not self.config) or self.config:get("show_digest")
-    if show_digest and self.paths then
-        local ok_d, p = pcall(Digest.latest, self.paths)
-        if ok_d and p then digest_latest = p end
-    end
     local state = {
         date = date_str,
         time = time_str,
@@ -203,10 +196,8 @@ function Dashboard:build_state(opts)
         network = get_network_state(self.config),
         weather = weather,
         hn = hn,
-        digest_latest = digest_latest,
         show_weather = (not self.config) or self.config:get("show_weather"),
         show_hn = (not self.config) or self.config:get("show_hn"),
-        show_digest = show_digest and true or false,
     }
     self.last_state = state
     Logger.info("dashboard", "state_built", {
@@ -216,7 +207,6 @@ function Dashboard:build_state(opts)
         weather = weather and weather.status or "nil",
         hn = hn and hn.status or "nil",
         hn_items = hn and #(hn.items or {}) or 0,
-        digest_latest = digest_latest and digest_latest.date or nil,
     })
     return state
 end
@@ -251,6 +241,63 @@ function Dashboard:_download_article(item)
     return res
 end
 
+function Dashboard:_open_document(doc)
+    local keep_dashboard = self.article_view
+        and type(self.article_view.will_open_in_reader) == "function"
+        and self.article_view:will_open_in_reader(doc)
+    if not keep_dashboard then self:_teardown() end
+    if self.article_view then
+        self.article_view:show(doc)
+    else
+        Logger.warn("dashboard", "no_article_view")
+    end
+end
+
+function Dashboard:_open_article(meta, md_path, html_path, status)
+    local doc = {
+        kind = "hn",
+        id = meta.id,
+        title = meta.title,
+        meta = meta,
+        status = status or "ok",
+        md_path = md_path,
+        html_path = html_path,
+        on_back = function() self:show({ allow_network = false }) end,
+        on_fallback = function() self:_teardown() end,
+    }
+    if not doc.html_path then
+        local md = self.article_store:load_md(md_path)
+        doc.md = md or ""
+    end
+    self:_open_document(doc)
+end
+
+function Dashboard:_open_link_card(item, meta, reason)
+    local saved, err = self.article_store:save_link_card(item, meta, reason)
+    if not saved then
+        Logger.warn("dashboard", "hn_link_card_failed", { id = meta.id, reason = tostring(err) })
+        self:show_notice(Messages.reading("content_unavailable"))
+        return
+    end
+    local doc = {
+        kind = "hn_link",
+        id = meta.id,
+        title = meta.title,
+        meta = meta,
+        status = "link_card",
+        md_path = saved.md_path,
+        html_path = saved.html_path,
+        on_back = function() self:show({ allow_network = false }) end,
+        on_fallback = function() self:_teardown() end,
+    }
+    if not saved.html_path then
+        local md = self.article_store:load_md(saved.md_path)
+        doc.md = md or ""
+    end
+    Logger.info("dashboard", "hn_link_card_opened", { id = meta.id })
+    self:_open_document(doc)
+end
+
 function Dashboard:open_hn_item(id)
     if id == "test-phase3" then
         self:open_test_article()
@@ -272,12 +319,8 @@ function Dashboard:open_hn_item(id)
     local status = item.content_status or "ok"
 
     if status ~= "ok" and not has_local then
-        if status == "no_content" or status == "warming_up" then
-            self:show_notice(Messages.for_kind(status, Messages.reading("content_unavailable")))
-        else
-            self:show_notice(Messages.reading("content_unavailable"))
-        end
         Logger.info("dashboard", "hn_no_content", { id = meta.id, status = status })
+        self:_open_link_card(item, meta, item.content_error or status)
         return
     end
 
@@ -291,42 +334,17 @@ function Dashboard:open_hn_item(id)
     end
 
     if not res.ok then
-        local kind = res.error_kind
-        if (kind == "network" or kind == "timeout") and not res.stale then
-            kind = "offline_no_local"
-        end
-        self:show_notice(Messages.for_kind(kind, Messages.reading("content_unavailable")))
         Logger.warn("dashboard", "hn_open_failed", { id = meta.id, kind = res.error_kind })
+        if res.md_path and self.article_store:is_local(res.md_path) then
+            local html_path = self.article_store:render_derived(res.md_path, item, false)
+            self:_open_article(meta, res.md_path, html_path, "stale")
+        else
+            self:_open_link_card(item, meta, res.error or res.error_kind)
+        end
         return
     end
 
-    local doc = {
-        kind = "hn",
-        id = meta.id,
-        title = meta.title,
-        meta = meta,
-        status = "ok",
-        md_path = res.md_path,
-        html_path = res.html_path,
-        on_back = function() self:show({ allow_network = false }) end,
-        on_fallback = function() self:_teardown() end,
-    }
-    if not doc.html_path then
-        -- Render failure: hand the raw Markdown to the in-plugin viewer rather
-        -- than blocking the item entirely.
-        local md = self.article_store:load_md(res.md_path)
-        doc.md = md or ""
-    end
-
-    local keep_dashboard = self.article_view
-        and type(self.article_view.will_open_in_reader) == "function"
-        and self.article_view:will_open_in_reader(doc)
-    if not keep_dashboard then self:_teardown() end
-    if self.article_view then
-        self.article_view:show(doc)
-    else
-        Logger.warn("dashboard", "no_article_view")
-    end
+    self:_open_article(meta, res.md_path, res.html_path, "ok")
 end
 
 function Dashboard:ensure_test_article()
@@ -427,16 +445,6 @@ function Dashboard:handle_link(uri)
             self:close()
         end
         return true
-    elseif uri == "kh:digest" then
-        if self.actions then
-            self.actions:dispatch("generate_digest", { source = "dashboard", dashboard = self })
-        end
-        return true
-    elseif uri == "kh:digest:latest" then
-        if self.actions then
-            self.actions:dispatch("open_digest:latest", { source = "dashboard", dashboard = self })
-        end
-        return true
     elseif uri == "kh:test" then
         if self.actions then
             self.actions:dispatch("open_hn:test-phase3", { source = "dashboard", dashboard = self })
@@ -479,13 +487,6 @@ function Dashboard:actions_for_state(state)
             callback = function() self:handle_link("kh:refresh") end,
         },
     }
-    if state.show_digest ~= false then
-        table.insert(specs, {
-            icon = "book.opened",
-            label = "Digest",
-            callback = function() self:handle_link("kh:digest") end,
-        })
-    end
     table.insert(specs, {
         icon = "exit",
         label = "Exit",

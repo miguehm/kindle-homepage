@@ -46,21 +46,10 @@ function ArticleStore:new(paths)
 end
 
 function ArticleStore:_dir_for(kind)
-    if kind == "digest" then
-        return self.paths:digest_dir()
-    end
     return self.paths:articles_hn_dir()
 end
 
 function ArticleStore:_base_name(kind, meta)
-    if kind == "digest" then
-        local date = (meta and meta.date) or os.date("%Y-%m-%d")
-        date = tostring(date)
-        if date:match("^%d%d%d%d%-%d%d%-%d%d$") then
-            return date
-        end
-        return "digest-" .. date
-    end
     local id = meta and meta.id and tostring(meta.id) or tostring(os.time())
     local title = (meta and meta.title) or ("hn-" .. id)
     return self.paths:safe_filename(title, nil, "hn-" .. id)
@@ -84,6 +73,8 @@ function ArticleStore:save(opts)
     local md_body = tostring(opts.md or "")
     local paths = self:paths_for(kind, meta)
     ensure_dir(self.paths, paths.dir)
+    local md_target = opts.md_path or paths.md
+    local html_target = opts.html_path or paths.html
 
     local md_content = build_frontmatter(meta) .. md_body
     local body_html = opts.body_html or MdToHtml.render(md_body)
@@ -95,24 +86,105 @@ function ArticleStore:save(opts)
         show_title = not md_has_heading,
     })
 
-    local ok1, err1 = self.paths:atomic_write(paths.md, md_content)
+    local ok1, err1 = self.paths:atomic_write(md_target, md_content)
     if not ok1 then
-        Logger.err("article_store", "save_md_failed", { path = paths.md, reason = err1 })
+        Logger.err("article_store", "save_md_failed", { path = md_target, reason = err1 })
         return nil, err1
     end
-    local ok2, err2 = self.paths:atomic_write(paths.html, html_content)
+    local ok2, err2 = self.paths:atomic_write(html_target, html_content)
     if not ok2 then
-        Logger.err("article_store", "save_html_failed", { path = paths.html, reason = err2 })
-        return { md_path = paths.md, html_path = nil, meta = meta, body_html = body_html }, err2
+        Logger.err("article_store", "save_html_failed", { path = html_target, reason = err2 })
+        return { md_path = md_target, html_path = nil, meta = meta, body_html = body_html }, err2
     end
-    Logger.info("article_store", "saved", { kind = kind, md = paths.md })
+    Logger.info("article_store", "saved", { kind = kind, md = md_target })
     return {
-        md_path = paths.md,
-        html_path = paths.html,
+        md_path = md_target,
+        html_path = html_target,
         meta = meta,
         body_html = body_html,
         html = html_content,
     }
+end
+
+local function safe_article_href(url)
+    if type(url) ~= "string" then return nil end
+    url = url:match("^%s*(.-)%s*$") or ""
+    if url == "" or not url:lower():match("^https?://") then return nil end
+    return MdToHtml.escape(url)
+end
+
+function ArticleStore:save_link_card(item, meta, reason)
+    item = item or {}
+    meta = meta or {}
+    local md_path = self.paths and type(self.paths.article_link_path) == "function"
+        and self.paths:article_link_path(item) or nil
+    if not md_path then return nil, "invalid_item" end
+    local html_path = self.paths:article_html_path(md_path)
+    local id = tostring(meta.id or item.id or "")
+    local title = tostring(meta.title or item.title or "HN article")
+    local hn_url = meta.hn_url
+    if not hn_url or hn_url == "" then
+        hn_url = "https://news.ycombinator.com/item?id=" .. id
+    end
+    local source_url = meta.url
+
+    local body = {
+        "<p>This article could not be downloaded. Copy one of these links and open it manually.</p>",
+        "<ul>",
+    }
+    local function link_line(label, url)
+        local safe = safe_article_href(url)
+        if safe then
+            table.insert(body, "<li>" .. label .. ': <a href="' .. safe .. '">'
+                .. MdToHtml.escape(url) .. "</a></li>")
+        else
+            table.insert(body, "<li>" .. label .. ": " .. MdToHtml.escape(url or "") .. "</li>")
+        end
+    end
+    link_line("HN discussion", hn_url)
+    if source_url and source_url ~= "" then
+        link_line("Source", source_url)
+    else
+        table.insert(body, "<li>Source: Ask HN (no source URL)</li>")
+    end
+    if reason and reason ~= "" then
+        table.insert(body, "<li>Reason: " .. MdToHtml.escape(tostring(reason)) .. "</li>")
+    end
+    table.insert(body, "</ul>")
+
+    local md_lines = {
+        "# " .. title,
+        "",
+        "This article could not be downloaded. Copy one of these links and open it manually.",
+        "",
+        "- HN discussion: " .. tostring(hn_url),
+    }
+    if source_url and source_url ~= "" then
+        table.insert(md_lines, "- Source: " .. tostring(source_url))
+    else
+        table.insert(md_lines, "- Source: Ask HN (no source URL)")
+    end
+    if reason and reason ~= "" then
+        table.insert(md_lines, "- Reason: " .. tostring(reason))
+    end
+
+    local card_meta = {
+        id = id,
+        title = title,
+        source = "kindlehome:hn-link",
+        date = meta.date,
+        status = "link_card",
+        hn_url = hn_url,
+        url = source_url,
+    }
+    return self:save({
+        kind = "hn",
+        meta = card_meta,
+        md = table.concat(md_lines, "\n") .. "\n",
+        body_html = table.concat(body, "\n"),
+        md_path = md_path,
+        html_path = html_path,
+    })
 end
 
 local function file_non_empty(path)
@@ -130,6 +202,14 @@ local function mtime(path)
         return tonumber(attr.modification) or 0
     end
     return 0
+end
+
+local function has_render_marker(path)
+    local f = io.open(path, "rb")
+    if not f then return false end
+    local head = f:read(512)
+    f:close()
+    return head ~= nil and head:find(MdToHtml.render_marker(), 1, true) ~= nil
 end
 
 -- Old generated .md files carry our YAML frontmatter; downloaded ones are raw
@@ -158,7 +238,8 @@ function ArticleStore:render_derived(md_path, meta, force)
     if not html_path then
         return nil, "missing_path"
     end
-    if not force and file_non_empty(html_path) and mtime(html_path) >= mtime(md_path) then
+    if not force and file_non_empty(html_path) and mtime(html_path) >= mtime(md_path)
+            and has_render_marker(html_path) then
         return html_path
     end
 
