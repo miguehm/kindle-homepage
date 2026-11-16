@@ -18,6 +18,7 @@ local DEFAULTS = {
     -- Rutas
     storage_mode = "documents", -- "documents" | "datadir"
     documents_subdir = "KindleHome",
+    custom_content_dir = "", -- absolute custom content root; empty = use storage_mode/subdir
     -- Clima
     weather_enabled = true,
     weather_lat = nil,
@@ -106,6 +107,24 @@ local function sanitize_coord(v, minv, maxv)
     return v
 end
 
+-- Only absolute, normalized paths are accepted; ".." and KOReader's own
+-- install directory are rejected so a typo cannot write outside user storage.
+-- An empty value disables the override and restores the legacy path settings.
+local function sanitize_custom_dir(v, default)
+    if type(v) ~= "string" then return default end
+    local s = v:match("^%s*(.-)%s*$") or ""
+    if s == "" then return "" end
+    if s:sub(1, 1) ~= "/" or s:find("[%z%c]") then return default end
+    for segment in s:gmatch("[^/]+") do
+        if segment == ".." or segment == "." then return default end
+    end
+    s = s:gsub("/+", "/")
+    if s ~= "/" then s = s:gsub("/+$", "") end
+    if #s > 255 then return default end
+    if s == "/mnt/us/koreader" or s:match("^/mnt/us/koreader/") then return default end
+    return s
+end
+
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
         or key == "show_weather" or key == "show_hn"
@@ -121,8 +140,10 @@ local function sanitize(key, value, default)
     elseif key == "documents_subdir" then
         local s = as_string(value, default)
         s = s:gsub("[/\\]", ""):match("^%s*(.-)%s*$") or default
-        if s == "" then s = default end
+        if s == "" or s == ".." or s == "." then s = default end
         return s
+    elseif key == "custom_content_dir" then
+        return sanitize_custom_dir(value, default)
     elseif key == "weather_lat" then
         return sanitize_coord(value, -90, 90)
     elseif key == "weather_lon" then
@@ -200,6 +221,14 @@ function Config:set(key, value)
     self.values[key] = sanitized
     self.settings:saveSetting(key, sanitized)
     return true
+end
+
+-- Single source of truth for the menu: rejects input that the sanitizer would
+-- silently fall back to the default, so the user gets an actionable message.
+function Config:validate_custom_dir(value)
+    local trimmed = type(value) == "string" and value:match("^%s*(.-)%s*$") or ""
+    if trimmed == "" then return true end
+    return sanitize_custom_dir(value, "") ~= ""
 end
 
 function Config:flush()

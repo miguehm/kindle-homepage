@@ -122,6 +122,10 @@ local function documents_dir()
 end
 
 function Paths:documents_root()
+    local custom = self.config and self.config:get("custom_content_dir") or ""
+    if type(custom) == "string" and custom ~= "" and custom:sub(1, 1) == "/" then
+        return custom
+    end
     local mode = self.config and self.config:get("storage_mode") or "documents"
     if mode == "datadir" then
         return join(self:data_dir(), "news", "kindlehome")
