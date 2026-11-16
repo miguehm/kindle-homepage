@@ -2,6 +2,7 @@
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 
 local captured, captured_shell, shell_instance, shown = nil, nil, nil, 0
+local READER_THROW = false
 
 package.preload["device"] = function()
     return {
@@ -45,7 +46,11 @@ package.preload["ui/shell"] = function()
     return M
 end
 package.preload["apps/reader/readerui"] = function()
-    return { showReader = function() end }
+    return {
+        showReader = function()
+            if READER_THROW then error("reader failed") end
+        end,
+    }
 end
 package.preload["lib/logger"] = function()
     return {
@@ -118,4 +123,27 @@ captured_shell = nil
 forced:show({ html_path = "/tmp/article.md.html", meta = { title = "Forced" } })
 assert(captured_shell, "ui_force_article_fallback must bypass ReaderUI")
 
-print("OK article_view smoke: pager body=" .. #w.body .. "B forced fallback OK")
+local fallback_called = false
+local reader_view = ArticleView:new{ config = config, actions = actions }
+assert(reader_view:will_open_in_reader({ html_path = "/tmp/a.html" }) == true)
+assert(reader_view:will_open_in_reader({}) == false)
+captured_shell = nil
+reader_view:show({
+    html_path = "/tmp/a.html",
+    meta = { title = "Reader" },
+    on_fallback = function() fallback_called = true end,
+})
+assert(captured_shell == nil, "ReaderUI path must not show the fallback shell")
+assert(fallback_called == false, "successful ReaderUI must not call on_fallback")
+
+READER_THROW = true
+captured_shell = nil
+reader_view:show({
+    html_path = "/tmp/b.html",
+    meta = { title = "Reader" },
+    on_fallback = function() fallback_called = true end,
+})
+assert(fallback_called == true, "failed ReaderUI must call on_fallback")
+assert(captured_shell, "failed ReaderUI must show the fallback shell")
+
+print("OK article_view smoke: pager body=" .. #w.body .. "B reader return OK")

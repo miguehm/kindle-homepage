@@ -319,11 +319,23 @@ local actions = {
 }
 
 local Dashboard = dofile(PLUGIN .. "ui/dashboard.lua")
+local last_shown_doc
+local article_view_stub = {
+    will_open_in_reader = function(_, doc) return not not doc.html_path end,
+    show = function(_, doc) last_shown_doc = doc end,
+}
 local d = Dashboard:new{
     config = cfg_instance,
     paths = setmetatable({}, { __index = function() return function() return nil end end }),
     actions = actions,
-    article_view = setmetatable({}, { __index = function() return function() return nil end end }),
+    article_view = article_view_stub,
+}
+d.article_store = {
+    is_local = function() return true end,
+    render_derived = function()
+        return { ok = true, md_path = "/tmp/a.md", html_path = "/tmp/a.md.html" }
+    end,
+    load_md = function() return "md" end,
 }
 
 d.last_test_doc = { md_path = "test.md" }
@@ -354,6 +366,13 @@ for _, entry in ipairs(dispatched) do
     if entry.id:match("^open_hn:") then hn_dispatched = hn_dispatched + 1 end
 end
 assert(hn_dispatched == 11, "HN and test rows must dispatch open_hn:<id>")
+
+d:open_hn_item("1001")
+assert(last_shown_doc and last_shown_doc.html_path, "HN doc should carry html_path")
+assert(d.widget == shell_instance, "dashboard must stay under ReaderUI")
+article_view_stub.will_open_in_reader = function() return false end
+d:open_hn_item("1002")
+assert(d.widget == nil, "fallback must close the dashboard shell")
 
 local refresh_action
 for _, spec in ipairs(captured_shell.actions or {}) do
