@@ -2,11 +2,12 @@ local Device = require("device")
 local UIManager = require("ui/uimanager")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local ReaderUI = require("apps/reader/readerui")
-local Screen = Device.screen
 
+local Theme = require("lib/render/theme")
 local MdToHtml = require("lib/render/md_to_html")
 local Logger = require("lib/logger")
 local Messages = require("ui/messages")
+local Shell = require("ui/shell")
 
 local ArticleView = {}
 
@@ -73,11 +74,8 @@ end
 function ArticleView:handle_link(uri)
     uri = tostring(uri or "")
     if uri == "kh:back" then
-        local doc = self.current or {}
-        if type(doc.on_back) == "function" then
-            doc.on_back()
-            return true
-        end
+        self:_back()
+        return true
     elseif uri == "kh:dashboard" then
         if self.actions then
             self.actions:dispatch("close", { source = "article_view", view = self })
@@ -97,48 +95,95 @@ function ArticleView:handle_link(uri)
     return false
 end
 
+local function build_actions(doc, view)
+    local specs = {}
+    if type(doc.on_back) == "function" then
+        table.insert(specs, {
+            icon = "chevron.left",
+            label = "Back",
+            callback = function() doc.on_back() end,
+        })
+    end
+    if view.config and view.config:get("open_in_reader_enabled") and can_open_in_reader() and doc.html_path then
+        table.insert(specs, {
+            icon = "book.opened",
+            label = "Reader",
+            callback = function() view:openInReader(doc.html_path) end,
+        })
+    end
+    table.insert(specs, {
+        icon = "exit",
+        label = "Close",
+        callback = function() view:close() end,
+    })
+    return specs
+end
+
 function ArticleView:show(doc)
     doc = doc or {}
     local body = self:_resolve_body(doc)
     self.current = doc
+    self:_teardown()
 
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    local css = MdToHtml.css()
+    local font_size = Theme.font_size(self.config, Theme.ARTICLE_BASE)
+    local title = doc.title or (doc.meta and doc.meta.title) or "Article"
 
-    -- Navigation as links: ScrollHtmlWidget has no buttons, but link taps go
-    -- through html_link_tapped_callback (kh:* scheme).
-    local nav = { "<div class='nav'><b>Navigation</b>" }
-    if type(doc.on_back) == "function" then
-        table.insert(nav, "<div class='navitem'><a href='kh:back'>Back</a></div>")
-    end
-    if self.actions then
-        table.insert(nav, "<div class='navitem'><a href='kh:dashboard'>Dashboard</a></div>")
-    end
-    if self.config and self.config:get("open_in_reader_enabled") and can_open_in_reader() and doc.html_path then
-        table.insert(nav, "<div class='navitem'><a href='kh:reader'>Open in reader</a></div>")
-    end
-    table.insert(nav, "<div class='navitem'><a href='kh:close'>Close</a></div>")
-    table.insert(nav, "</div>")
-
-    local widget = ScrollHtmlWidget:new{
-        html_body = body .. table.concat(nav),
-        css = MdToHtml.css() .. ".nav{margin:24px 0 0 0;padding-top:12px;border-top:2px solid #333;font-size:17px;}"
-            .. ".navitem{font-size:19px;margin:12px 0;}",
-        default_font_size = Screen:scaleBySize(20),
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
-        html_link_tapped_callback = function(link)
-            self:handle_link(link and link.uri)
+    local shell = Shell:new{
+        title = title,
+        config = self.config,
+        actions = build_actions(doc, self),
+        on_back = function() self:_back() end,
+        on_layout_change = function() self:show(doc) end,
+        on_close = function() self:_closed_by_user() end,
+        body_factory = function(width, height)
+            local widget = ScrollHtmlWidget:new{
+                html_body = body,
+                css = css,
+                default_font_size = font_size,
+                width = width,
+                height = height,
+                html_link_tapped_callback = function(link)
+                    self:handle_link(link and link.uri)
+                end,
+            }
+            -- Required: ScrollHtmlWidget scroll handlers touch self.dialog.movable.
+            widget.dialog = widget
+            return widget
         end,
     }
-    -- Required: ScrollHtmlWidget scroll handlers touch self.dialog.movable and
-    -- pass dialog to UIManager:setDirty (nil raises "attempt to index 'dialog'").
-    widget.dialog = widget
-    self.widget = widget
-    UIManager:show(widget)
-    Logger.info("article_view", "shown", { title = doc.title or (doc.meta and doc.meta.title) })
+    self.widget = shell
+    shell:show()
+    Logger.info("article_view", "shown", { title = title })
+end
+
+function ArticleView:_back()
+    local doc = self.current or {}
+    self:_teardown()
+    if type(doc.on_back) == "function" then
+        doc.on_back()
+        return
+    end
+    if self.on_close then
+        pcall(self.on_close)
+    end
+end
+
+function ArticleView:_closed_by_user()
+    self.widget = nil
+    if self.on_close then
+        pcall(self.on_close)
+    end
+end
+
+function ArticleView:_teardown()
+    local widget = self.widget
+    if not widget then return end
+    self.widget = nil
+    widget._closing = true
+    widget.on_close = nil
+    widget.on_back = nil
+    pcall(function() UIManager:close(widget) end)
 end
 
 function ArticleView:openInReader(path)
@@ -159,10 +204,7 @@ function ArticleView:openInReader(path)
 end
 
 function ArticleView:close()
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    self:_teardown()
     if self.on_close then
         pcall(self.on_close)
     end

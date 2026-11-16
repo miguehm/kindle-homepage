@@ -2,12 +2,12 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 0.1.2 (MVP)
+- **Version:** 0.2.0
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/top` by default). RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
 
-Phases 0–7 are implemented in repo (dashboard/offline state, transversal base, reading/persistence, weather, HN/hnmd, digest, settings/Dispatcher/refresh policy/messages/limits). Phase 8 repo prep (8.1–8.5: static checks, docs, version bump, release zip) is done; **0.1.1 fixed the Lua 5.3 syntax crash (`lib/paths.lua`) and the never-registered settings submenu, and 0.1.2 fixed the device crash on first swipe/tap (`ScrollHtmlWidget` without `dialog`)** plus real action links, no blocking refresh on open, and content stored in the Kindle library. **F1–F8 runtime verification and ledger closure on Kindle (KOReader) are still pending device execution** — see `PLAN.md` §7, §9, §10.
+Phases 0–8 are implemented in repo, plus **F9 UI redesign**: relative `em` typography sized to Kindle PaperWhite 5 (base 26 dp, S/M/L/XL via `ui_font_scale`), native title bar + action bar shell with `covers_fullscreen` and full refresh at open/close, always-visible exit paths (TitleBar icon, Exit button, Back key, swipe-down on header), one Hacker News list with full titles, weather/digest cards, and an Interface menu. Device runtime verification (legibility, targets, rotation, ghosting) on Kindle PW5 is still pending — see `PLAN.md` §7, §9, §10.
 
 ## Installation (Kindle — target)
 
@@ -17,7 +17,7 @@ Phases 0–7 are implemented in repo (dashboard/offline state, transversal base,
 3. Open **Tools → Kindle Home** (with the default `sorting_hint`) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v0.1.2.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v0.2.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 
@@ -58,7 +58,7 @@ Behavior: cache-first with stale fallback. `401` is actionable and never auto-re
 - **Actions:** tap the links at the bottom of the dashboard (`Refresh`, `Generate digest`, `Open latest digest`, `Open test article`, `HN <rank>: <title>`, `Close`). KOReader's `ScrollHtmlWidget` has no buttons; links are routed through `html_link_tapped_callback`.
 - **Refresh:** manual by default (`refresh_on_open = false` in this MVP). When enabled it paints cached state first and refreshes right after, cache-first and conditioned by connectivity/TTL/budget; brief progress/status messages, no stack traces.
 - **Dispatcher:** `kindlehome_show_dashboard` (safe/idempotent) for gestures/Profiles.
-- **Reading:** overlay view from persisted/rendered content; internal Lua actions for open/return. “Open in reader” is behind `open_in_reader_enabled` (default off, manual config) and isolated.
+- **Reading:** overlay view from persisted/rendered content with native title bar and action bar (Back chevron, optional Reader, Close); internal Lua actions for open/return. “Open in reader” is behind `open_in_reader_enabled` (default off, manual config) and isolated.
 - **Digest:** generate/open latest or by date from cached dashboard state (partial data supported).
 
 ## Security and privacy
@@ -77,7 +77,7 @@ Behavior: cache-first with stale fallback. `401` is actionable and never auto-re
 - **Plugin not visible:** ensure the folder is `kindlehome.koplugin` directly under `/mnt/us/koreader/plugins/` (not nested) and **restart KOReader**. Then check `crash.log` for `WARN Error when loading plugins/kindlehome.koplugin/main.lua`:
   - `unexpected symbol near '~'` (or `//`, `goto`) ⇒ Lua 5.1 incompatibility; run `./scripts/check_lua51.sh` in the repo and reinstall.
   - Any load error means `init()` never ran: no `cache/kindlehome`, no menu entry, nothing in **Plugin management → User plugins**. Fix the error and reinstall rather than only restarting.
-- **Entry exists but dashboard/settings missing:** verify the plugin version is 0.1.2+.
+- **Entry exists but dashboard/settings missing:** verify the plugin version is 0.2.0+.
 - **KOReader closes right after opening the dashboard:** fixed in 0.1.2 (`ScrollHtmlWidget` without `dialog` → `attempt to index field 'dialog'` on swipe/tap). Update the plugin; if it reappears, run `./scripts/check_invariants.sh`.
 - **Performance on e-ink:** reduce `hnmd_max_items`, increase TTLs, or adjust `refresh_budget_s`/timeouts within sane limits.
 

@@ -6,7 +6,7 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** F0–F7 implementadas en código; **F8 (8.1–8.5) preparada en repo** (`luac -p` OK, auditoría estática de secretos/logging, docs/`CHANGELOG.md`, bump `_meta.lua` v0.1.0, zip `kindlehome.koplugin-v0.1.0.zip`). **Pendiente ejecución/registro de verificación en Kindle real/runtime KOReader** (matriz F1–F8, performance, smoke desde zip) para cierre formal de gates y MVP. **8.6 diferido (post-MVP)**.
+- **Estado del repo:** F0–F7 implementadas; **F8 (8.1–8.5) preparada** y **F9 (rediseño UI/fullscreen) implementada en repo** (`check_lua51`, `check_invariants`, `smoke_ui` PASS; docs/`CHANGELOG.md`; `_meta.lua` v0.2.0; zip `kindlehome.koplugin-v0.2.0.zip`). **Pendiente verificación en Kindle real** (matriz F1–F9, legibilidad/targets, fullscreen/rotación, performance, smoke desde zip) para cierre formal. **8.6 diferido (post-MVP)**.
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
 - **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
 - **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
@@ -273,6 +273,24 @@ repo/
 **Criterio de salida:** MVP instalable, documentado y validado en dispositivo objetivo con fallos comunes controlados. *(repo preparado; validación Kindle pendiente)*  
 **Verificación:** ejecución completa de matriz de pruebas y registro en ledger. *(pendiente en dispositivo)
 
+### Fase 9 — Rediseño de UI para e-ink (PaperWhite 5), pantalla completa y salida clara
+**Depende de:** Fase 8 (base estable 0.1.2)
+
+- [x] **9.0** Tokens de UI y configuración: `lib/render/theme.lua` (`ui_font_scale` 0.85–1.6, tamaños nativos, CSS dashboard em-only) y nuevos defaults saneados en `lib/config.lua` (`ui_font_scale=1.0`, `ui_fullscreen=true`, `ui_show_test_article=false`).
+- [x] **9.1** CSS relativo (em) en `lib/render/md_to_html.lua` y dashboard: el tamaño real lo gobierna `default_font_size = Screen:scaleBySize(26 * ui_scale)`; se eliminan `font-size:<n>px` (causa raíz de texto ilegible en 300 ppi).
+- [x] **9.2** Dashboard HTML (`lib/render/dashboard_html.lua`): reloj/fecha como hero, una sola lista HN (sin duplicado “Actions”), títulos completos, metadatos, tiempos relativos, tarjetas con borde (sin grises que ghostean) y enlaces `kh:*` solo para leer.
+- [x] **9.3** Shell nativo (`ui/shell.lua`) + barra de acciones (`ui/widget/action_bar.lua`): `covers_fullscreen`, refresco `full` al abrir/cerrar, TitleBar con icono de salida siempre visible, botones icono+etiqueta (target ≈ 58 dp), Back key y swipe-down en cabecera.
+- [x] **9.4** Lector de artículo/digest sobre el mismo shell: cabecera con Back, pie con Reader (si está habilitado)/Close, sin navegación al final del HTML; retorno predecible al dashboard.
+- [x] **9.5** Menú **Interface** (tamaño de texto S/M/L/XL, fullscreen, enlace de artículo de prueba) con refresco del dashboard abierto.
+- [x] **9.6** Gates/smoke: `scripts/smoke/shell.lua` y `scripts/smoke/action_bar.lua` añadidos a `scripts/smoke_ui.sh`; dashboard/article smoke actualizados a shell + acciones nativas y validación de `covers_fullscreen`, alturas y callbacks.
+- [x] **9.7** Docs/versionado: `README.md`, `CHANGELOG.md`, `_meta.lua` v0.2.0 y zip `kindlehome.koplugin-v0.2.0.zip`.
+- [ ] **9.8** Verificación en Kindle PW5: capturas baseline (retrato/apaisado), legibilidad a distancia, targets, salida por icono/Back/swipe, fullscreen sin ghosting, rotación y refresco; registrar PASS/FAIL en §10.
+
+> **Nota (2026-11-15):** F9 implementada en repo con arquitectura híbrida (nativo + HTML). Decisiones: pantalla completa con `covers_fullscreen` y refresco completo al abrir/cerrar; salida redundante (icono, botón Exit, Back, swipe-down en cabecera); UI en inglés; iconos MDLight (sin unicode en HTML, por sustitución de fuentes poco fiable en MuPDF). El CSS usa solo unidades relativas para tipografía. **Validación visual/ergonómica en dispositivo pendiente (9.8).**
+
+**Criterio de salida:** dashboard legible y operable en PW5 en retrato/apaisado, con salida siempre visible y sin artefactos e-ink. *(implementación en repo; pendiente verificación 9.8)*  
+**Verificación:** matriz F9 en Kindle + `check_lua51.sh`, `check_invariants.sh`, `smoke_ui.sh`. *(estático PASS; dispositivo pendiente)*
+
 ## 7) Matriz de verificación mínima (por fase)
 
 > **Referencia:** la validación objetivo es **Kindle real** (e-ink/KOReader). Pruebas en desktop/PC son auxiliares y no sustituyen la verificación en Kindle.
@@ -284,6 +302,7 @@ repo/
 - **F5 (hnmd):** 200, 401, 503 `warming_up`, red caída, item sin markdown/error, Ask HN `url=null`.
 - **F6–F7 (integración):** digest parcial/completo, refresh al abrir, gestos/profiles, reentrada.
 - **F8 (dispositivo):** smoke + regresión en **Kindle real** y tiempos aceptables (obligatorio para cierre MVP).
+- **F9 (UI/e-ink):** legibilidad y targets en PW5 (retrato/apaisado), fullscreen/refresco sin ghosting, salida por icono/Back/swipe, tamaño S–XL y rotación sin pérdida de estado.
 
 ## 8) Riesgos, mitigaciones y decisiones abiertas
 
@@ -337,6 +356,8 @@ repo/
 | 2026-11-15 | F8/8.1 (carga en Kindle) | Kindle PaperWhite 5 — KOReader v2026.03 (LuaJIT) | Carga inicial del plugin instalado en `/mnt/us/koreader/plugins/kindlehome.koplugin/` (copia verificada byte a byte; estructura plana `main.lua`/`_meta.lua`/`lib`/`ui`) y lectura de `crash.log` | **FAIL** (v0.1.0) | `11/15/26-16:36:23 WARN Error when loading plugins/kindlehome.koplugin/main.lua error loading module 'lib/paths' … paths.lua:55: unexpected symbol near '~'`; `/mnt/us/koreader/cache/kindlehome` inexistente; sin entrada en Tools ni en Plugin management → User plugins (evidencia de que `init()` no corrió) | Corregido en repo (0.1.1); pendiente reinstalar y repetir carga |
 | 2026-11-15 | F8/8.5 (gate Lua 5.1) | Linux dev (repo) | `luac5.1 -p` sobre los 22 `.lua` del plugin (reproduce el fallo del dispositivo en `lib/paths.lua:55`), ejecución de `scripts/check_lua51.sh` tras el fix y prueba negativa con archivo sintético (`a ~ b`) para validar exit≠0 | PASS (tras fix) | Antes: `luac5.1: lib/paths.lua:55: unexpected symbol near '~'`. Después: `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)`. Prueba negativa: `FAIL: …/bitwise_bad.lua` + `'<eof>' expected near '~'`, exit=1. Nota: el `luajit` 2.1 de este host acepta `~` (build no representativo) y el `luac` del sistema es 5.5; ninguno sirve como gate | Confirmación en Kindle de carga sin `WARN` (pendiente). Hash verificado determinista entre Lua 5.1 y 5.5 con multiplicador `65599` (con `16777619` el producto supera 2^53 y divergía en dobles) |
 | 2026-11-15 | F8/8.1 (interacción dashboard) | Kindle PaperWhite 5 — KOReader v2026.07, LuaJIT 2.1.1783773675 | Abrir dashboard (menú Tools y estado cacheado), swipe/tap, abrir artículo; revisión de `crash.log` | **FAIL** (v0.1.1) | `crash.log` líneas 6001/6153/6284: `./luajit: frontend/ui/widget/scrollhtmlwidget.lua:182: attempt to index field 'dialog' (a nil value)` justo tras `[KindleHome] module=dashboard event=shown`; memoria 474 MB total / 15 MB libres / swap 127/127; HN 200 con 10 items tras guardar API key; `weather=configure_location` | Corregido en repo 0.1.2; **pendiente re-test en dispositivo** (swipe/tap 4 direcciones, barra, artículo, digest) |
+| 2026-11-15 | F9 (UI/e-ink) | Linux dev (repo) | Rediseño completo: tokens `theme.lua`, CSS em-only, dashboard HTML sin duplicados, shell fullscreen con TitleBar/ActionBar, lector en shell, menú Interface; gates `check_lua51.sh`, `check_invariants.sh`, `smoke_ui.sh` (dashboard, article_view, shell, action_bar) | PASS (repo/estático) | `smoke_ui.sh`: dashboard body 929 B/css 1083 B, article 110 B, shell 1200×1420, action bar 3 botones; `covers_fullscreen`, alturas y callbacks verificados en stubs | Pendiente 9.8 en Kindle PW5: capturas retrato/apaisado, legibilidad, targets, salida, ghosting, rotación; ajustar `ui_font_scale`/alturas con evidencia |
+| 2026-11-15 | F9.1 (causa raíz) | Kindle PW5 — KOReader v2026.07 | Diagnóstico de texto ilegible: `font-size` absolutos en px (`dashboard.lua:237-244`, `md_to_html.lua:5-16`, `article_view.lua:127-128`) anulaban el `default_font_size` escalado por DPI (`Screen:scaleBySize(20)`); PW5 1236×1648 a 300 ppp ⇒ ~2.06 px/dp | ✔ resuelta (repo 0.2.0) | CSS migrado a unidades relativas (em) y base 26 dp escalada; tamaños nativos vía `Theme.native_size`; `ui_font_scale` aplica a HTML y barra | Confirmar en dispositivo que el cuerpo queda ≥ ~44 px y que S/M/L/XL cambia el render |
 | 2026-11-15 | Gates estáticos (repo) | Linux dev | `luac5.1 -p` (22 archivos) + `scripts/check_invariants.sh` (ScrollHtmlWidget con `dialog`; sin `ui/elements/menu_items`) y prueba negativa del invariante | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)`; 
 | 2026-11-15 | Smoke offline UI (repo) | Linux dev (`lua5.1` + módulos KOReader simulados) | `scripts/smoke_ui.sh`: construye dashboard y artículo, valida `css`/fragmento (sin `<html>`), `dialog`, callback de enlaces (`kh:refresh`, `kh:hn:<id>`, `kh:digest`, `kh:close`, `kh:back`, `kh:dashboard`) y ausencia de `kh:reader` cuando está desactivado | PASS | `OK dashboard smoke: body=1268B css=461B dispatching=4`; `OK article_view smoke: body=321B`; `OK: UI smoke tests (lua5.1)` | Render real en e-ink aún depende del re-test en dispositivo |
 | YYYY-MM-DD | F0 | KOReader desktop Linux / Kindle FW ... | Carga plugin, abrir/cerrar dashboard | PASS/FAIL | log, screenshot, pasos | (si aplica) |

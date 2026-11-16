@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.0] - 2026-11-15
+
+### Changed
+- **UI redesigned for Kindle PaperWhite 5.** Absolute `font-size` CSS (px) replaced with relative `em` units; HTML base size now derives from KOReader's DPI-scaled `default_font_size`, so body text renders legibly on 300 ppi screens.
+- **Hybrid native + HTML shell.** `ui/shell.lua` (`covers_fullscreen` + `TitleBar` + scrolling HTML body + `ui/widget/action_bar.lua`) replaces bare `ScrollHtmlWidget`. Full refresh (`setDirty(..., "full")`) at open/close to limit e-ink ghosting.
+- **Always-visible exit paths:** TitleBar exit icon, footer "Exit" action, Back key, and swipe-down on the header.
+- **Native action bar:** icon + short label per button (Refresh, Digest, Exit), targets ≥ ~58 dp, MDLight icons (no unreliable unicode glyphs in HTML).
+- **Dashboard markup** (`lib/render/dashboard_html.lua`): hero clock/date, one Hacker News list (no duplicated "Actions"), full titles, relative times, weather/card/digest sections.
+- **Article/digest overlay** on the same shell: Back (chevron.left), optional Reader, Close; navigation no longer at end of HTML.
+- **Interface menu:** text size S/M/L/XL (`ui_font_scale`), fullscreen toggle, test-article link toggle.
+- **Text sizes scale** with `ui_font_scale` for both HTML body and native buttons.
+
+### Added
+- `lib/render/theme.lua`: UI scale tokens, `covers_fullscreen`, em-only dashboard/article CSS.
+- `lib/render/dashboard_html.lua`: dashboard body fragment builder.
+- `ui/shell.lua`: fullscreen shell widget.
+- `ui/widget/action_bar.lua`: native icon+label action bar.
+- `scripts/smoke/shell.lua`, `scripts/smoke/action_bar.lua`: offline Lua 5.1 smoke tests.
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (dashboard/article/shell/action_bar).
+- Device runtime verification (legibility, targets, rotation, ghosting) pending Kindle PW5 testing.
+
 ## [0.1.2] - 2026-11-15
 
 ### Fixed

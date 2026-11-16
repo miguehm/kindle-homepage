@@ -2,16 +2,16 @@ local Device = require("device")
 local NetworkMgr = require("ui/network/manager")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local UIManager = require("ui/uimanager")
-local Screen = Device.screen
-
 local Logger = require("lib/logger")
-local MdToHtml = require("lib/render/md_to_html")
+local Theme = require("lib/render/theme")
+local DashboardHtml = require("lib/render/dashboard_html")
 local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
 local Digest = require("lib/digest")
 local Messages = require("ui/messages")
+local Shell = require("ui/shell")
 
 local Dashboard = {}
 
@@ -33,10 +33,6 @@ function Dashboard:new(opts)
     setmetatable(o, self)
     self.__index = self
     return o
-end
-
-local function escape_html(s)
-    return MdToHtml.escape(s)
 end
 
 local function get_clock_state()
@@ -225,146 +221,6 @@ function Dashboard:build_state(opts)
     return state
 end
 
-local function fmt_epoch(ts)
-    if type(ts) ~= "number" then return nil end
-    local ok, s = pcall(os.date, "%Y-%m-%d %H:%M", ts)
-    if ok then return s end
-    return nil
-end
-
-local DASHBOARD_CSS = table.concat({
-    "body{font-family:sans-serif;margin:20px;color:#111;background:#fff;}",
-    "h1{font-size:30px;margin:0 0 8px 0;}",
-    "h2{font-size:22px;margin:0 0 18px 0;font-weight:normal;}",
-    ".section{margin:18px 0;padding-top:12px;border-top:1px solid #333;}",
-    ".label{font-size:18px;margin:6px 0;}",
-    ".muted{font-size:16px;color:#444;margin-top:8px;}",
-    "a{color:#111;text-decoration:underline;}",
-    ".actions{margin:22px 0 0 0;padding-top:12px;border-top:2px solid #333;}",
-    ".action{font-size:19px;margin:12px 0;}",
-}, "")
-
-local function safe_href_id(id)
-    return tostring(id or ""):gsub("[^%w%-_%.]", "")
-end
-
--- Returns a body fragment (no <html>/<head>): ScrollHtmlWidget wraps it and
--- takes the stylesheet through its `css` option.
-local function build_body(state)
-    local sections = {
-        "<h1>Kindle Home</h1>",
-        "<h2>", escape_html(state.date), "</h2>",
-        "<div class='label'><b>Time:</b> ", escape_html(state.time), "</div>",
-        "<div class='section'>",
-        "<div class='label'>", escape_html(state.battery), "</div>",
-        "<div class='label'>", escape_html(state.network), "</div>",
-        "</div>",
-    }
-
-    if state.refresh_hint and state.refresh_hint ~= "" then
-        table.insert(sections, "<div class='muted'>" .. escape_html(tostring(state.refresh_hint)) .. "</div>")
-    end
-    if state.test_article_ready then
-        table.insert(sections, "<div class='muted'>Test article saved.</div>")
-    end
-
-    if state.show_weather ~= false then
-        local weather = state.weather or { status = "error", line = "Weather unavailable." }
-        local weather_meta = ""
-        if weather.fetched_at then
-            local ts = fmt_epoch(weather.fetched_at)
-            if ts then weather_meta = "Last update: " .. escape_html(ts); if weather.stale then weather_meta = weather_meta .. " (cached)" end end
-        end
-        local weather_note = weather.message or Messages.weather(weather.error_kind, weather.status)
-        table.insert(sections, "<div class='section'><div class='label'><b>Weather</b></div>")
-        table.insert(sections, "<div class='label'>" .. escape_html(weather.line or "Weather unavailable.") .. "</div>")
-        if weather_meta ~= "" then table.insert(sections, "<div class='muted'>" .. weather_meta .. "</div>") end
-        if weather_note and weather_note ~= "" then table.insert(sections, "<div class='muted'>" .. escape_html(weather_note) .. "</div>") end
-        table.insert(sections, "</div>")
-    end
-
-    if state.show_hn ~= false then
-        local hn = state.hn or { status = "error", line = "HN unavailable.", items = {} }
-        local items = hn.items or {}
-        local hn_meta = ""
-        if hn.fetched_at then
-            local ts = fmt_epoch(hn.fetched_at)
-            if ts then hn_meta = "Last update: " .. escape_html(ts); if hn.stale then hn_meta = hn_meta .. " (cached)" end end
-        end
-        local hn_note = hn.message or Messages.hn(hn.error_kind, hn.status, #items > 0)
-        table.insert(sections, "<div class='section'><div class='label'><b>Hacker News</b></div>")
-        table.insert(sections, "<div class='label'>" .. escape_html(hn.line or "HN unavailable.") .. "</div>")
-        if hn_meta ~= "" then table.insert(sections, "<div class='muted'>" .. hn_meta .. "</div>") end
-        if hn_note and hn_note ~= "" then table.insert(sections, "<div class='muted'>" .. escape_html(hn_note) .. "</div>") end
-        if #items == 0 then
-            table.insert(sections, "<div class='muted'>No HN items to show.</div>")
-        else
-            for _, item in ipairs(items) do
-                local title = escape_html(item.title or "(untitled)")
-                local rank = tonumber(item.rank) and tostring(item.rank) or "?"
-                local meta_parts = {}
-                if tonumber(item.score) then table.insert(meta_parts, tostring(item.score) .. " pts") end
-                if tonumber(item.descendants) then table.insert(meta_parts, tostring(item.descendants) .. " comments") end
-                if item.by and item.by ~= "" then table.insert(meta_parts, "by " .. escape_html(item.by)) end
-                if item.domain and item.domain ~= "" then table.insert(meta_parts, escape_html(item.domain)) end
-                local status_tag = ""
-                if item.status and item.status ~= "ok" then
-                    status_tag = " <span class='muted'>[status:" .. escape_html(tostring(item.status)) .. "]</span>"
-                elseif not item.has_markdown then
-                    status_tag = " <span class='muted'>[no markdown]</span>"
-                end
-                if item.url == nil then table.insert(meta_parts, "Ask HN") end
-                local meta_line = table.concat(meta_parts, " · ")
-                table.insert(sections, "<div class='label'><b>" .. escape_html(rank) .. ".</b> " .. title .. status_tag .. "</div>")
-                if meta_line ~= "" then table.insert(sections, "<div class='muted'>" .. meta_line .. "</div>") end
-            end
-        end
-        table.insert(sections, "</div>")
-    end
-
-    if state.show_digest ~= false then
-        local digest = state.digest_latest
-        local digest_line = "Daily digest: not generated yet."
-        if digest and digest.date then
-            digest_line = "Daily digest available: " .. escape_html(digest.date) .. "."
-        end
-        table.insert(sections, "<div class='section'><div class='label'><b>Digest</b></div>")
-        table.insert(sections, "<div class='label'>" .. digest_line .. "</div>")
-        table.insert(sections, "<div class='muted'>Generated from cached local, weather, and HN state (partial data supported).</div>")
-        table.insert(sections, "</div>")
-    end
-
-    -- Actions are plain links: ScrollHtmlWidget has no button support, but it
-    -- routes taps on links through html_link_tapped_callback (kh:* scheme).
-    table.insert(sections, "<div class='actions'><div class='label'><b>Actions</b></div>")
-    table.insert(sections, "<div class='action'><a href='kh:refresh'>Refresh</a></div>")
-    if state.show_digest ~= false then
-        table.insert(sections, "<div class='action'><a href='kh:digest'>Generate digest</a></div>")
-        if state.digest_latest and state.digest_latest.date then
-            table.insert(sections, "<div class='action'><a href='kh:digest:latest'>Open latest digest</a></div>")
-        end
-    end
-    if state.show_hn ~= false then
-        table.insert(sections, "<div class='action'><a href='kh:test'>Open test article</a></div>")
-        for _, item in ipairs((state.hn and state.hn.items) or {}) do
-            local id = safe_href_id(item.id)
-            if id ~= "" then
-                local rank = tonumber(item.rank) or 0
-                local title = tostring(item.title or "(untitled)")
-                if #title > 42 then title = title:sub(1, 39) .. "..." end
-                table.insert(sections, string.format(
-                    "<div class='action'><a href='kh:hn:%s'>HN %s: %s</a></div>",
-                    id, escape_html(rank > 0 and tostring(rank) or "?"), escape_html(title)))
-            end
-        end
-    end
-    table.insert(sections, "<div class='action'><a href='kh:close'>Close</a></div>")
-    table.insert(sections, "</div>")
-
-    return table.concat(sections)
-end
-
-
 function Dashboard:open_hn_item(id)
     if id == "test-phase3" then
         self:open_test_article()
@@ -377,6 +233,7 @@ function Dashboard:open_hn_item(id)
                 title = "Article unavailable",
                 status = "not_found",
                 meta = { id = tostring(id or ""), status = "not_found", source = "hn" },
+                on_back = function() self:show() end,
             })
         end
         return
@@ -403,6 +260,7 @@ function Dashboard:open_hn_item(id)
                 status = "no_markdown",
                 meta = meta,
                 md = (item.markdown and item.markdown ~= "") and item.markdown or nil,
+                on_back = function() self:show() end,
             })
         end
         return
@@ -433,10 +291,7 @@ function Dashboard:open_hn_item(id)
         doc = { title = meta.title, meta = meta, md = item.markdown, status = "ok" }
     end
 
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    self:_teardown()
     if self.article_view then
         self.article_view:show(doc)
     else
@@ -514,10 +369,7 @@ function Dashboard:open_test_article()
         end
         return
     end
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    self:_teardown()
     if self.article_view then
         self.article_view:show(doc)
     else
@@ -574,36 +426,86 @@ function Dashboard:handle_link(uri)
     return false
 end
 
+function Dashboard:_teardown()
+    local widget = self.widget
+    if not widget then return end
+    self.widget = nil
+    -- Programmatic close: suppress the shell's user-close callback.
+    widget._closing = true
+    widget.on_close = nil
+    widget.on_back = nil
+    pcall(function() UIManager:close(widget) end)
+end
+
+function Dashboard:actions_for_state(state)
+    local specs = {
+        {
+            icon = "cre.render.reload",
+            label = "Refresh",
+            callback = function() self:handle_link("kh:refresh") end,
+        },
+    }
+    if state.show_digest ~= false then
+        table.insert(specs, {
+            icon = "book.opened",
+            label = "Digest",
+            callback = function() self:handle_link("kh:digest") end,
+        })
+    end
+    table.insert(specs, {
+        icon = "exit",
+        label = "Exit",
+        callback = function() self:handle_link("kh:close") end,
+    })
+    return specs
+end
+
+function Dashboard:_shell_close()
+    self.widget = nil
+    if self.actions then
+        self.actions:dispatch("close", { source = "dashboard", dashboard = self })
+    end
+end
+
 function Dashboard:show(opts)
     opts = opts or {}
-    -- Single refresh contract: rebuild local state/body and (re)open the widget.
-    -- Note: replacing the widget resets scroll position (accepted in Phase 1).
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    self:_teardown()
 
     local state = self:build_state(opts)
     state.test_article_ready = self.last_test_doc ~= nil
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
 
-    local widget = ScrollHtmlWidget:new{
-        html_body = build_body(state),
-        css = DASHBOARD_CSS,
-        default_font_size = Screen:scaleBySize(20),
-        width = Screen:getWidth(),
-        height = Screen:getHeight(),
-        html_link_tapped_callback = function(link)
-            self:handle_link(link and link.uri)
+    local show_test = not self.config or self.config:get("ui_show_test_article") == true
+    local body_html = DashboardHtml.build(state, { test_article_ready = show_test and state.test_article_ready })
+    local css = Theme.dashboard_css()
+    local font_size = Theme.font_size(self.config, Theme.UI_BASE)
+
+    local shell = Shell:new{
+        title = "Kindle Home",
+        config = self.config,
+        actions = self:actions_for_state(state),
+        on_close = function() self:_shell_close() end,
+        on_layout_change = function() self:show(opts) end,
+        body_factory = function(width, height)
+            local body = ScrollHtmlWidget:new{
+                html_body = body_html,
+                css = css,
+                default_font_size = font_size,
+                width = width,
+                height = height,
+                html_link_tapped_callback = function(link)
+                    self:handle_link(link and link.uri)
+                end,
+            }
+            -- ScrollHtmlWidget requires `dialog`: its scroll handlers touch
+            -- self.dialog.movable and pass it to UIManager:setDirty. Pointing
+            -- it at the widget itself is safe (no `movable`).
+            body.dialog = body
+            return body
         end,
     }
-    -- ScrollHtmlWidget requires `dialog`: its scroll handlers touch
-    -- self.dialog.movable and pass it to UIManager:setDirty. Pointing it at
-    -- the widget itself is safe (no `movable`) and keeps the dimen valid.
-    -- Without it, any swipe/tap raises "attempt to index field 'dialog'".
-    widget.dialog = widget
-    self.widget = widget
-    UIManager:show(widget)
+    self.widget = shell
+    shell:show()
     Logger.info("dashboard", "shown", { weather = state.weather and state.weather.status })
 end
 
@@ -613,10 +515,7 @@ function Dashboard:refresh(opts)
 end
 
 function Dashboard:close()
-    if self.widget then
-        UIManager:close(self.widget)
-        self.widget = nil
-    end
+    self:_teardown()
     Logger.info("dashboard", "closed")
 end
 

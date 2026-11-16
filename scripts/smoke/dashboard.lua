@@ -16,7 +16,8 @@ local cfg = {
     show_hn = true, show_digest = true, refresh_budget_s = 20,
     hnmd_max_items = 10, weather_enabled = false, storage_mode = "documents",
     documents_subdir = "KindleHome", open_in_reader_enabled = false,
-    refresh_on_open = false,
+    refresh_on_open = false, ui_font_scale = 1.0, ui_fullscreen = true,
+    ui_show_test_article = false,
 }
 local cfg_instance = {
     get = function(_, k) return cfg[k] end,
@@ -34,10 +35,15 @@ local actions = {
 }
 
 local captured_widget = nil
+local captured_shell = nil
 local shown = 0
 
 package.preload["device"] = function()
-    return { screen = flex("screen") }
+    return { screen = {
+        scaleBySize = function(_, n) return math.floor(n * 2) end,
+        getWidth = function() return 1200 end,
+        getHeight = function() return 1600 end,
+    } }
 end
 package.preload["ui/network/manager"] = function()
     return {
@@ -59,6 +65,18 @@ package.preload["ui/widget/scrollhtmlwidget"] = function()
     function M:new(opts)
         captured_widget = opts
         return opts
+    end
+    return M
+end
+package.preload["ui/shell"] = function()
+    local M = {}
+    function M:new(opts)
+        captured_shell = opts
+        shown = shown + 1
+        return {
+            show = function() end,
+            request_close = function() end,
+        }
     end
     return M
 end
@@ -114,22 +132,31 @@ local d = Dashboard:new{
 
 d:show({ allow_network = false })
 
-local w = captured_widget
-assert(w, "no widget captured")
+assert(captured_shell, "no shell captured")
+assert(type(captured_shell.body_factory) == "function", "body factory missing")
+local w = captured_shell.body_factory(1000, 1400)
+assert(w, "no body widget captured")
 assert(type(w.html_body) == "string", "html_body missing")
 assert(type(w.css) == "string" and #w.css > 0, "css missing")
 assert(not w.html_body:find("<html", 1, true), "body must not contain <html>")
 assert(not w.html_body:find("<style", 1, true), "body must not contain <style>")
-assert(w.html_body:find("Kindle Home", 1, true), "title missing")
-assert(w.html_body:find("kh:refresh", 1, true), "refresh link missing")
+assert(w.html_body:find("WEATHER", 1, true), "weather card missing")
+assert(w.html_body:find("HACKER NEWS", 1, true), "HN card missing")
 assert(w.html_body:find("kh:hn:4242", 1, true), "HN link missing")
 assert(w.html_body:find("&lt;b&gt;world", 1, true), "HN title should be escaped in link text")
+assert(w.html_body:find("kh:hn:test-phase3", 1, true) == nil, "test article link should be hidden by default")
 assert(type(w.html_link_tapped_callback) == "function", "link callback missing")
 assert(w.dialog == w, "dialog must point to the widget itself")
-assert(shown == 1, "widget not shown")
+assert(type(w.default_font_size) == "number", "font size should be numeric")
+assert(shown == 1, "shell not shown")
 
-w.html_link_tapped_callback({ uri = "kh:refresh" })
-assert(#dispatched == 1 and dispatched[1].id == "refresh", "refresh link dispatch failed")
+local refresh_action
+for _, spec in ipairs(captured_shell.actions or {}) do
+    if spec.label == "Refresh" then refresh_action = spec end
+end
+assert(refresh_action and type(refresh_action.callback) == "function", "refresh action missing")
+refresh_action.callback()
+assert(#dispatched == 1 and dispatched[1].id == "refresh", "refresh action dispatch failed")
 w.html_link_tapped_callback({ uri = "kh:hn:4242" })
 assert(#dispatched == 2 and dispatched[2].id == "open_hn:4242", "HN link dispatch failed")
 w.html_link_tapped_callback({ uri = "kh:digest" })
@@ -137,5 +164,8 @@ assert(#dispatched == 3 and dispatched[3].id == "generate_digest", "digest link 
 w.html_link_tapped_callback({ uri = "kh:close" })
 assert(#dispatched == 4 and dispatched[4].id == "close", "close link dispatch failed")
 w.html_link_tapped_callback({ uri = "kh:bogus" })
+
+captured_shell.on_close()
+assert(#dispatched == 5 and dispatched[5].id == "close", "shell close should exit dashboard")
 
 print("OK dashboard smoke: body=" .. #w.html_body .. "B css=" .. #w.css .. "B dispatching=" .. #dispatched)

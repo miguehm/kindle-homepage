@@ -9,8 +9,11 @@ local function flex(name)
     })
 end
 
-local captured, shown = nil, 0
-package.preload["device"] = function() return flex("Device") end
+local captured, captured_shell, shown = nil, nil, 0
+package.preload["device"] = function()
+    return { screen = { scaleBySize = function(_, n) return math.floor(n * 2) end,
+        getWidth = function() return 1200 end, getHeight = function() return 1600 end } }
+end
 package.preload["ui/uimanager"] = function()
     return {
         show = function(_, w) shown = shown + 1; return w end,
@@ -22,6 +25,15 @@ end
 package.preload["ui/widget/scrollhtmlwidget"] = function()
     local M = {}
     function M:new(o) captured = o; return o end
+    return M
+end
+package.preload["ui/shell"] = function()
+    local M = {}
+    function M:new(o)
+        captured_shell = o
+        shown = shown + 1
+        return { show = function() end, _closing = false }
+    end
     return M
 end
 package.preload["apps/reader/readerui"] = function()
@@ -46,7 +58,7 @@ local actions = {
 }
 local config = { get = function(_, k) if k == "open_in_reader_enabled" then return false end end }
 
-local v = ArticleView:new{ config = config, actions = actions }
+local v = ArticleView:new{ config = config, actions = actions, on_close = function() closed = true end }
 
 v:show({
     md = "# Hello\n\nBody **bold**.",
@@ -54,25 +66,35 @@ v:show({
     on_back = function() back_called = true end,
 })
 
-local w = captured
+assert(captured_shell, "no shell")
+local w = captured_shell.body_factory(1200, 1400)
 assert(w, "no widget")
 assert(type(w.html_body) == "string")
 assert(not w.html_body:find("<html", 1, true), "fragment expected")
-assert(w.html_body:find("kh:back", 1, true), "back link missing")
-assert(w.html_body:find("kh:dashboard", 1, true), "dashboard link missing")
-assert(w.html_body:find("kh:close", 1, true), "close link missing")
-assert(not w.html_body:find("kh:reader", 1, true), "reader link should be hidden")
+assert(not w.html_body:find("kh:back", 1, true), "nav should be native, not HTML")
 assert(w.dialog == w, "dialog must be set")
 assert(type(w.html_link_tapped_callback) == "function")
+assert(type(w.default_font_size) == "number")
 assert(shown == 1)
 
-w.html_link_tapped_callback({ uri = "kh:back" })
+local labels = {}
+for _, spec in ipairs(captured_shell.actions or {}) do labels[spec.label] = spec end
+assert(labels.Back, "Back action missing")
+assert(labels.Close, "Close action missing")
+assert(not labels.Reader, "Reader action should be hidden")
+labels.Back.callback()
 assert(back_called, "back handler failed")
-w.html_link_tapped_callback({ uri = "kh:dashboard" })
-assert(closed, "dashboard dispatch failed")
 
--- error state must also be a fragment
-captured = nil
+captured_shell = nil
 v:show({ status = "missing_path" })
-assert(captured and not captured.html_body:find("<html", 1, true), "error body must be a fragment")
+local err_widget = captured_shell.body_factory(1200, 1400)
+assert(err_widget and not err_widget.html_body:find("<html", 1, true), "error body must be a fragment")
+
+captured_shell = nil
+v:show({ md = "# Two", meta = { title = "Two" } })
+for _, spec in ipairs(captured_shell.actions or {}) do
+    if spec.label == "Close" then spec.callback() end
+end
+assert(closed, "close action should call on_close")
+
 print("OK article_view smoke: body=" .. #w.html_body .. "B")

@@ -188,10 +188,7 @@ function KindleHome:registerActions()
             return
         end
         local dash = (ctx and ctx.dashboard) or self:getDashboard()
-        if dash and dash.widget then
-            UIManager:close(dash.widget)
-            dash.widget = nil
-        end
+        if dash then dash:_teardown() end
         self:getArticleView():show(doc)
     end)
 end
@@ -203,7 +200,7 @@ function KindleHome:getArticleView()
             config = self.config,
             actions = self.actions,
             on_close = function()
-                -- return path is controlled by actions/caller
+                self:getDashboard():show({ allow_network = false })
             end,
         }
     end

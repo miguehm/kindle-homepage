@@ -13,6 +13,9 @@ local DEFAULTS = {
     show_hn = true,
     show_digest = true,
     open_in_reader_enabled = false,
+    ui_font_scale = 1.0, -- 0.85 .. 1.6 (small .. extra large)
+    ui_fullscreen = true,
+    ui_show_test_article = false, -- dev/debug entry in the dashboard
     -- Rutas
     storage_mode = "documents", -- "documents" | "datadir"
     documents_subdir = "KindleHome",
@@ -41,6 +44,13 @@ end
 local function clamp_int(v, minv, maxv, default)
     if not is_number(v) then return default end
     v = math.floor(v)
+    if v < minv then return minv end
+    if v > maxv then return maxv end
+    return v
+end
+
+local function clamp_number(v, minv, maxv, default)
+    if not is_number(v) then return default end
     if v < minv then return minv end
     if v > maxv then return maxv end
     return v
@@ -82,8 +92,11 @@ end
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
         or key == "show_weather" or key == "show_hn" or key == "show_digest"
-        or key == "weather_enabled" or key == "hnmd_enabled" or key == "open_in_reader_enabled" then
+        or key == "weather_enabled" or key == "hnmd_enabled" or key == "open_in_reader_enabled"
+        or key == "ui_fullscreen" or key == "ui_show_test_article" then
         return as_bool(value, default)
+    elseif key == "ui_font_scale" then
+        return clamp_number(value, 0.85, 1.6, default)
     elseif key == "storage_mode" then
         if value == "documents" or value == "datadir" then return value end
         return default

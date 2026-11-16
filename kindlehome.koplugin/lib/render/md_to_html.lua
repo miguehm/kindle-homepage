@@ -1,19 +1,27 @@
 local MdToHtml = {}
 
+-- Relative units only: KOReader's HTML layout passes a DPI-scaled
+-- `default_font_size`, while absolute CSS px would be interpreted as device
+-- pixels (tiny on a 300 ppi PaperWhite 5). The same stylesheet is reused for
+-- persisted .html opened in crengine, where the reader font size governs em.
 local EINK_CSS = table.concat({
-    "body{font-family:serif;margin:18px;color:#111;background:#fff;}",
-    "h1{font-size:28px;margin:0 0 10px 0;}",
-    "h2{font-size:22px;margin:18px 0 8px 0;}",
-    "h3{font-size:19px;margin:14px 0 6px 0;}",
-    "p{font-size:18px;line-height:1.4;margin:10px 0;}",
-    "ul,ol{font-size:18px;line-height:1.4;margin:10px 0 10px 22px;}",
-    "li{margin:4px 0;}",
-    "pre{font-family:monospace;font-size:15px;white-space:pre-wrap;border:1px solid #444;padding:8px;margin:10px 0;}",
+    "@page{margin:0;}",
+    "body{font-family:serif;margin:0;padding:0.9em;color:#000;background:#fff;}",
+    "h1{font-size:1.6em;line-height:1.2;margin:0 0 0.5em 0;}",
+    "h2{font-size:1.3em;line-height:1.25;margin:1.1em 0 0.4em 0;}",
+    "h3{font-size:1.1em;line-height:1.3;margin:0.9em 0 0.3em 0;}",
+    "p{line-height:1.5;margin:0 0 0.8em 0;}",
+    "ul,ol{line-height:1.5;margin:0 0 0.9em 1.2em;padding:0;}",
+    "li{margin:0.2em 0;}",
+    "pre{font-family:monospace;font-size:0.85em;white-space:pre-wrap;border:0.07em solid #000;padding:0.6em;margin:0.7em 0;}",
     "code{font-family:monospace;}",
-    "hr{border:0;border-top:1px solid #444;margin:14px 0;}",
-    "a{color:#111;text-decoration:underline;}",
-    ".meta{font-size:15px;color:#333;margin:0 0 14px 0;}",
-    ".notice{font-size:17px;margin:12px 0;padding:10px;border:1px solid #444;}",
+    "hr{border:0;border-top:0.07em solid #000;margin:1em 0;}",
+    "a{color:#000;text-decoration:underline;}",
+    ".meta{font-size:0.78em;color:#222;margin:0 0 0.9em 0;}",
+    ".notice{font-size:0.95em;margin:0.8em 0;padding:0.7em;border:0.07em solid #000;}",
+    ".nav{margin:1.2em 0 0 0;padding-top:0.8em;border-top:0.07em solid #000;font-size:0.9em;}",
+    ".navitem{margin:0.5em 0;}",
+    ".footer-note{font-size:0.8em;color:#222;margin-top:1em;}",
 }, "")
 
 local function escape_html(s)

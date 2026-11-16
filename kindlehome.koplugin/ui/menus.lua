@@ -4,6 +4,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
 
 local Geocoding = require("lib/geocoding")
+local Theme = require("lib/render/theme")
 local Logger = require("lib/logger")
 local Messages = require("ui/messages")
 
@@ -309,6 +310,63 @@ function Menus:add_settings(menu_items, main_instance)
                         keep_menu_open = true,
                         checked_func = function() return config:get("show_digest") and true or false end,
                         callback = function() config:set("show_digest", not config:get("show_digest")); config:flush(); refresh_dashboard(main_instance) end,
+                    },
+                },
+            },
+            {
+                text = _("Interface"),
+                sub_item_table = {
+                    {
+                        text_func = function()
+                            return _("Text size: ") .. Theme.scale_label(config:get("ui_font_scale"))
+                        end,
+                        keep_menu_open = true,
+                        sub_item_table = {
+                            {
+                                text = _("Small"),
+                                checked_func = function() return Theme.normalize_scale(config:get("ui_font_scale")) <= 0.95 end,
+                                callback = function()
+                                    config:set("ui_font_scale", 0.9); config:flush(); refresh_dashboard(main_instance)
+                                end,
+                            },
+                            {
+                                text = _("Medium"),
+                                checked_func = function() return Theme.normalize_scale(config:get("ui_font_scale")) > 0.95 and Theme.normalize_scale(config:get("ui_font_scale")) <= 1.1 end,
+                                callback = function()
+                                    config:set("ui_font_scale", 1.0); config:flush(); refresh_dashboard(main_instance)
+                                end,
+                            },
+                            {
+                                text = _("Large"),
+                                checked_func = function() return Theme.normalize_scale(config:get("ui_font_scale")) > 1.1 and Theme.normalize_scale(config:get("ui_font_scale")) <= 1.3 end,
+                                callback = function()
+                                    config:set("ui_font_scale", 1.25); config:flush(); refresh_dashboard(main_instance)
+                                end,
+                            },
+                            {
+                                text = _("Extra large"),
+                                checked_func = function() return Theme.normalize_scale(config:get("ui_font_scale")) > 1.3 end,
+                                callback = function()
+                                    config:set("ui_font_scale", 1.45); config:flush(); refresh_dashboard(main_instance)
+                                end,
+                            },
+                        },
+                    },
+                    {
+                        text_func = function() return _("Full screen: ") .. bool_text(config:get("ui_fullscreen")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("ui_fullscreen") and true or false end,
+                        callback = function()
+                            config:set("ui_fullscreen", not config:get("ui_fullscreen")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Show test article link: ") .. bool_text(config:get("ui_show_test_article")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("ui_show_test_article") and true or false end,
+                        callback = function()
+                            config:set("ui_show_test_article", not config:get("ui_show_test_article")); config:flush(); refresh_dashboard(main_instance)
+                        end,
                     },
                 },
             },
