@@ -15,7 +15,8 @@ local cfg = {
     show_battery = true, show_network = true, show_weather = true,
     show_hn = true, show_digest = true, refresh_budget_s = 20,
     hnmd_max_items = 10, weather_enabled = false, storage_mode = "documents",
-    documents_subdir = "KindleHome", open_in_reader_enabled = false,
+    documents_subdir = "KindleHome",
+    index_max_bytes = 131072, article_max_bytes = 524288,
     refresh_on_open = false, ui_font_scale = 1.0, ui_fullscreen = true,
     ui_show_test_article = false,
 }
@@ -59,6 +60,11 @@ package.preload["ui/uimanager"] = function()
         scheduleIn = function() end,
         setDirty = function() end,
     }
+end
+package.preload["ui/widget/infomessage"] = function()
+    local M = {}
+    function M:new(opts) return opts end
+    return M
 end
 package.preload["ui/widget/scrollhtmlwidget"] = function()
     local M = {}
@@ -108,7 +114,7 @@ package.preload["lib/hnmd_state"] = function()
             return {
                 status = "ok", line = "HN: 1 item",
                 items = {
-                    { id = "4242", rank = 1, title = "Hello <b>world</b> & friends", status = "ok", has_markdown = true, score = 12 },
+                    { id = "4242", rank = 1, title = "Hello <b>world</b> & friends", content_status = "ok", score = 12 },
                 },
             }
         end,

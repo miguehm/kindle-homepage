@@ -43,7 +43,32 @@ if grep -rn 'ui/elements/menu_items' --include='*.lua' kindlehome.koplugin >/dev
     fail=1
 fi
 
+# 3) Article bodies are streamed to disk (PW5 has ~15 MB free RAM): the hnmd
+#    client must use the file sink, not the in-memory getter.
+if ! grep -q 'Http\.get_to_file' kindlehome.koplugin/lib/hnmd.lua; then
+    echo "FAIL: lib/hnmd.lua must download article bodies via Http.get_to_file"
+    fail=1
+fi
+
+# 4) UI code never performs HTTP or filesystem deletion directly.
+if grep -rn 'Http\.get' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
+    echo "FAIL: ui/ must not call Http directly (go through hnmd/article_store)"
+    fail=1
+fi
+if grep -rn 'os\.remove\|os\.rename' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
+    echo "FAIL: ui/ must not delete/rename files directly"
+    fail=1
+fi
+
+# 5) Inside article_store, cleanup only touches ".tmp" paths.
+bad_fs=$(grep -n 'os\.remove\|os\.rename' kindlehome.koplugin/lib/article_store.lua | grep -v 'tmp' || true)
+if [ -n "$bad_fs" ]; then
+    echo "FAIL: article_store may only remove/rename .tmp paths:"
+    echo "$bad_fs"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (ScrollHtmlWidget dialog, menu registration)"
+    echo "OK: plugin invariants (ScrollHtmlWidget dialog, menu registration, streamed downloads)"
 fi
 exit "$fail"

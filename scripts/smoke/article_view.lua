@@ -56,7 +56,7 @@ local actions = {
         return true
     end,
 }
-local config = { get = function(_, k) if k == "open_in_reader_enabled" then return false end end }
+local config = { get = function() return nil end }
 
 local v = ArticleView:new{ config = config, actions = actions, on_close = function() closed = true end }
 
