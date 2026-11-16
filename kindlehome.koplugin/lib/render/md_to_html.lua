@@ -207,7 +207,7 @@ local function meta_html(meta)
 end
 
 -- Body fragment only (no <html>/<head>/<style>): this is what
--- ScrollHtmlWidget/HtmlBoxWidget expect, since they wrap it themselves.
+-- HtmlBoxWidget expects, since it wraps it itself.
 function MdToHtml.document_body(opts)
     opts = opts or {}
     local title = escape_html(opts.title or (opts.meta and opts.meta.title) or "Kindle Home")

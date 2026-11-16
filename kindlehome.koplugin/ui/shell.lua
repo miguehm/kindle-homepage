@@ -1,6 +1,6 @@
--- Fullscreen shell: native title bar + scrolling HTML body + native action bar.
+-- Fullscreen shell: native title bar + native scroll body + native action bar.
 --
--- Why a shell instead of bare ScrollHtmlWidget:
+-- Why a shell instead of a bare scroll widget:
 -- - covers_fullscreen lets UIManager skip painting the reader underneath, and
 --   opening/closing with a full refresh removes e-ink ghosting.
 -- - The title bar keeps an always-visible exit icon and a Back chevron; the

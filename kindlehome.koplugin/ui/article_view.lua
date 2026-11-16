@@ -1,6 +1,5 @@
-local Device = require("device")
 local UIManager = require("ui/uimanager")
-local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
+local ArticleHtmlPager = require("ui/article_html_pager")
 local ReaderUI = require("apps/reader/readerui")
 
 local Theme = require("lib/render/theme")
@@ -126,7 +125,9 @@ function ArticleView:show(doc)
     -- Flujo por defecto: abrir el documento local persistido en el lector
     -- nativo de KOReader (ReaderUI), que ofrece selección de texto,
     -- anotaciones, progreso, diccionario y modo nocturno, todo offline.
-    if doc.html_path and can_open_in_reader() then
+    local force_fallback = self.config and type(self.config.get) == "function"
+        and self.config:get("ui_force_article_fallback") == true
+    if doc.html_path and can_open_in_reader() and not force_fallback then
         local ok, err = pcall(function()
             self:openInReader(doc.html_path)
         end)
@@ -145,18 +146,16 @@ function ArticleView:show(doc)
         on_layout_change = function() self:show(doc) end,
         on_close = function() self:_closed_by_user() end,
         body_factory = function(width, height)
-            local widget = ScrollHtmlWidget:new{
-                html_body = body,
-                css = css,
-                default_font_size = font_size,
+            return ArticleHtmlPager:new{
                 width = width,
                 height = height,
-                highlight_text_selection = true,
-                html_link_tapped_callback = function(link)
+                body = body,
+                css = css,
+                font_size = font_size,
+                on_link = function(link)
                     self:handle_link(link and link.uri)
                 end,
             }
-            return widget
         end,
     }
     self.widget = shell

@@ -15,6 +15,7 @@ local DEFAULTS = {
     ui_font_scale = 1.0, -- 0.85 .. 1.6 (small .. extra large)
     ui_fullscreen = true,
     ui_show_test_article = false, -- dev/debug entry in the dashboard
+    ui_force_article_fallback = false, -- dev/debug: skip ReaderUI to exercise the pager
     -- Rutas
     storage_mode = "documents", -- "documents" | "datadir"
     documents_subdir = "KindleHome",
@@ -102,7 +103,8 @@ local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
         or key == "show_weather" or key == "show_hn" or key == "show_digest"
         or key == "weather_enabled" or key == "hnmd_enabled"
-        or key == "ui_fullscreen" or key == "ui_show_test_article" then
+         or key == "ui_fullscreen" or key == "ui_show_test_article"
+         or key == "ui_force_article_fallback" then
         return as_bool(value, default)
     elseif key == "ui_font_scale" then
         return clamp_number(value, 0.85, 1.6, default)

@@ -1,6 +1,6 @@
 -- Native action bar: icon + short label per button.
 --
--- HTML links inside ScrollHtmlWidget are tiny, scroll away with the content,
+-- Links inside HTML bodies are tiny, scroll away with the content,
 -- and provide no pressed state. The primary actions therefore live here, in a
 -- fixed footer that always stays reachable. Buttons use MDLight icons (no
 -- unicode glyphs: MuPDF's HTML font substitution is unreliable on e-ink).
