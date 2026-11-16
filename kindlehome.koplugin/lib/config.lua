@@ -6,7 +6,7 @@ Config.__index = Config
 
 local DEFAULTS = {
     -- General/UI
-    refresh_on_open = true,
+    refresh_on_open = false, -- MVP: no automatic network fetch on open
     show_battery = true,
     show_network = true,
     show_weather = true,
@@ -29,8 +29,8 @@ local DEFAULTS = {
     hnmd_max_items = 10,
     hnmd_ttl_minutes = 30,
     -- Red
-    http_timeout_s = 10,
-    http_max_bytes = 524288, -- 512 KiB
+    http_timeout_s = 6,
+    http_max_bytes = 262144, -- 256 KiB (Kindle has little free RAM)
     refresh_budget_s = 20,
 }
 

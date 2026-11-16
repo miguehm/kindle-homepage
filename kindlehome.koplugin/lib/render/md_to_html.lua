@@ -174,7 +174,9 @@ local function meta_html(meta)
     return '<div class="meta">' .. table.concat(parts, "") .. "</div>"
 end
 
-function MdToHtml.document(opts)
+-- Body fragment only (no <html>/<head>/<style>): this is what
+-- ScrollHtmlWidget/HtmlBoxWidget expect, since they wrap it themselves.
+function MdToHtml.document_body(opts)
     opts = opts or {}
     local title = escape_html(opts.title or (opts.meta and opts.meta.title) or "Kindle Home")
     local body_html = opts.body_html
@@ -186,12 +188,20 @@ function MdToHtml.document(opts)
         header = "<h1>" .. title .. "</h1>"
     end
     return table.concat({
-        "<html><head><meta charset='utf-8'/>",
-        "<style>", EINK_CSS, (opts.css or ""), "</style>",
-        "</head><body>",
         header,
         meta_html(opts.meta),
         body_html,
+    })
+end
+
+-- Full standalone document, used for persisted .html files.
+function MdToHtml.document(opts)
+    opts = opts or {}
+    return table.concat({
+        "<html><head><meta charset='utf-8'/>",
+        "<style>", EINK_CSS, (opts.css or ""), "</style>",
+        "</head><body>",
+        MdToHtml.document_body(opts),
         "</body></html>",
     })
 end

@@ -35,20 +35,10 @@ function KindleHome:init()
         general = true,
     })
     self.ui.menu:registerToMainMenu(self)
-    -- minimal settings menu (Phase 4 weather fields); safe if menu system differs
-    pcall(Menus.register, Menus, self)
 end
 
 function KindleHome:addToMainMenu(menu_items)
-    -- Fallback registration for KOReader menu structures that expect this method.
-    menu_items.kindlehome = menu_items.kindlehome or {
-        text = _("Kindle Home"),
-        sorting_hint = "tools",
-        callback = function() self:onKindlehomeShowDashboard() end,
-    }
-    if menu_items.kindlehome_settings then
-        menu_items.kindlehome_settings = menu_items.kindlehome_settings
-    end
+    Menus:add_settings(menu_items, self)
 end
 
 local function is_online()
@@ -79,12 +69,12 @@ function KindleHome:request_dashboard_refresh(opts)
         if opts.user_initiated then
             UIManager:show(InfoMessage:new{ text = _("Refreshing…"), timeout = 1 })
         end
-        local ok = pcall(function()
+        local ok, err = pcall(function()
             dashboard:refresh({ allow_network = net_allowed })
         end)
         Refresh.finish()
         if not ok then
-            Logger.err("main", "refresh_failed")
+            Logger.err("main", "refresh_failed", { err = tostring(err) })
             UIManager:show(InfoMessage:new{ text = Messages.refresh_result("exception"), timeout = 4 })
             pcall(function() dashboard:show({ allow_network = false, refresh_hint = Messages.refresh_result("exception") }) end)
         end
@@ -133,7 +123,7 @@ function KindleHome:registerActions()
         end
         UIManager:show(InfoMessage:new{ text = _("Digest saved."), timeout = 2 })
         if self.actions then
-            self.actions:dispatch("open_digest", { dashboard = dash, source = "action" }, "open_digest:" .. tostring(doc.date or "latest"), tostring(doc.date or "latest"))
+            self.actions:dispatch("open_digest:" .. tostring(doc.date or "latest"), { dashboard = dash, source = "action" })
         end
     end)
     self.actions:register("close", function(ctx)
@@ -235,11 +225,15 @@ function KindleHome:getDashboard()
 end
 
 function KindleHome:onKindlehomeShowDashboard()
-    -- Safe/idempotent open: Dispatcher/gesture/profile calls reuse dashboard flow.
+    -- Safe/idempotent open: Dispatcher/gesture/profile calls reuse the dashboard flow.
+    -- Always paint cached state first so opening never blocks on network; the
+    -- optional refresh runs afterwards, outside this paint.
+    self:getDashboard():show({ allow_network = false })
     if self.config:get("refresh_on_open") then
-        self:request_dashboard_refresh({ user_initiated = true, allow_network = is_online() })
-    else
-        self:getDashboard():show({ allow_network = false })
+        UIManager:scheduleIn(0.5, function()
+            if Refresh.is_in_progress() then return end
+            self:request_dashboard_refresh({ user_initiated = true, allow_network = is_online() })
+        end)
     end
     return true
 end

@@ -20,8 +20,13 @@ end
 local function refresh_dashboard(main_instance)
     if not (main_instance and main_instance.getDashboard) then return end
     local d = main_instance:getDashboard()
-    if d then
-        pcall(function() d:refresh({ allow_network = false }) end)
+    -- Only repaint when the dashboard is already open; changing a setting must
+    -- not pop it up on top of the menu.
+    if d and d.widget then
+        local ok, err = pcall(function() d:refresh({ allow_network = false }) end)
+        if not ok then
+            Logger.err("menus", "dashboard_refresh_failed", { err = tostring(err) })
+        end
     end
 end
 
@@ -180,15 +185,18 @@ function Menus:edit_documents_subdir(config, on_done)
     end)
 end
 
-function Menus:register(main_instance)
+function Menus:add_settings(menu_items, main_instance)
     local config = main_instance.config
     local paths = main_instance.paths
-    local menu_items = require("ui/elements/menu_items")
 
-    menu_items.kindlehome_settings = {
+    menu_items.kindlehome = {
         text = _("Kindle Home"),
         sorting_hint = "tools",
         sub_item_table = {
+            {
+                text = _("Open dashboard"),
+                callback = function() main_instance:onKindlehomeShowDashboard() end,
+            },
             {
                 text = _("Weather"),
                 sub_item_table = {

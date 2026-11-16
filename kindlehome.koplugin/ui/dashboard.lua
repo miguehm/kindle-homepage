@@ -3,7 +3,6 @@ local NetworkMgr = require("ui/network/manager")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local UIManager = require("ui/uimanager")
 local Screen = Device.screen
-local _ = require("gettext")
 
 local Logger = require("lib/logger")
 local MdToHtml = require("lib/render/md_to_html")
@@ -187,30 +186,6 @@ function Dashboard:get_hn_item(id)
     return self.hn_item_index and self.hn_item_index[tostring(id)] or nil
 end
 
-function Dashboard:get_hn_actions()
-    local acts = {}
-    for _, item in ipairs(self.hn_items or {}) do
-        local id = tostring(item.id or "")
-        if id ~= "" then
-            local rank = tonumber(item.rank) or 0
-            local title = tostring(item.title or "(untitled)")
-            if #title > 42 then title = title:sub(1, 39) .. "..." end
-            local label = string.format("HN %s: %s", rank > 0 and tostring(rank) or "?", title)
-            table.insert(acts, {
-                text = label,
-                callback = function()
-                    if self.actions then
-                        self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:" .. id, id)
-                    else
-                        self:open_hn_item(id)
-                    end
-                end,
-            })
-        end
-    end
-    return acts
-end
-
 function Dashboard:build_state(opts)
     opts = opts or {}
     local date_str, time_str = get_clock_state()
@@ -257,24 +232,26 @@ local function fmt_epoch(ts)
     return nil
 end
 
-local function build_html(state)
-    local links = {}
-    if state.test_article_ready then
-        table.insert(links, "<div class='label'>Test article saved. Use action button to open.</div>")
-    end
-    if state.refresh_hint and state.refresh_hint ~= "" then
-        table.insert(links, "<div class='muted'>" .. escape_html(tostring(state.refresh_hint)) .. "</div>")
-    end
+local DASHBOARD_CSS = table.concat({
+    "body{font-family:sans-serif;margin:20px;color:#111;background:#fff;}",
+    "h1{font-size:30px;margin:0 0 8px 0;}",
+    "h2{font-size:22px;margin:0 0 18px 0;font-weight:normal;}",
+    ".section{margin:18px 0;padding-top:12px;border-top:1px solid #333;}",
+    ".label{font-size:18px;margin:6px 0;}",
+    ".muted{font-size:16px;color:#444;margin-top:8px;}",
+    "a{color:#111;text-decoration:underline;}",
+    ".actions{margin:22px 0 0 0;padding-top:12px;border-top:2px solid #333;}",
+    ".action{font-size:19px;margin:12px 0;}",
+}, "")
 
+local function safe_href_id(id)
+    return tostring(id or ""):gsub("[^%w%-_%.]", "")
+end
+
+-- Returns a body fragment (no <html>/<head>): ScrollHtmlWidget wraps it and
+-- takes the stylesheet through its `css` option.
+local function build_body(state)
     local sections = {
-        "<html><head><style>",
-        "body{font-family:sans-serif;margin:24px;color:#111;background:#fff;}",
-        "h1{font-size:30px;margin:0 0 8px 0;}",
-        "h2{font-size:22px;margin:0 0 18px 0;font-weight:normal;}",
-        ".section{margin:18px 0;padding-top:12px;border-top:1px solid #333;}",
-        ".label{font-size:18px;margin:6px 0;}",
-        ".muted{font-size:16px;color:#444;margin-top:8px;}",
-        "</style></head><body>",
         "<h1>Kindle Home</h1>",
         "<h2>", escape_html(state.date), "</h2>",
         "<div class='label'><b>Time:</b> ", escape_html(state.time), "</div>",
@@ -283,6 +260,13 @@ local function build_html(state)
         "<div class='label'>", escape_html(state.network), "</div>",
         "</div>",
     }
+
+    if state.refresh_hint and state.refresh_hint ~= "" then
+        table.insert(sections, "<div class='muted'>" .. escape_html(tostring(state.refresh_hint)) .. "</div>")
+    end
+    if state.test_article_ready then
+        table.insert(sections, "<div class='muted'>Test article saved.</div>")
+    end
 
     if state.show_weather ~= false then
         local weather = state.weather or { status = "error", line = "Weather unavailable." }
@@ -315,7 +299,6 @@ local function build_html(state)
         if #items == 0 then
             table.insert(sections, "<div class='muted'>No HN items to show.</div>")
         else
-            table.insert(sections, "<div class='muted'>Open articles via action buttons below (HN &lt;rank&gt;: ...).</div>")
             for _, item in ipairs(items) do
                 local title = escape_html(item.title or "(untitled)")
                 local rank = tonumber(item.rank) and tostring(item.rank) or "?"
@@ -343,22 +326,44 @@ local function build_html(state)
         local digest = state.digest_latest
         local digest_line = "Daily digest: not generated yet."
         if digest and digest.date then
-            digest_line = "Daily digest available: " .. escape_html(digest.date) .. ". Use action button to open."
+            digest_line = "Daily digest available: " .. escape_html(digest.date) .. "."
         end
         table.insert(sections, "<div class='section'><div class='label'><b>Digest</b></div>")
         table.insert(sections, "<div class='label'>" .. digest_line .. "</div>")
-        table.insert(sections, "<div class='muted'>Generate/open uses cached local, weather, and HN state (partial data supported).</div>")
+        table.insert(sections, "<div class='muted'>Generated from cached local, weather, and HN state (partial data supported).</div>")
         table.insert(sections, "</div>")
     end
 
-    table.insert(sections, "<div class='section'><div class='label'><b>Reading</b></div>")
-    table.insert(sections, "<div class='muted'>HN articles and digests render in overlay and persist as .md/.html. Navigation uses internal Lua actions.</div>")
-    for _, l in ipairs(links) do table.insert(sections, l) end
+    -- Actions are plain links: ScrollHtmlWidget has no button support, but it
+    -- routes taps on links through html_link_tapped_callback (kh:* scheme).
+    table.insert(sections, "<div class='actions'><div class='label'><b>Actions</b></div>")
+    table.insert(sections, "<div class='action'><a href='kh:refresh'>Refresh</a></div>")
+    if state.show_digest ~= false then
+        table.insert(sections, "<div class='action'><a href='kh:digest'>Generate digest</a></div>")
+        if state.digest_latest and state.digest_latest.date then
+            table.insert(sections, "<div class='action'><a href='kh:digest:latest'>Open latest digest</a></div>")
+        end
+    end
+    if state.show_hn ~= false then
+        table.insert(sections, "<div class='action'><a href='kh:test'>Open test article</a></div>")
+        for _, item in ipairs((state.hn and state.hn.items) or {}) do
+            local id = safe_href_id(item.id)
+            if id ~= "" then
+                local rank = tonumber(item.rank) or 0
+                local title = tostring(item.title or "(untitled)")
+                if #title > 42 then title = title:sub(1, 39) .. "..." end
+                table.insert(sections, string.format(
+                    "<div class='action'><a href='kh:hn:%s'>HN %s: %s</a></div>",
+                    id, escape_html(rank > 0 and tostring(rank) or "?"), escape_html(title)))
+            end
+        end
+    end
+    table.insert(sections, "<div class='action'><a href='kh:close'>Close</a></div>")
     table.insert(sections, "</div>")
-    table.insert(sections, "<p class='muted'>Refresh is cache-first (TTL/network/budget). Scroll position may reset on refresh.</p>")
-    table.insert(sections, "</body></html>")
+
     return table.concat(sections)
 end
+
 
 function Dashboard:open_hn_item(id)
     if id == "test-phase3" then
@@ -520,9 +525,58 @@ function Dashboard:open_test_article()
     end
 end
 
+function Dashboard:handle_link(uri)
+    uri = tostring(uri or "")
+    if uri == "kh:refresh" then
+        if self.actions then
+            self.actions:dispatch("refresh", { source = "dashboard", dashboard = self, user_initiated = true })
+        else
+            self:refresh({ allow_network = false })
+        end
+        return true
+    elseif uri == "kh:close" then
+        if self.actions then
+            self.actions:dispatch("close", { source = "dashboard", dashboard = self })
+        else
+            self:close()
+        end
+        return true
+    elseif uri == "kh:digest" then
+        if self.actions then
+            self.actions:dispatch("generate_digest", { source = "dashboard", dashboard = self })
+        end
+        return true
+    elseif uri == "kh:digest:latest" then
+        if self.actions then
+            self.actions:dispatch("open_digest:latest", { source = "dashboard", dashboard = self })
+        end
+        return true
+    elseif uri == "kh:test" then
+        if self.actions then
+            self.actions:dispatch("open_hn:test-phase3", { source = "dashboard", dashboard = self })
+        else
+            self:open_test_article()
+        end
+        return true
+    end
+
+    local id = uri:match("^kh:hn:(.+)$")
+    if id then
+        if self.actions then
+            self.actions:dispatch("open_hn:" .. id, { source = "dashboard", dashboard = self })
+        else
+            self:open_hn_item(id)
+        end
+        return true
+    end
+
+    Logger.warn("dashboard", "unknown_link", { uri = uri })
+    return false
+end
+
 function Dashboard:show(opts)
     opts = opts or {}
-    -- Single refresh contract: rebuild local state/HTML and (re)open widget in a controlled way.
+    -- Single refresh contract: rebuild local state/body and (re)open the widget.
     -- Note: replacing the widget resets scroll position (accepted in Phase 1).
     if self.widget then
         UIManager:close(self.widget)
@@ -532,61 +586,24 @@ function Dashboard:show(opts)
     local state = self:build_state(opts)
     state.test_article_ready = self.last_test_doc ~= nil
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
-    local html = build_html(state)
 
-    local actions = {
-        {
-            text = _("Refresh"),
-            callback = function()
-                if self.actions then self.actions:dispatch("refresh", { source = "dashboard", dashboard = self, user_initiated = true }) else self:refresh(opts) end
-            end,
-        },
-    }
-    if state.show_digest ~= false then
-        table.insert(actions, {
-            text = _("Generate/open digest"),
-            callback = function()
-                if self.actions then self.actions:dispatch("generate_digest", { source = "dashboard", dashboard = self }) end
-            end,
-        })
-        if state.digest_latest and state.digest_latest.date then
-            table.insert(actions, {
-                text = _("Open latest digest"),
-                callback = function()
-                    if self.actions then self.actions:dispatch("open_digest", { source = "dashboard", dashboard = self }, "open_digest:latest", "latest") end
-                end,
-            })
-        end
-    end
-    if state.show_hn ~= false then
-        table.insert(actions, {
-            text = _("Open test article"),
-            callback = function()
-                if self.actions then self.actions:dispatch("open_hn", { source = "dashboard", dashboard = self }, "open_hn:test-phase3", "test-phase3")
-                else self:open_test_article() end
-            end,
-        })
-        for _, act in ipairs(self:get_hn_actions()) do
-            table.insert(actions, act)
-        end
-    end
-    table.insert(actions, {
-        text = _("Close"),
-        callback = function()
-            if self.actions then self.actions:dispatch("close", { source = "dashboard", dashboard = self }) else self:close() end
-        end,
-    })
-
-    self.widget = ScrollHtmlWidget:new{
-        html_body = html,
-        css = "",
+    local widget = ScrollHtmlWidget:new{
+        html_body = build_body(state),
+        css = DASHBOARD_CSS,
         default_font_size = Screen:scaleBySize(20),
-        title = _("Kindle Home"),
         width = Screen:getWidth(),
         height = Screen:getHeight(),
-        actions = actions,
+        html_link_tapped_callback = function(link)
+            self:handle_link(link and link.uri)
+        end,
     }
-    UIManager:show(self.widget)
+    -- ScrollHtmlWidget requires `dialog`: its scroll handlers touch
+    -- self.dialog.movable and pass it to UIManager:setDirty. Pointing it at
+    -- the widget itself is safe (no `movable`) and keeps the dimen valid.
+    -- Without it, any swipe/tap raises "attempt to index field 'dialog'".
+    widget.dialog = widget
+    self.widget = widget
+    UIManager:show(widget)
     Logger.info("dashboard", "shown", { weather = state.weather and state.weather.status })
 end
 

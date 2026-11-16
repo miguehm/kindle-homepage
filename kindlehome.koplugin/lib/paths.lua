@@ -48,14 +48,21 @@ local function slugify(s, fallback)
     return s
 end
 
+-- Arithmetic hash only: KOReader on Kindle runs Lua 5.1/LuaJIT, so Lua 5.3
+-- bitwise operators (~ & | << >>) must not be used here. The multiplier keeps
+-- `h * 65599` below 2^53 so results are identical with doubles (Lua 5.1) and
+-- 64-bit integers (Lua 5.3+).
 local function short_hash(s)
     s = tostring(s or "")
     local h = 2166136261
     for i = 1, #s do
-        h = h ~ s:byte(i)
-        h = (h * 16777619) % 4294967296
+        h = (h * 65599 + s:byte(i)) % 4294967296
     end
-    return string.format("%08x", h)
+    -- Format as two 16-bit halves so %x never receives a value outside
+    -- the 32-bit integer range of Lua 5.1 builds.
+    local hi = math.floor(h / 65536)
+    local lo = h % 65536
+    return string.format("%04x%04x", hi, lo)
 end
 
 function Paths:new(config)
@@ -76,21 +83,51 @@ function Paths:cache_file(name)
     return join(self:cache_dir(), name)
 end
 
+-- Resolve the user's documents directory (the Kindle library root).
+-- DataStorage:getFullDataDir() is the KOReader install/settings dir on Kindle
+-- (/mnt/us/koreader), so it must NOT be used for user-visible content.
+local function documents_dir()
+    local root = nil
+    local ok_setting, setting = pcall(function()
+        return G_reader_settings and G_reader_settings:readSetting("home_dir")
+    end)
+    if ok_setting and type(setting) == "string" and setting ~= "" then
+        root = setting
+    end
+    if not root then
+        local ok_device, dir = pcall(function()
+            local Device = require("device")
+            return Device and Device.home_dir
+        end)
+        if ok_device and type(dir) == "string" and dir ~= "" then
+            root = dir
+        end
+    end
+    if not root then
+        local ok_storage, dir = pcall(function() return DataStorage:getFullDataDir() end)
+        if ok_storage and type(dir) == "string" and dir ~= "" then
+            root = dir
+        end
+    end
+    if not root then
+        return join(DataStorage:getDataDir(), "documents")
+    end
+    -- Kindle: Device.home_dir is "/mnt/us" and the library lives in "documents".
+    local sub = join(root, "documents")
+    local attr = lfs.attributes(sub, "mode")
+    if attr == "directory" then
+        return sub
+    end
+    return root
+end
+
 function Paths:documents_root()
     local mode = self.config and self.config:get("storage_mode") or "documents"
     if mode == "datadir" then
         return join(self:data_dir(), "news", "kindlehome")
     end
     local subdir = self.config and self.config:get("documents_subdir") or "KindleHome"
-    local home = nil
-    local ok, dir = pcall(function() return DataStorage:getFullDataDir() end)
-    if ok and type(dir) == "string" and dir ~= "" then
-        home = dir
-    end
-    if not home then
-        home = join(self:data_dir(), "documents")
-    end
-    return join(home, subdir)
+    return join(documents_dir(), subdir)
 end
 
 function Paths:articles_hn_dir()

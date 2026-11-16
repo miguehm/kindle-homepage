@@ -3,7 +3,6 @@ local UIManager = require("ui/uimanager")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local ReaderUI = require("apps/reader/readerui")
 local Screen = Device.screen
-local _ = require("gettext")
 
 local MdToHtml = require("lib/render/md_to_html")
 local Logger = require("lib/logger")
@@ -33,40 +32,74 @@ function ArticleView:_build_state_error(kind)
     local msg = Messages.reading(kind)
     if kind == "missing_path" then msg = "Content path is missing." end
     if kind == "render_error" then msg = "Content unavailable." end
-    return MdToHtml.document({
+    return MdToHtml.document_body({
         title = "Kindle Home",
         show_title = true,
         body_html = MdToHtml.notice_html(msg),
     })
 end
 
-function ArticleView:_resolve_html(doc)
+function ArticleView:_resolve_body(doc)
     doc = doc or {}
     local md = doc.md
     local meta = doc.meta or {}
-    if type(doc.html) == "string" and doc.html ~= "" then
-        return doc.html
-    end
     if md == nil or md == "" then
-        local st = doc.status or "no_markdown"
-        return self:_build_state_error(st)
+        if type(doc.body_html) == "string" and doc.body_html ~= "" then
+            return MdToHtml.document_body({
+                title = meta.title or doc.title or "Article",
+                meta = meta,
+                body_html = doc.body_html,
+            })
+        end
+        if type(doc.html) == "string" and doc.html ~= "" then
+            -- Persisted standalone document without markdown: render as-is.
+            return doc.html
+        end
+        return self:_build_state_error(doc.status or "no_markdown")
     end
-    local ok, html = pcall(MdToHtml.document, {
+    local ok, body = pcall(MdToHtml.document_body, {
         title = meta.title or doc.title or "Article",
         meta = meta,
         md = md,
         show_title = true,
     })
     if not ok then
-        Logger.err("article_view", "render_failed", { err = tostring(html) })
+        Logger.err("article_view", "render_failed", { err = tostring(body) })
         return self:_build_state_error("render_error")
     end
-    return html
+    return body
+end
+
+function ArticleView:handle_link(uri)
+    uri = tostring(uri or "")
+    if uri == "kh:back" then
+        local doc = self.current or {}
+        if type(doc.on_back) == "function" then
+            doc.on_back()
+            return true
+        end
+    elseif uri == "kh:dashboard" then
+        if self.actions then
+            self.actions:dispatch("close", { source = "article_view", view = self })
+            return true
+        end
+    elseif uri == "kh:reader" then
+        local doc = self.current or {}
+        if doc.html_path then
+            self:openInReader(doc.html_path)
+            return true
+        end
+    elseif uri == "kh:close" then
+        self:close()
+        return true
+    end
+    Logger.warn("article_view", "unknown_link", { uri = uri })
+    return false
 end
 
 function ArticleView:show(doc)
     doc = doc or {}
-    local html = self:_resolve_html(doc)
+    local body = self:_resolve_body(doc)
     self.current = doc
 
     if self.widget then
@@ -74,43 +107,37 @@ function ArticleView:show(doc)
         self.widget = nil
     end
 
-    local actions = {}
-    if doc.on_back then
-        table.insert(actions, { text = _("Back"), callback = function() doc.on_back() end })
+    -- Navigation as links: ScrollHtmlWidget has no buttons, but link taps go
+    -- through html_link_tapped_callback (kh:* scheme).
+    local nav = { "<div class='nav'><b>Navigation</b>" }
+    if type(doc.on_back) == "function" then
+        table.insert(nav, "<div class='navitem'><a href='kh:back'>Back</a></div>")
     end
     if self.actions then
-        table.insert(actions, {
-            text = _("Dashboard"),
-            callback = function()
-                self.actions:dispatch("close", { source = "article_view", view = self })
-            end,
-        })
+        table.insert(nav, "<div class='navitem'><a href='kh:dashboard'>Dashboard</a></div>")
     end
     if self.config and self.config:get("open_in_reader_enabled") and can_open_in_reader() and doc.html_path then
-        table.insert(actions, {
-            text = _("Open in reader"),
-            callback = function()
-                self:openInReader(doc.html_path)
-            end,
-        })
+        table.insert(nav, "<div class='navitem'><a href='kh:reader'>Open in reader</a></div>")
     end
-    table.insert(actions, {
-        text = _("Close"),
-        callback = function()
-            self:close()
-        end,
-    })
+    table.insert(nav, "<div class='navitem'><a href='kh:close'>Close</a></div>")
+    table.insert(nav, "</div>")
 
-    self.widget = ScrollHtmlWidget:new{
-        html_body = html,
-        css = "",
+    local widget = ScrollHtmlWidget:new{
+        html_body = body .. table.concat(nav),
+        css = MdToHtml.css() .. ".nav{margin:24px 0 0 0;padding-top:12px;border-top:2px solid #333;font-size:17px;}"
+            .. ".navitem{font-size:19px;margin:12px 0;}",
         default_font_size = Screen:scaleBySize(20),
-        title = _(doc.title or (doc.meta and doc.meta.title) or "Article"),
         width = Screen:getWidth(),
         height = Screen:getHeight(),
-        actions = actions,
+        html_link_tapped_callback = function(link)
+            self:handle_link(link and link.uri)
+        end,
     }
-    UIManager:show(self.widget)
+    -- Required: ScrollHtmlWidget scroll handlers touch self.dialog.movable and
+    -- pass dialog to UIManager:setDirty (nil raises "attempt to index 'dialog'").
+    widget.dialog = widget
+    self.widget = widget
+    UIManager:show(widget)
     Logger.info("article_view", "shown", { title = doc.title or (doc.meta and doc.meta.title) })
 end
 
