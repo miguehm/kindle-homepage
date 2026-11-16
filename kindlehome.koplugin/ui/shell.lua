@@ -33,6 +33,7 @@ local Shell = InputContainer:extend{
     on_layout_change = nil,
     fullscreen = true,
     show_title_bar = true,
+    header_factory = nil, -- function(width, shell) -> custom header widget
     _closing = false,
 }
 
@@ -46,23 +47,35 @@ function Shell:init()
     self.title_bar = nil
     local header_height = 0
     if self.show_title_bar ~= false then
-        local left_icon = nil
-        local left_callback = nil
-        if self.on_back then
-            left_icon = "chevron.left"
-            left_callback = function() self:request_back() end
+        if type(self.header_factory) == "function" then
+            local custom = self.header_factory(Screen:getWidth(), self)
+            if custom and type(custom.getSize) == "function" and type(custom.paintTo) == "function" then
+                self.title_bar = custom
+            else
+                Logger.warn("shell", "invalid_header_factory_fallback")
+                self.title_bar = nil
+            end
         end
-        self.title_bar = TitleBar:new{
-            title = self.title or "",
-            align = "left",
-            width = Screen:getWidth(),
-            fullscreen = fullscreen,
-            with_bottom_line = true,
-            left_icon = left_icon,
-            left_icon_tap_callback = left_callback or function() end,
-            close_callback = function() self:request_close() end,
-            show_parent = self,
-        }
+        if not self.title_bar then
+            local left_icon = nil
+            local left_callback = nil
+            if self.on_back then
+                left_icon = "chevron.left"
+                left_callback = function() self:request_back() end
+            end
+            self.title_bar = TitleBar:new{
+                title = self.title or "",
+                align = "left",
+                width = Screen:getWidth(),
+                fullscreen = fullscreen,
+                with_bottom_line = true,
+                left_icon = left_icon,
+                left_icon_tap_callback = left_callback or function() end,
+                close_callback = function() self:request_close() end,
+                show_parent = self,
+            }
+        end
+        self.title_bar.show_parent = self
         header_height = self.title_bar:getSize().h
     end
 
@@ -79,7 +92,7 @@ function Shell:init()
 
     local body_height = Screen:getHeight() - header_height - footer_height
     if body_height < 1 then body_height = 1 end
-    self.body = self.body_factory and self.body_factory(Screen:getWidth(), body_height) or nil
+    self.body = self.body_factory and self.body_factory(Screen:getWidth(), body_height, self) or nil
     if not self.body then
         Logger.err("shell", "body_missing")
     else

@@ -12,6 +12,7 @@ local DEFAULTS = {
     show_weather = true,
     show_hn = true,
     ui_font_scale = 1.0, -- 0.85 .. 1.6 (small .. extra large)
+    ui_clock_24h = false, -- dashboard hero clock: 24h vs 12h + AM/PM
     ui_fullscreen = true,
     ui_show_test_article = false, -- dev/debug entry in the dashboard
     ui_force_article_fallback = false, -- dev/debug: skip ReaderUI to exercise the pager
@@ -129,8 +130,8 @@ local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
         or key == "show_weather" or key == "show_hn"
         or key == "weather_enabled" or key == "hnmd_enabled"
-         or key == "ui_fullscreen" or key == "ui_show_test_article"
-         or key == "ui_force_article_fallback" then
+          or key == "ui_fullscreen" or key == "ui_show_test_article"
+          or key == "ui_force_article_fallback" or key == "ui_clock_24h" then
         return as_bool(value, default)
     elseif key == "ui_font_scale" then
         return clamp_number(value, 0.85, 1.6, default)

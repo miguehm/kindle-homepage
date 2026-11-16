@@ -107,6 +107,17 @@ function KindleHome:request_dashboard_refresh(opts)
 end
 
 function KindleHome:registerActions()
+    self.actions:register("settings", function()
+        local menu = self.ui and self.ui.menu
+        if menu and type(menu.onShowMenu) == "function" then
+            local ok, err = pcall(function() menu:onShowMenu() end)
+            if ok then return end
+            Logger.warn("main", "open_settings_failed", { err = tostring(err) })
+        end
+        UIManager:show(InfoMessage:new{
+            text = Messages.for_kind("settings_unavailable"), timeout = 4,
+        })
+    end)
     self.actions:register("refresh", function(ctx)
         local user_initiated = ctx and (ctx.source == "dashboard" or ctx.source == "dispatcher" or ctx.user_initiated)
         self:request_dashboard_refresh({ user_initiated = user_initiated })
@@ -166,6 +177,7 @@ function KindleHome:getDashboard()
             paths = self.paths,
             actions = self.actions,
             article_view = self:getArticleView(),
+            plugin_dir = self.path,
         }
         Logger.info("main", "dashboard_created")
     end

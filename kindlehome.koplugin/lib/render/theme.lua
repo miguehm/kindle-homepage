@@ -11,6 +11,7 @@
 --   action bar, so the whole UI grows/shrinks consistently.
 
 local Device = require("device")
+local Blitbuffer = require("ffi/blitbuffer")
 local Screen = Device.screen
 
 local Theme = {}
@@ -22,6 +23,52 @@ local DEFAULT_SCALE = 1.0
 -- HTML base font sizes in design dp (before scaleBySize).
 Theme.UI_BASE = 26
 Theme.ARTICLE_BASE = 25
+
+-- DESIGN.md "Paperwhite Monochrome" tokens, translated to the discrete 8-bit
+-- grays available on electrophoretic displays. No alpha/dithering/tints.
+Theme.color = {
+    canvas = Blitbuffer.COLOR_WHITE,
+    fg = Blitbuffer.COLOR_BLACK,
+    muted = Blitbuffer.COLOR_GRAY_6,       -- #666666 secondary metadata
+    hairline = Blitbuffer.COLOR_GRAY_E,    -- #EEEEEE (nearest discrete #E5E5E5)
+    inverse_bg = Blitbuffer.COLOR_BLACK,
+    inverse_fg = Blitbuffer.COLOR_WHITE,
+}
+
+-- Type scale in design dp (multiplied by ui_font_scale). Serif for display and
+-- body, sans for labels/system chrome, as specified by DESIGN.md.
+Theme.type = {
+    display = 32,
+    headline_lg = 26,
+    headline_md = 20,
+    headline_sm = 18,
+    body_lg = 17,
+    body_md = 15,
+    body_sm = 13,
+    label_lg = 14,
+    label_md = 12,
+    label_sm = 10,
+}
+
+Theme.space = {
+    xs = 4,
+    sm = 8,
+    gutter = 16,
+    margin = 20,
+    lg = 24,
+    xl = 36,
+}
+
+-- Noto Serif/Noto Sans ship with KOReader and match the Literata/Inter roles
+-- of DESIGN.md without adding weight to the plugin or requiring user fonts.
+Theme.faces = {
+    serif = "NotoSerif-Regular.ttf",
+    serif_bold = "NotoSerif-Bold.ttf",
+    sans = "NotoSans-Regular.ttf",
+    sans_bold = "NotoSans-Bold.ttf",
+}
+
+Theme.STORY_PAGE_SIZE = 5
 
 local function clamp(v, lo, hi)
     if v < lo then return lo end
@@ -64,6 +111,40 @@ function Theme.scale_label(value)
     if v <= 1.1 then return "Medium" end
     if v <= 1.3 then return "Large" end
     return "Extra large"
+end
+
+-- One physical pixel at the design grid, rounded up so it survives scaling.
+function Theme.hairline(config)
+    return math.max(1, Theme.native_size(config, 1))
+end
+
+function Theme.margin(config)
+    return Theme.native_size(config, Theme.space.margin)
+end
+
+-- Face for a design type role. Falls back to the user's content font if a
+-- KOReader build does not bundle Noto Serif/Sans.
+function Theme.face(config, role, bold)
+    local Font = require("ui/font")
+    local dp = Theme.type[role] or Theme.type.body_md
+    local size = Theme.native_font_size(config, dp)
+    local label = role and role:sub(1, 5) == "label"
+    local name = label
+        and ((bold and Theme.faces.sans_bold) or Theme.faces.sans)
+        or ((bold and Theme.faces.serif_bold) or Theme.faces.serif)
+    local ok, face = pcall(function() return Font:getFace(name, size) end)
+    if ok and face then return face end
+    local fallback_ok, fallback = pcall(function() return Font:getFace("cfont", size) end)
+    if fallback_ok and fallback then return fallback end
+    return nil
+end
+
+-- Icon file for a dashboard glyph. plugin_dir is supplied by main.lua
+-- (the plugin's own directory); without it the widget degrades to text only.
+function Theme.icon_file(plugin_dir, group, name, inverse)
+    if type(plugin_dir) ~= "string" or plugin_dir == "" then return nil end
+    local suffix = inverse and "-inverse" or ""
+    return plugin_dir .. "/assets/icons/" .. group .. "/" .. name .. suffix .. ".svg"
 end
 
 return Theme

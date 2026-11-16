@@ -11,6 +11,11 @@ local function fmt_temp(v)
     return tostring(n) .. "°C"
 end
 
+local function fmt_int(v)
+    if type(v) ~= "number" then return nil end
+    return tostring(math.floor(v + 0.5))
+end
+
 local function build_line(payload, is_stale, err_kind)
     payload = payload or {}
     local place = payload.place_name
@@ -33,6 +38,15 @@ local function build_line(payload, is_stale, err_kind)
     local lo = fmt_temp(payload.temp_min)
     if hi or lo then
         table.insert(parts, string.format("H:%s L:%s", hi or "n/a", lo or "n/a"))
+    end
+    local wind = fmt_int(payload.wind_kmh)
+    if wind then table.insert(parts, "Wind: " .. wind .. " km/h") end
+    local humidity = fmt_int(payload.humidity)
+    if humidity then table.insert(parts, "Humidity: " .. humidity .. "%") end
+    local t_hi = fmt_temp(payload.tomorrow_temp_max)
+    local t_lo = fmt_temp(payload.tomorrow_temp_min)
+    if t_hi or t_lo then
+        table.insert(parts, string.format("Tomorrow: %s/%s", t_hi or "n/a", t_lo or "n/a"))
     end
     local line = place .. " — " .. table.concat(parts, ", ")
     if is_stale then

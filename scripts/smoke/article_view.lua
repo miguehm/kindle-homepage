@@ -13,6 +13,9 @@ package.preload["device"] = function()
         },
     }
 end
+package.preload["ffi/blitbuffer"] = function()
+    return { COLOR_WHITE = 255, COLOR_BLACK = 0, COLOR_GRAY_6 = 0x66, COLOR_GRAY_E = 0xEE }
+end
 package.preload["ui/uimanager"] = function()
     return {
         show = function(_, w) shown = shown + 1; return w end,

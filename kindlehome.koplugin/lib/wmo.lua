@@ -42,4 +42,19 @@ function Wmo.to_text(code)
     return MAP[n] or ("Unknown conditions (code " .. tostring(n) .. ")")
 end
 
+-- Monochrome glyph key for DESIGN.md icon assets. Codes are grouped into the
+-- stable e-ink states; unknown codes get a neutral glyph instead of a blank.
+function Wmo.to_icon(code)
+    local n = tonumber(code)
+    if n == nil then return "unknown" end
+    if n == 0 or n == 1 then return "sun" end
+    if n == 2 then return "partly" end
+    if n == 3 then return "cloud" end
+    if n == 45 or n == 48 then return "fog" end
+    if (n >= 51 and n <= 67) or (n >= 80 and n <= 82) then return "rain" end
+    if (n >= 71 and n <= 77) or n == 85 or n == 86 then return "snow" end
+    if n >= 95 then return "storm" end
+    return "unknown"
+end
+
 return Wmo

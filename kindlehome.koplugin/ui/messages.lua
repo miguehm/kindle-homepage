@@ -24,6 +24,8 @@ local MAP = {
     path_invalid = "Use an absolute path such as /mnt/us/My Docs. Paths with '..' are not allowed.",
     path_saved = "Custom content folder saved.",
     path_reset = "Custom content folder cleared. Using the default location.",
+    coming_soon = "Coming soon.",
+    settings_unavailable = "Open the KOReader menu to change settings.",
     path_unwritable = "Folder saved, but it could not be created. Check the path and permissions.",
 }
 

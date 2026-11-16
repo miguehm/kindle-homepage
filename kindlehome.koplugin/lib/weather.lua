@@ -13,15 +13,17 @@ local function normalize(config, api_json, fetched_at)
     api_json = api_json or {}
     local current = api_json.current or {}
     local daily = api_json.daily or {}
-    local function daily0(key)
+    local function daily_at(key, index)
         local t = daily[key]
-        if type(t) == "table" then return t[1] end
+        if type(t) == "table" then return t[index] end
         return nil
     end
+    local function daily0(key) return daily_at(key, 1) end
 
     local current_code = to_num(current.weather_code)
     local daily_code = to_num(daily0("weather_code"))
     local code = current_code ~= nil and current_code or daily_code
+    local tomorrow_code = to_num(daily_at("weather_code", 2))
     local place_name = config and config:get("weather_place_name") or ""
     if type(place_name) ~= "string" then place_name = "" end
 
@@ -32,6 +34,14 @@ local function normalize(config, api_json, fetched_at)
         current_temp = to_num(current.temperature_2m),
         temp_max = to_num(daily0("temperature_2m_max")),
         temp_min = to_num(daily0("temperature_2m_min")),
+        wind_kmh = to_num(current.wind_speed_10m),
+        humidity = to_num(current.relative_humidity_2m),
+        tomorrow_temp_max = to_num(daily_at("temperature_2m_max", 2)),
+        tomorrow_temp_min = to_num(daily_at("temperature_2m_min", 2)),
+        tomorrow_wmo_code = tomorrow_code,
+        tomorrow_condition_text = tomorrow_code and Wmo.to_text(tomorrow_code) or nil,
+        icon = Wmo.to_icon(code),
+        tomorrow_icon = Wmo.to_icon(tomorrow_code),
         wmo_code = code,
         condition_text = Wmo.to_text(code),
         observed_at = current.time or api_json.current_units and nil or nil,
@@ -41,6 +51,7 @@ local function normalize(config, api_json, fetched_at)
     -- prefer daily code for summary if current missing
     if current_code == nil and daily_code ~= nil then
         view.condition_text = Wmo.to_text(daily_code)
+        view.icon = Wmo.to_icon(daily_code)
     end
     return view
 end
@@ -60,7 +71,7 @@ function Weather.fetch(config, opts)
     local lat = config:get("weather_lat")
     local lon = config:get("weather_lon")
     local url = string.format(
-        "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=1",
+        "https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&wind_speed_unit=kmh&timezone=auto&forecast_days=2",
         tostring(lat), tostring(lon)
     )
     local timeout_s = opts.timeout_s or (config and config:get("http_timeout_s")) or 10

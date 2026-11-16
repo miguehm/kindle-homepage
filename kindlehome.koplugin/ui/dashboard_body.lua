@@ -1,220 +1,117 @@
-local Blitbuffer = require("ffi/blitbuffer")
-local Font = require("ui/font")
+-- Native dashboard body: a scrollable content column with a fixed bottom tab
+-- bar. The wrapper reports the scroll area as its crop region so KOReader
+-- repaints the right framebuffer slice (F9/F15 invariant).
 local Geom = require("ui/geometry")
-local GestureRange = require("ui/gesturerange")
 local FrameContainer = require("ui/widget/container/framecontainer")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
-local LineWidget = require("ui/widget/linewidget")
 local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
-local Size = require("ui/size")
-local TextBoxWidget = require("ui/widget/textboxwidget")
-local TextWidget = require("ui/widget/textwidget")
 local VerticalGroup = require("ui/widget/verticalgroup")
-local VerticalSpan = require("ui/widget/verticalspan")
+
 local Theme = require("lib/render/theme")
+local DesignText = require("ui/widget/design_text")
+local HeroWeather = require("ui/widget/hero_weather")
+local StoriesCard = require("ui/widget/stories_card")
+local BottomNav = require("ui/widget/bottom_nav")
+local TapRow = require("ui/widget/tap_row")
 
 local DashboardBody = {}
 
-local CARD_PAD = 10
-local SECTION_GAP = 8
+local SECTION_GAP = 12
 
-local FONT = {
-    clock = 30,
-    date = 14,
-    status = 12,
-    card_title = 11,
-    temp = 24,
-    body = 14,
-    meta = 12,
-    footer = 11,
-}
+local BodyWrapper = InputContainer:extend{}
 
-local function px(config, dp)
-    return Theme.native_size(config, dp)
-end
-
-local function face(config, dp)
-    return Font:getFace("cfont", Theme.native_font_size(config, dp))
-end
-
-local function gap(config, dp)
-    return VerticalSpan:new{ width = px(config, dp) }
-end
-
-local function text_box(text, width, config, dp, bold)
-    return TextBoxWidget:new{
-        text = tostring(text or ""),
-        width = width,
-        face = face(config, dp),
-        bold = bold or nil,
-    }
-end
-
-local function text_line(text, config, dp, bold)
-    return TextWidget:new{
-        text = tostring(text or ""),
-        face = face(config, dp),
-        bold = bold or nil,
-    }
-end
-
-local function add_text(group, text, width, config, dp, bold)
-    if text == nil or text == "" then return end
-    table.insert(group, text_box(text, width, config, dp, bold))
-    table.insert(group, gap(config, 3))
-end
-
-local function full_width(inner_w, widget)
-    return LeftContainer:new{
-        dimen = Geom:new{ w = inner_w, h = widget:getSize().h },
-        widget,
-    }
-end
-
-local function card(config, inner_w, content)
-    local pad = px(config, CARD_PAD)
-    local border = Size.border.window
-    local content_w = math.max(1, inner_w - 2 * (border + pad))
-    local sized = LeftContainer:new{
-        dimen = Geom:new{ w = content_w, h = content:getSize().h },
-        content,
-    }
-    return FrameContainer:new{
-        margin = 0,
-        padding = pad,
-        bordersize = border,
-        background = Blitbuffer.COLOR_WHITE,
-        sized,
-    }
-end
-
-local HnRow = InputContainer:extend{}
-
-function HnRow:init()
-    self[1] = self.content_group
-    local size = self.content_group:getSize()
-    self.dimen = Geom:new{ x = 0, y = 0, w = size.w, h = size.h }
-    self.ges_events = {
-        TapHnRow = {
-            GestureRange:new{ ges = "tap", range = self.dimen },
-        },
-    }
-end
-
-function HnRow:onTapHnRow()
-    if type(self.on_tap) ~= "function" then return false end
-    self.on_tap()
-    return true
-end
-
-local function build_hero(model, config, inner_w)
-    local group = VerticalGroup:new{ align = "left" }
-    table.insert(group, text_line(model.hero.clock, config, FONT.clock, true))
-    table.insert(group, gap(config, 2))
-    table.insert(group, text_line(model.hero.date, config, FONT.date))
-    return full_width(inner_w, group)
-end
-
-local function build_weather(model, config, inner_w)
-    local weather = model.weather
-    if not weather then return nil end
-    local content = VerticalGroup:new{ align = "left" }
-    local content_w = math.max(1, inner_w - 2 * (Size.border.window + px(config, CARD_PAD)))
-    table.insert(content, text_line(weather.title, config, FONT.card_title, true))
-    table.insert(content, gap(config, 5))
-    add_text(content, weather.temp, content_w, config, FONT.temp, true)
-    add_text(content, weather.condition, content_w, config, FONT.body)
-    add_text(content, weather.fallback, content_w, config, FONT.body)
-    add_text(content, weather.detail, content_w, config, FONT.meta)
-    add_text(content, weather.updated, content_w, config, FONT.meta)
-    add_text(content, weather.message, content_w, config, FONT.meta)
-    return card(config, inner_w, content)
-end
-
-local function build_hn(model, config, inner_w, callbacks)
-    local hn = model.hn
-    if not hn then return nil end
-    local content = VerticalGroup:new{ align = "left" }
-    local content_w = math.max(1, inner_w - 2 * (Size.border.window + px(config, CARD_PAD)))
-    table.insert(content, text_line(hn.title, config, FONT.card_title, true))
-    table.insert(content, gap(config, 5))
-
-    if #hn.items == 0 then
-        add_text(content, hn.empty, content_w, config, FONT.body)
-    else
-        for index, row in ipairs(hn.items) do
-            if index > 1 then
-                table.insert(content, LineWidget:new{
-                    dimen = Geom:new{ w = content_w, h = Size.line.thin },
-                })
-                table.insert(content, gap(config, 4))
-            end
-            local row_group = VerticalGroup:new{ align = "left" }
-            add_text(row_group, row.rank .. ". " .. row.title, content_w, config, FONT.body, true)
-            add_text(row_group, row.meta, content_w, config, FONT.meta)
-            table.insert(content, HnRow:new{
-                content_group = row_group,
-                on_tap = row.id and function() callbacks.on_open_hn(row.id) end or nil,
-            })
-            table.insert(content, gap(config, 4))
-        end
+function BodyWrapper:getCropRegion()
+    if self.scroll and type(self.scroll.getCropRegion) == "function" then
+        return self.scroll:getCropRegion()
     end
-
-    add_text(content, hn.message, content_w, config, FONT.meta)
-    add_text(content, hn.updated, content_w, config, FONT.meta)
-    return card(config, inner_w, content)
+    return self.dimen
 end
 
-local function build_test(model, config, inner_w, callbacks)
-    if not model.test_article then return nil end
-    local content = VerticalGroup:new{ align = "left" }
-    local content_w = math.max(1, inner_w - 2 * (Size.border.window + px(config, CARD_PAD)))
-    table.insert(content, text_line("DEVELOPMENT", config, FONT.card_title, true))
-    table.insert(content, gap(config, 5))
-    local row_group = VerticalGroup:new{ align = "left" }
-    add_text(row_group, "Open test article", content_w, config, FONT.body)
-    table.insert(content, HnRow:new{
-        content_group = row_group,
-        on_tap = function() callbacks.on_test() end,
-    })
-    return card(config, inner_w, content)
+local function add_section(root, widget, config)
+    if not widget then return end
+    table.insert(root, widget)
+    table.insert(root, DesignText.span(config, SECTION_GAP))
 end
 
 function DashboardBody.build(model, config, width, height, callbacks)
     callbacks = callbacks or {}
+    local nav = BottomNav:new{
+        tabs = model.nav and model.nav.tabs,
+        active = model.nav and model.nav.active,
+        config = config,
+        plugin_dir = callbacks.plugin_dir,
+        on_tab = callbacks.on_nav,
+        show_parent = callbacks.show_parent,
+    }
+    local nav_height = nav:getSize().h
+    local scroll_height = math.max(1, height - nav_height)
     local bar = ScrollableContainer:getScrollbarWidth()
     local inner_w = math.max(1, width - bar)
+    local margin = Theme.margin(config)
+    local content_w = math.max(1, inner_w - 2 * margin)
+
     local root = VerticalGroup:new{ align = "left" }
+    add_section(root, HeroWeather.build(model.hero, config, content_w, model.weather, callbacks.plugin_dir), config)
 
-    local function add_section(widget)
-        if not widget then return end
-        table.insert(root, widget)
-        table.insert(root, gap(config, SECTION_GAP))
-    end
-
-    add_section(build_hero(model, config, inner_w))
-    if model.status then
-        add_section(full_width(inner_w, text_box(model.status, inner_w, config, FONT.status)))
-    end
     if model.hint then
-        local content = VerticalGroup:new{ align = "left" }
-        add_text(content, model.hint, math.max(1, inner_w - 2 * (Size.border.window + px(config, CARD_PAD))), config, FONT.status)
-        add_section(card(config, inner_w, content))
+        add_section(root, DesignText.box(model.hint, content_w, config, "body_sm", false, Theme.color.muted), config)
     end
-    add_section(build_weather(model, config, inner_w))
-    add_section(build_hn(model, config, inner_w, callbacks))
-    add_section(build_test(model, config, inner_w, callbacks))
-    add_section(full_width(inner_w, text_box(model.footer, inner_w, config, FONT.footer)))
+    if model.hn then
+        add_section(root, StoriesCard.build(model.hn, config, content_w, callbacks, callbacks.plugin_dir), config)
+    end
+    if model.test_article then
+        local dev = VerticalGroup:new{ align = "left" }
+        table.insert(dev, DesignText.line("DEVELOPMENT", config, "label_md", true, Theme.color.muted))
+        table.insert(dev, DesignText.span(config, 4))
+        local row = TapRow:new{
+            content_group = DesignText.box("Open test article", content_w, config, "body_md"),
+            show_parent = callbacks.show_parent,
+            on_tap = callbacks.on_test,
+        }
+        table.insert(dev, row)
+        add_section(root, FrameContainer:new{
+            margin = 0,
+            padding = Theme.native_size(config, 8),
+            bordersize = Theme.hairline(config),
+            color = Theme.color.hairline,
+            background = Theme.color.canvas,
+            dev,
+        }, config)
+    end
+    if model.last_refreshed then
+        local label = DesignText.line(model.last_refreshed.text, config, "label_md", false, Theme.color.muted)
+        local row = HorizontalGroup:new{ align = "center" }
+        table.insert(row, HorizontalSpan:new{ width = math.max(0, content_w - label:getSize().w) })
+        table.insert(row, label)
+        add_section(root, LeftContainer:new{
+            dimen = Geom:new{ w = content_w, h = row:getSize().h }, row,
+        }, config)
+    end
 
     local page = LeftContainer:new{
-        dimen = Geom:new{ w = inner_w, h = root:getSize().h },
+        dimen = Geom:new{ w = content_w, h = root:getSize().h },
         root,
     }
-    return ScrollableContainer:new{
-        dimen = Geom:new{ w = width, h = height },
+    local scroll = ScrollableContainer:new{
+        dimen = Geom:new{ w = width, h = scroll_height },
         page,
     }
+    scroll.dialog = callbacks.show_parent
+    scroll.show_parent = callbacks.show_parent
+
+    local group = VerticalGroup:new{ align = "left" }
+    table.insert(group, scroll)
+    table.insert(group, nav)
+
+    local body = BodyWrapper:new{}
+    body[1] = group
+    body.dimen = Geom:new{ x = 0, y = 0, w = width, h = height }
+    body.scroll = scroll
+    body.nav = nav
+    return body
 end
 
 return DashboardBody

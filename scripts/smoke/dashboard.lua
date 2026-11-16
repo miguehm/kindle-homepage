@@ -1,13 +1,21 @@
--- Smoke test: native dashboard model + widget tree on plain Lua 5.1.
+-- Smoke: native dashboard model + widget tree on plain Lua 5.1.
+-- Covers the Paperwhite redesign: combined hero/weather, paged stories,
+-- fixed bottom nav, custom header and icon assets.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
+local SCREEN_W, SCREEN_H = 1200, 1600
+local SCROLLBAR = 30
 
 local DashboardModel = require("lib/dashboard_model")
 
 local NOW = 1763289600
 
+local function iso(offset_seconds)
+    return os.date("!%Y-%m-%dT%H:%M:%SZ", NOW - offset_seconds)
+end
+
 local function fixture_state()
     local items = {}
-    for i = 1, 10 do
+    for i = 1, 12 do
         items[i] = {
             id = tostring(1000 + i),
             rank = i,
@@ -17,13 +25,14 @@ local function fixture_state()
             by = "user" .. i,
             domain = "example.com",
             url = "https://example.com/" .. i,
+            published_at = iso(i * 3600),
             content_status = "ok",
         }
     end
     items[2].url = nil
     items[2].content_status = "no_content"
     return {
-        time = "12:34",
+        time = "10:42",
         date = "Monday, November 16, 2026",
         battery = "Battery: 90%, not charging",
         network = "Network: connected (TestNet)",
@@ -35,6 +44,12 @@ local function fixture_state()
                 place_name = "Madrid",
                 temp_max = 16,
                 temp_min = 7,
+                wind_kmh = 12,
+                humidity = 54,
+                icon = "cloud",
+                tomorrow_temp_max = 18,
+                tomorrow_temp_min = 11,
+                tomorrow_icon = "sun",
             },
             fetched_at = NOW - 300,
             stale = true,
@@ -45,46 +60,64 @@ local function fixture_state()
             fetched_at = NOW - 3600,
             stale = true,
         },
+        refreshed_at = NOW - 300,
+        refreshed_stale = true,
+        show_battery = true,
+        show_network = true,
         show_weather = true,
         show_hn = true,
         refresh_hint = "Offline. Turn on WiFi and refresh.",
     }
 end
 
-local model = DashboardModel.build(fixture_state(), { now = NOW, test_article_ready = true })
-assert(model.hero.clock == "12:34", "clock missing")
-assert(model.hero.date == "Monday, November 16, 2026", "date missing")
-assert(model.status and model.status:find("Battery: 90%", 1, true), "battery missing")
-assert(model.status and model.status:find("TestNet", 1, true), "network missing")
+local state = fixture_state()
+local model = DashboardModel.build(state, { now = NOW })
+assert(model.hero.clock == "10:42" and model.hero.meridiem == "AM", "12h clock missing")
+assert(model.hero.date_short ~= "" and model.hero.date_short:upper() == model.hero.date_short, "short date missing")
+assert(model.hero.battery_pct == 90 and model.hero.charging == false, "battery missing")
+assert(model.hero.wifi == true, "wifi status missing")
+assert(model.hero.updated_clock, "updated clock missing")
 assert(model.hint == "Offline. Turn on WiFi and refresh.", "hint missing")
-assert(model.weather.temp == "12°C", "temperature missing")
-assert(model.weather.condition == "Cloudy", "condition missing")
-assert(model.weather.detail and model.weather.detail:find("Madrid", 1, true), "place missing")
-assert(model.weather.detail and model.weather.detail:find("H:16°C L:7°C", 1, true), "min/max missing")
-assert(model.weather.updated == "Updated 5 min ago · cached", "weather updated missing")
-assert(#model.hn.items == 10, "HN rows missing")
+assert(model.weather.temp == "12°C" and model.weather.condition == "Cloudy", "weather missing")
+assert(model.weather.icon == "cloud" and model.weather.wind == "12 km/h", "weather icon/wind missing")
+assert(model.weather.humidity == "54%" and model.weather.place == "Madrid", "weather humidity/place missing")
+assert(model.weather.tomorrow.hi == "18°C" and model.weather.tomorrow.lo == "11°C", "tomorrow missing")
+assert(model.hn.badge == "Y/HN" and model.hn.title == "TOP STORIES", "stories header missing")
+assert(model.hn.pages == 3 and #model.hn.items == 5, "pagination missing")
+assert(model.hn.items[1].rank == 1 and model.hn.items[5].rank == 5, "page 1 ranks wrong")
+assert(model.hn.items[1].meta:find("example.com", 1, true), "domain missing")
 assert(model.hn.items[1].meta:find("10 pts", 1, true), "score missing")
 assert(model.hn.items[1].meta:find("3 comments", 1, true), "comments missing")
 assert(model.hn.items[1].meta:find("by user1", 1, true), "author missing")
-assert(model.hn.items[2].meta:find("Ask HN", 1, true), "Ask HN missing")
-assert(model.hn.items[2].meta:find("unavailable", 1, true), "unavailable flag missing")
-assert(model.hn.updated == "Updated 1 h ago · cached", "HN updated missing")
-assert(model.digest == nil, "digest must be gone from the model")
-assert(model.test_article == true, "test article row missing")
+assert(model.hn.items[1].meta:find("1h", 1, true), "age missing")
+assert(model.last_refreshed and model.last_refreshed.text:find("Last refreshed:", 1, true), "footer missing")
+assert(#model.nav.tabs == 3 and model.nav.active == "dashboard", "nav model missing")
+assert(model.digest == nil and model.footer == nil, "obsolete model fields must be gone")
 
-local hidden = fixture_state()
-hidden.show_weather = false
-hidden.show_hn = false
-local hidden_model = DashboardModel.build(hidden, { now = NOW })
+local page2 = DashboardModel.build(state, { now = NOW, page = 2 })
+assert(page2.hn.page == 2 and page2.hn.items[1].rank == 6 and #page2.hn.items == 5, "page 2 wrong")
+local page3 = DashboardModel.build(state, { now = NOW, page = 9 })
+assert(page3.hn.page == 3 and #page3.hn.items == 2, "page clamp wrong")
+local hour24 = DashboardModel.build(state, { now = NOW, clock_24h = true })
+assert(hour24.hero.clock == "10:42" and hour24.hero.meridiem == nil, "24h clock wrong")
+local hidden_state = fixture_state()
+hidden_state.show_weather = false
+hidden_state.show_hn = false
+hidden_state.show_battery = false
+hidden_state.show_network = false
+local hidden_model = DashboardModel.build(hidden_state, { now = NOW })
 assert(hidden_model.weather == nil and hidden_model.hn == nil, "hidden sections must be absent")
-
+assert(hidden_model.hero.show_battery == false and hidden_model.hero.show_network == false, "hidden chrome wrong")
 local empty = fixture_state()
 empty.hn.items = {}
 local empty_model = DashboardModel.build(empty, { now = NOW })
-assert(empty_model.hn.empty == "HN unavailable.", "empty HN message missing")
+assert(empty_model.hn.pages == 0 and empty_model.hn.empty == "HN unavailable.", "empty HN wrong")
+local bad_time = DashboardModel.parse_time("not-a-time")
+assert(bad_time == nil, "invalid timestamp must be omitted")
 
+-- ---- KOReader module stubs -------------------------------------------------
 local captured, captured_shell, shell_instance, shown, dispatched = nil, nil, nil, 0, {}
-local rows = {}
+local inputs, tap_icons, notices = {}, {}, {}
 
 local function geom(o)
     o = o or {}
@@ -94,12 +127,17 @@ local function geom(o)
     return o
 end
 
+local function size_of(widget)
+    if type(widget.getSize) == "function" then return widget:getSize() end
+    return { w = 0, h = 0 }
+end
+
 package.preload["device"] = function()
     return {
         screen = {
             scaleBySize = function(_, n) return math.floor(n * 2) end,
-            getWidth = function() return 1200 end,
-            getHeight = function() return 1600 end,
+            getWidth = function() return SCREEN_W end,
+            getHeight = function() return SCREEN_H end,
         },
         getPowerDevice = function()
             return {
@@ -122,29 +160,48 @@ package.preload["ui/uimanager"] = function()
         close = function() end,
         scheduleIn = function() end,
         setDirty = function() end,
+        forceRePaint = function() end,
     }
 end
 package.preload["logger"] = function()
-    return {
-        dbg = function() end,
-        info = function() end,
-        warn = function() end,
-        err = function() end,
-    }
+    return { dbg = function() end, info = function() end, warn = function() end, err = function() end }
 end
 package.preload["ui/widget/infomessage"] = function()
     local M = {}
-    function M:new(opts) return opts end
+    function M:new(o) notices[#notices + 1] = o.text; return o end
     return M
 end
 package.preload["ffi/blitbuffer"] = function()
-    return { COLOR_WHITE = 1 }
+    return { COLOR_WHITE = 255, COLOR_BLACK = 0, COLOR_GRAY_6 = 102, COLOR_GRAY_E = 238 }
 end
 package.preload["ui/font"] = function()
-    return { getFace = function() return {} end }
+    return { getFace = function(name, size) return { name = name, size = size } end }
+end
+package.preload["ui/widget/widget"] = function()
+    local EventListener = { handleEvent = function() return false end }
+    local Widget = {}
+    Widget.__index = Widget
+    setmetatable(Widget, { __index = EventListener })
+    function Widget:extend(o)
+        o = o or {}
+        setmetatable(o, self)
+        self.__index = self
+        return o
+    end
+    function Widget:new(o)
+        o = self:extend(o)
+        if o.init then o:init() end
+        return o
+    end
+    function Widget:getSize() return self.dimen end
+    function Widget:paintTo() end
+    return Widget
 end
 package.preload["ui/geometry"] = function()
-    return { new = function(_, o) return geom(o) end }
+    local Geom = {}
+    Geom.__index = Geom
+    function Geom:new(o) return geom(o) end
+    return Geom
 end
 package.preload["ui/gesturerange"] = function()
     return { new = function(_, o) return o end }
@@ -152,19 +209,20 @@ end
 package.preload["ui/size"] = function()
     return { border = { window = 2 }, line = { thin = 1 } }
 end
-package.preload["ui/widget/textboxwidget"] = function()
-    local M = {}
-    function M:new(o)
-        o.getSize = function(self) return { w = self.width, h = 12 } end
-        return o
-    end
-    return M
-end
 package.preload["ui/widget/textwidget"] = function()
     local M = {}
     function M:new(o)
         o.text = tostring(o.text or "")
-        o.getSize = function(self) return { w = math.min(#self.text * 3, 200), h = 12 } end
+        o.getSize = function(self) return { w = math.min(#self.text * 6, 400), h = 14 } end
+        return o
+    end
+    return M
+end
+package.preload["ui/widget/textboxwidget"] = function()
+    local M = {}
+    function M:new(o)
+        o.text = tostring(o.text or "")
+        o.getSize = function(self) return { w = self.width, h = 14 } end
         return o
     end
     return M
@@ -185,20 +243,60 @@ package.preload["ui/widget/verticalspan"] = function()
     end
     return M
 end
+package.preload["ui/widget/horizontalspan"] = function()
+    local M = {}
+    function M:new(o)
+        o.getSize = function(self) return { w = self.width, h = 0 } end
+        return o
+    end
+    return M
+end
 package.preload["ui/widget/verticalgroup"] = function()
     local M = {}
     function M:new(o)
         o = o or {}
-        setmetatable(o, { __index = M })
         function o:getSize()
             local w, h = 0, 0
             for _, child in ipairs(self) do
-                local s = child:getSize()
+                local s = size_of(child)
                 if s.w > w then w = s.w end
                 h = h + s.h
             end
             return { w = w, h = h }
         end
+        return o
+    end
+    return M
+end
+package.preload["ui/widget/horizontalgroup"] = function()
+    local M = {}
+    function M:new(o)
+        o = o or {}
+        function o:getSize()
+            local w, h = 0, 0
+            for _, child in ipairs(self) do
+                local s = size_of(child)
+                w = w + s.w
+                if s.h > h then h = s.h end
+            end
+            return { w = w, h = h }
+        end
+        return o
+    end
+    return M
+end
+package.preload["ui/widget/iconwidget"] = function()
+    local M = {}
+    function M:new(o)
+        o.getSize = function(self) return { w = self.width or 24, h = self.height or 24 } end
+        return o
+    end
+    return M
+end
+package.preload["ui/widget/container/centercontainer"] = function()
+    local M = {}
+    function M:new(o)
+        o.getSize = function(self) return self.dimen end
         return o
     end
     return M
@@ -215,8 +313,8 @@ package.preload["ui/widget/container/framecontainer"] = function()
     local M = {}
     function M:new(o)
         o.getSize = function(self)
-            local s = self[1]:getSize()
-            local extra = 2 * (self.bordersize + self.padding)
+            local s = size_of(self[1])
+            local extra = 2 * ((self.bordersize or 0) + (self.padding or 0))
             return { w = s.w + extra, h = s.h + extra }
         end
         return o
@@ -226,6 +324,12 @@ end
 package.preload["ui/widget/container/inputcontainer"] = function()
     local M = {}
     function M:getSize() return self.dimen end
+    function M:handleEvent() return false end
+    function M:paintTo(bb, x, y)
+        if self[1] and type(self[1].paintTo) == "function" then
+            self[1]:paintTo(bb, x, y)
+        end
+    end
     function M:extend(o)
         o = o or {}
         setmetatable(o, self)
@@ -234,15 +338,16 @@ package.preload["ui/widget/container/inputcontainer"] = function()
     end
     function M:new(o)
         o = self:extend(o)
-        if o._init then o:_init() end
+        inputs[#inputs + 1] = o
+        if o.content_group then o.is_row = true end
+        if o.icon or o.file then tap_icons[#tap_icons + 1] = o end
         if o.init then o:init() end
-        if o.content_group then table.insert(rows, o) end
         return o
     end
     return M
 end
 package.preload["ui/widget/container/scrollablecontainer"] = function()
-    local M = { getScrollbarWidth = function() return 30 end }
+    local M = { getScrollbarWidth = function() return SCROLLBAR end }
     function M:new(o)
         captured = o
         o.getSize = function(self) return self.dimen end
@@ -251,25 +356,28 @@ package.preload["ui/widget/container/scrollablecontainer"] = function()
     end
     return M
 end
+local captured_header
 package.preload["ui/shell"] = function()
     local M = {}
-    function M:new(opts)
-        captured_shell = opts
+    function M:new(o)
+        captured_shell = o
         shown = shown + 1
-        local instance = { show = function() end, request_close = function() end, _closing = false }
-        shell_instance = instance
-        local factory = opts.body_factory
-        opts.body_factory = function(w, h)
-            local body = factory(w, h)
-            body.dialog = instance
-            body.show_parent = instance
+        shell_instance = { show = function() end, request_close = function() end, _closing = false }
+        if o.header_factory then
+            captured_header = o.header_factory(SCREEN_W, shell_instance)
+        end
+        local factory = o.body_factory
+        o.body_factory = function(w, h, parent)
+            local body = factory(w, h, parent or shell_instance)
+            body.dialog = shell_instance
+            body.show_parent = shell_instance
             if type(body.getCropRegion) == "function" then
-                instance.cropping_widget = body
+                shell_instance.cropping_widget = body
             end
-            opts.body = body
+            o.body = body
             return body
         end
-        return instance
+        return shell_instance
     end
     return M
 end
@@ -293,9 +401,9 @@ end
 
 local cfg = {
     show_battery = true, show_network = true, show_weather = true,
-    show_hn = true, refresh_budget_s = 20,
-    hnmd_max_items = 10, ui_font_scale = 1.0, ui_fullscreen = true,
-    ui_show_test_article = true,
+    show_hn = true, refresh_budget_s = 20, hnmd_max_items = 20,
+    ui_font_scale = 1.0, ui_fullscreen = true, ui_show_test_article = true,
+    ui_clock_24h = false,
 }
 local cfg_instance = {
     get = function(_, key) return cfg[key] end,
@@ -310,6 +418,42 @@ local actions = {
     end,
 }
 
+
+-- KOReader propagates touch events to every child of a container; any widget
+-- without handleEvent() crashes the whole app on the first tap (F16.10).
+local event_stubs = {
+    "ui/widget/textwidget", "ui/widget/textboxwidget", "ui/widget/linewidget",
+    "ui/widget/verticalspan", "ui/widget/horizontalspan", "ui/widget/verticalgroup",
+    "ui/widget/horizontalgroup", "ui/widget/iconwidget",
+    "ui/widget/container/centercontainer", "ui/widget/container/leftcontainer",
+    "ui/widget/container/framecontainer", "ui/widget/container/inputcontainer",
+    "ui/widget/container/scrollablecontainer",
+}
+for _, name in ipairs(event_stubs) do
+    local module = require(name)
+    local original_new = module.new
+    module.new = function(self, opts)
+        local widget = original_new(self, opts)
+        if type(widget.handleEvent) ~= "function" then
+            widget.handleEvent = function() return false end
+        end
+        return widget
+    end
+end
+
+local function assert_event_tree(widget, label)
+    if type(widget) ~= "table" then return end
+    if type(widget.getSize) == "function" then
+        assert(type(widget.handleEvent) == "function",
+            "widget without handleEvent() in tree: " .. tostring(label))
+    end
+    for i = 1, #widget do
+        if type(widget[i]) == "table" then
+            assert_event_tree(widget[i], tostring(label) .. "/" .. i)
+        end
+    end
+end
+
 local Dashboard = dofile(PLUGIN .. "ui/dashboard.lua")
 local last_shown_doc
 local article_view_stub = {
@@ -321,6 +465,7 @@ local d = Dashboard:new{
     paths = setmetatable({}, { __index = function() return function() return nil end end }),
     actions = actions,
     article_view = article_view_stub,
+    plugin_dir = "/mnt/us/koreader/plugins/kindlehome.koplugin",
 }
 d.article_store = {
     is_local = function() return true end,
@@ -333,31 +478,81 @@ d.article_store = {
 d.last_test_doc = { md_path = "test.md" }
 d:show({ allow_network = false })
 assert(captured_shell, "no shell captured")
+assert(captured_shell.header_factory and captured_header, "custom header missing")
+assert(type(captured_header.getSize) == "function" and type(captured_header.paintTo) == "function",
+    "header must be a real widget (getSize/paintTo)")
+assert(captured_header:getSize().h > 0, "header must report a positive height")
+assert(captured_shell.actions == nil, "dashboard must not use the native action bar")
 assert(type(captured_shell.body_factory) == "function", "body factory missing")
-local body = captured_shell.body_factory(1200, 1400)
-assert(captured == body, "ScrollableContainer not captured")
-assert(body.dimen.w == 1200 and body.dimen.h == 1400, "scroll viewport must fill body area")
-assert(#body == 1, "ScrollableContainer needs a single child")
-assert(body[1].dimen.w == 1170, "content width must exclude scrollbar width")
-assert(body[1].dimen.h > 0, "content height must be measured")
-assert(body.dialog == shell_instance and body.show_parent == shell_instance, "repaint target must be the shell")
-assert(shell_instance.cropping_widget == body, "cropping_widget must be the scroll container")
+
+local body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(captured == body.scroll, "ScrollableContainer not captured")
+assert(body.scroll.dimen.w == SCREEN_W and body.scroll.dimen.h > 0, "scroll viewport wrong")
+assert(body.nav and body.nav ~= body.scroll, "bottom nav must be outside the scroll")
+assert(body.scroll.show_parent == shell_instance and body.scroll.dialog == shell_instance, "repaint target wrong")
+assert(body.nav.show_parent == shell_instance, "nav repaint target wrong")
+assert(shell_instance.cropping_widget == body, "cropping_widget must be the body wrapper")
+assert(body:getCropRegion() == body.scroll.dimen, "crop region must be the scroll viewport")
+assert_event_tree(body, "dashboard-body")
+assert(body[1][1] == body.scroll and body[1][2] == body.nav, "nav must be fixed below the scroll")
 assert(shown == 1, "shell not shown")
 
-local tapped = 0
+local rows, nav_cells = {}, {}
+for _, input in ipairs(inputs) do
+    if input.is_row then rows[#rows + 1] = input end
+    if input.name then nav_cells[#nav_cells + 1] = input end
+end
+assert(#rows == 6, "expected 5 stories + dev row, got " .. tostring(#rows))
+assert(#nav_cells == 3, "expected 3 nav tabs, got " .. tostring(#nav_cells))
+for _, cell in ipairs(nav_cells) do
+    assert(type(cell.on_tap) == "function" and cell.show_parent == shell_instance, "nav cell wiring wrong")
+end
+nav_cells[2]:onTapNavCell()
+assert(notices[#notices] == "Coming soon.", "placeholder tab message missing")
+assert(nav_cells[1].active == true and nav_cells[2].active == false, "nav active state must not change")
+nav_cells[1]:onTapNavCell()
+
+local refreshed = 0
+for _, spec in ipairs(dispatched) do
+    if spec.id == "refresh" then refreshed = refreshed + 1 end
+end
+local refresh_icon
+for _, icon in ipairs(tap_icons) do
+    if icon.icon == "cre.render.reload" then refresh_icon = icon end
+end
+assert(refresh_icon and type(refresh_icon.on_tap) == "function", "in-card refresh missing")
+refresh_icon.on_tap()
+assert(dispatched[#dispatched].id == "refresh", "refresh dispatch failed")
+
+captured_header.close_button.on_tap()
+assert(dispatched[#dispatched].id == "close", "header close dispatch failed")
+captured_header.settings_button.on_tap()
+assert(dispatched[#dispatched].id == "settings", "header settings dispatch failed")
+
+local opened = 0
 for _, row in ipairs(rows) do
     if row.on_tap then
-        assert(type(row.dimen.contains) == "function", "row dimen must be a Geom for gesture ranges")
-        row:onTapHnRow()
-        tapped = tapped + 1
+        assert(type(row.dimen.contains) == "function", "row dimen must be a Geom")
+        row:onTapRow()
+        opened = opened + 1
     end
 end
-assert(tapped == 11, "expected 10 HN rows + 1 test row, got " .. tapped)
+assert(opened == 6, "all visible rows must be tappable")
 local hn_dispatched = 0
 for _, entry in ipairs(dispatched) do
-    if entry.id:match("^open_hn:") then hn_dispatched = hn_dispatched + 1 end
+    if entry.id:match("^open_hn:%d+$") then hn_dispatched = hn_dispatched + 1 end
 end
-assert(hn_dispatched == 11, "HN and test rows must dispatch open_hn:<id>")
+assert(hn_dispatched == 5, "HN rows must dispatch open_hn:<id>")
+
+local next_icon
+for _, icon in ipairs(tap_icons) do
+    if icon.file and icon.file:find("next-inverse", 1, true) then next_icon = icon end
+end
+assert(next_icon and type(next_icon.on_tap) == "function", "pager control missing")
+next_icon.on_tap()
+assert(d.hn_page == 2 and shown > 1, "next page must rebuild without refetch")
+assert(d.model.hn.page == 2 and d.model.hn.items[1].rank == 6, "page 2 content wrong")
+d:set_hn_page(1)
 
 d:open_hn_item("1001")
 assert(last_shown_doc and last_shown_doc.html_path, "HN doc should carry html_path")
@@ -366,14 +561,10 @@ article_view_stub.will_open_in_reader = function() return false end
 d:open_hn_item("1002")
 assert(d.widget == nil, "fallback must close the dashboard shell")
 
-local refresh_action
-for _, spec in ipairs(captured_shell.actions or {}) do
-    if spec.label == "Refresh" then refresh_action = spec end
-end
-assert(refresh_action and type(refresh_action.callback) == "function", "refresh action missing")
-refresh_action.callback()
-assert(dispatched[#dispatched].id == "refresh", "refresh action dispatch failed")
+d:show({ allow_network = false })
+d:refresh({ allow_network = false })
+assert(d.hn_page == 1, "refresh must reset pagination")
 captured_shell.on_close()
 assert(dispatched[#dispatched].id == "close", "shell close should exit dashboard")
 
-print("OK dashboard smoke: model rows=" .. #model.hn.items .. " native viewport=1200x1400 taps=" .. tapped)
+print("OK dashboard smoke: pages=" .. model.hn.pages .. " rows=" .. tostring(#rows) .. " nav=3 viewport=1200x" .. tostring(body.scroll.dimen.h) .. " taps=" .. opened)

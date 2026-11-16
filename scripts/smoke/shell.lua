@@ -129,4 +129,30 @@ assert(plain.covers_fullscreen == false, "fullscreen setting should be honored")
 assert(plain.title_bar.left_icon == nil, "no back icon without on_back")
 assert(plain.action_bar == nil, "no footer without actions")
 
-print("OK shell smoke: body=" .. body_args.w .. "x" .. body_args.h)
+local custom_args, custom_body
+local custom = Shell:new{
+    config = config,
+    header_factory = function(width, parent)
+        custom_args = { width = width, parent = parent }
+        return {
+            getSize = function() return { w = 1200, h = 60 } end,
+            paintTo = function() end,
+        }
+    end,
+    body_factory = function(w, h, parent)
+        custom_body = { w = w, h = h, parent = parent }
+        return {}
+    end,
+}
+assert(custom_args.width == 1200 and custom_args.parent == custom, "custom header factory args wrong")
+assert(custom.title_bar.show_parent == custom, "custom header repaint target wrong")
+assert(custom_body.h == 1540 and custom_body.parent == custom, "custom header must set body height")
+
+local fallback = Shell:new{
+    config = config,
+    header_factory = function() return {} end,
+    body_factory = function() return {} end,
+}
+assert(fallback.title_bar and fallback.title_bar.close_callback, "invalid header must fall back to TitleBar")
+
+print("OK shell smoke: body=" .. body_args.w .. "x" .. body_args.h .. " custom=" .. tostring(custom_body.h))

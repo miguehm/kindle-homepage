@@ -11,6 +11,7 @@ local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
 local Messages = require("ui/messages")
 local Shell = require("ui/shell")
+local DashboardHeader = require("ui/widget/dashboard_header")
 
 local Dashboard = {}
 
@@ -21,7 +22,9 @@ function Dashboard:new(opts)
         paths = opts.paths,
         actions = opts.actions,
         article_view = opts.article_view,
+        plugin_dir = opts.plugin_dir,
         widget = nil,
+        hn_page = 1,
         article_store = opts.paths and ArticleStore:new(opts.paths) or nil,
         last_test_doc = nil,
         hn_state = nil,
@@ -181,6 +184,13 @@ function Dashboard:get_hn_item(id)
     return self.hn_item_index and self.hn_item_index[tostring(id)] or nil
 end
 
+local function latest_fetch(a, b)
+    local ta = a and type(a.fetched_at) == "number" and a.fetched_at or nil
+    local tb = b and type(b.fetched_at) == "number" and b.fetched_at or nil
+    if ta and tb then return math.max(ta, tb) end
+    return ta or tb
+end
+
 function Dashboard:build_state(opts)
     opts = opts or {}
     local date_str, time_str = get_clock_state()
@@ -196,14 +206,16 @@ function Dashboard:build_state(opts)
         network = get_network_state(self.config),
         weather = weather,
         hn = hn,
+        refreshed_at = latest_fetch(weather, hn),
+        refreshed_stale = (weather and weather.stale) or (hn and hn.stale) or false,
+        show_battery = (not self.config) or self.config:get("show_battery"),
+        show_network = (not self.config) or self.config:get("show_network"),
         show_weather = (not self.config) or self.config:get("show_weather"),
         show_hn = (not self.config) or self.config:get("show_hn"),
     }
     self.last_state = state
     Logger.info("dashboard", "state_built", {
         has_time = state.time ~= "Time unavailable",
-        battery = state.battery,
-        network = state.network,
         weather = weather and weather.status or "nil",
         hn = hn and hn.status or "nil",
         hn_items = hn and #(hn.items or {}) or 0,
@@ -452,6 +464,18 @@ function Dashboard:handle_link(uri)
             self:open_test_article()
         end
         return true
+    elseif uri == "kh:settings" then
+        if self.actions then
+            self.actions:dispatch("settings", { source = "dashboard", dashboard = self })
+        end
+        return true
+    end
+
+    local tab = uri:match("^kh:nav:(.+)$")
+    if tab then
+        if tab == "dashboard" then return true end
+        self:show_notice(Messages.for_kind("coming_soon", "Coming soon."))
+        return true
     end
 
     local id = uri:match("^kh:hn:(.+)$")
@@ -479,20 +503,13 @@ function Dashboard:_teardown()
     pcall(function() UIManager:close(widget) end)
 end
 
-function Dashboard:actions_for_state(state)
-    local specs = {
-        {
-            icon = "cre.render.reload",
-            label = "Refresh",
-            callback = function() self:handle_link("kh:refresh") end,
-        },
-    }
-    table.insert(specs, {
-        icon = "exit",
-        label = "Exit",
-        callback = function() self:handle_link("kh:close") end,
-    })
-    return specs
+function Dashboard:set_hn_page(page)
+    local n = tonumber(page) or 1
+    if n < 1 then n = 1 end
+    self.hn_page = n
+    if self.last_state then
+        self:show({ state = self.last_state, allow_network = false })
+    end
 end
 
 function Dashboard:_shell_close()
@@ -506,26 +523,54 @@ function Dashboard:show(opts)
     opts = opts or {}
     self:_teardown()
 
-    local state = self:build_state(opts)
+    local state
+    if opts.state then
+        state = {}
+        for k, v in pairs(opts.state) do state[k] = v end
+    else
+        state = self:build_state(opts)
+    end
     state.test_article_ready = self.last_test_doc ~= nil
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
 
     local show_test = not self.config or self.config:get("ui_show_test_article") == true
+    local clock_24h = self.config and self.config:get("ui_clock_24h") == true
     local model = DashboardModel.build(state, {
         now = os.time(),
         test_article_ready = show_test and state.test_article_ready,
+        page = self.hn_page,
+        clock_24h = clock_24h,
     })
+    self.model = model
 
     local shell = Shell:new{
         title = "Kindle Home",
         config = self.config,
-        actions = self:actions_for_state(state),
         on_close = function() self:_shell_close() end,
-        on_layout_change = function() self:show(opts) end,
-        body_factory = function(width, height)
+        on_layout_change = function()
+            self:show({ state = self.last_state, allow_network = false })
+        end,
+        header_factory = function(width, parent)
+            return DashboardHeader:new{
+                title = "Kindle Home",
+                config = self.config,
+                show_parent = parent,
+                on_settings = function() self:handle_link("kh:settings") end,
+                on_close = function() self:handle_link("kh:close") end,
+            }
+        end,
+        body_factory = function(width, height, parent)
             return DashboardBody.build(model, self.config, width, height, {
+                show_parent = parent,
+                plugin_dir = self.plugin_dir,
                 on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
                 on_test = function() self:handle_link("kh:test") end,
+                on_refresh = function() self:handle_link("kh:refresh") end,
+                on_next_page = function()
+                    local pages = model.hn and model.hn.pages or 0
+                    self:set_hn_page((self.hn_page % math.max(pages, 1)) + 1)
+                end,
+                on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
             })
         end,
     }
@@ -534,12 +579,14 @@ function Dashboard:show(opts)
     Logger.info("dashboard", "shown", {
         weather = state.weather and state.weather.status,
         hn_items = model.hn and #model.hn.items or 0,
+        hn_page = model.hn and model.hn.page or nil,
         native = true,
     })
 end
 
 function Dashboard:refresh(opts)
     Logger.info("dashboard", "refresh", { allow_network = opts and opts.allow_network })
+    self.hn_page = 1
     self:show(opts)
 end
 

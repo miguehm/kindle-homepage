@@ -419,6 +419,14 @@ function Menus:add_settings(menu_items, main_instance)
                         end,
                     },
                     {
+                        text_func = function() return _("24-hour clock: ") .. bool_text(config:get("ui_clock_24h")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("ui_clock_24h") and true or false end,
+                        callback = function()
+                            config:set("ui_clock_24h", not config:get("ui_clock_24h")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
                         text_func = function() return _("Show test article link: ") .. bool_text(config:get("ui_show_test_article")) end,
                         keep_menu_open = true,
                         checked_func = function() return config:get("ui_show_test_article") and true or false end,

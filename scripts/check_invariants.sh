@@ -101,7 +101,47 @@ if ! grep -q 'require("ui/widget/pathchooser")' kindlehome.koplugin/ui/menus.lua
     fail=1
 fi
 
+# 7) Paperwhite redesign: modular native widgets, sharp edges and monochrome
+#    icon assets must stay present so the dashboard cannot silently fall back
+#    to the old stacked-card layout.
+for widget in dashboard_header bottom_nav hero_weather stories_card battery_glyph tap_icon tap_row design_text; do
+    if [ ! -f "kindlehome.koplugin/ui/widget/$widget.lua" ]; then
+        echo "FAIL: missing dashboard widget ui/widget/$widget.lua"
+        fail=1
+    fi
+done
+if ! grep -q 'DashboardHeader' kindlehome.koplugin/ui/dashboard.lua \
+    || ! grep -q 'BottomNav' kindlehome.koplugin/ui/dashboard_body.lua \
+    || ! grep -q 'HeroWeather' kindlehome.koplugin/ui/dashboard_body.lua \
+    || ! grep -q 'StoriesCard' kindlehome.koplugin/ui/dashboard_body.lua \
+    || ! grep -q 'getCropRegion' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard must wire the custom header, fixed nav, hero, stories and crop region"
+    fail=1
+fi
+if [ ! -d kindlehome.koplugin/assets/icons/weather ] || [ ! -d kindlehome.koplugin/assets/icons/nav ] \
+    || [ ! -d kindlehome.koplugin/assets/icons/action ]; then
+    echo "FAIL: monochrome icon asset directories are missing"
+    fail=1
+fi
+if grep -rn 'radius[[:space:]]*=' --include='*.lua' \
+        kindlehome.koplugin/ui/widget/dashboard_header.lua \
+        kindlehome.koplugin/ui/widget/bottom_nav.lua \
+        kindlehome.koplugin/ui/widget/hero_weather.lua \
+        kindlehome.koplugin/ui/widget/stories_card.lua \
+        kindlehome.koplugin/ui/dashboard_body.lua >/dev/null; then
+    echo "FAIL: dashboard widgets must keep sharp (0px) corners"
+    fail=1
+fi
+if ! grep -q 'ui_clock_24h' kindlehome.koplugin/lib/config.lua; then
+    echo "FAIL: 12/24h clock setting missing from config"
+    fail=1
+fi
+if ! grep -q 'Widget:extend' kindlehome.koplugin/ui/widget/battery_glyph.lua; then
+    echo "FAIL: battery glyph must be a real Widget (it receives touch events)"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets)"
 fi
 exit "$fail"
