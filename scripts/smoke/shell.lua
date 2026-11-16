@@ -97,6 +97,8 @@ assert(body_args and body_args.w == 1200 and body_args.h == 1420, "body must use
 assert(shell.title_bar.close_callback, "exit icon callback missing")
 assert(shell.title_bar.left_icon == "chevron.left", "back icon missing")
 assert(shell.action_bar and #shell.action_bar.buttons == 2, "action bar not wired")
+assert(shell.body.dialog == shell, "body dialog must be the top-level shell")
+assert(shell.body.show_parent == shell, "body show_parent must be the top-level shell")
 
 shell:show()
 assert(UIManager._state.shown == 1, "shell not shown")

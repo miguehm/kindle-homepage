@@ -6,35 +6,21 @@ cd "$(dirname "$0")/.."
 
 fail=0
 
-# 1) ScrollHtmlWidget scroll handlers touch self.dialog.movable; a widget
-#    created without `dialog` crashes KOReader on the first swipe/tap.
-widget_files=$(grep -rl "ScrollHtmlWidget:new" --include='*.lua' kindlehome.koplugin || true)
-if [ -z "$widget_files" ]; then
-    echo "FAIL: no ScrollHtmlWidget usage found (unexpected; check paths)"
+# 1) ScrollHtmlWidget scroll handlers call UIManager:setDirty(self.dialog, ...).
+#    UIManager only flags widgets in _window_stack, so `dialog` must be the
+#    top-level Shell (the widget shown via UIManager:show). A self-assigned
+#    dialog avoids the old nil crash but makes scrolling flash without repaint.
+for field in dialog show_parent; do
+    if ! grep -q "self\.body\.$field = self" kindlehome.koplugin/ui/shell.lua; then
+        echo "FAIL: Shell must wire self.body.$field = self (top-level repaint target)"
+        fail=1
+    fi
+done
+if grep -rn '\.dialog[[:space:]]*=' --include='*.lua' \
+        kindlehome.koplugin/ui/dashboard.lua kindlehome.koplugin/ui/article_view.lua >/dev/null; then
+    echo "FAIL: body widgets must not self-assign dialog; Shell wires it to itself"
     fail=1
 fi
-
-while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    awk -v f="$file" '
-        { lines[NR] = $0 }
-        END {
-            for (i = 1; i <= NR; i++) {
-                if (lines[i] ~ /ScrollHtmlWidget:new/) {
-                    found = 0
-                    for (j = i; j <= i + 25 && j <= NR; j++) {
-                        if (lines[j] ~ /dialog[[:space:]]*=/) { found = 1; break }
-                        if (j > i && lines[j] ~ /UIManager:show/) { break }
-                    }
-                    if (!found) {
-                        printf "FAIL: %s:%d ScrollHtmlWidget:new without dialog\n", f, i
-                        exit 1
-                    }
-                }
-            }
-        }
-    ' "$file" || fail=1
-done <<< "$widget_files"
 
 # 2) KOReader has no ui/elements/menu_items module; menus must be registered
 #    from addToMainMenu(menu_items).
@@ -69,6 +55,6 @@ if [ -n "$bad_fs" ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (ScrollHtmlWidget dialog, menu registration, streamed downloads)"
+    echo "OK: plugin invariants (top-level repaint target, menu registration, streamed downloads)"
 fi
 exit "$fail"

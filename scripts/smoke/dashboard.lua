@@ -74,15 +74,25 @@ package.preload["ui/widget/scrollhtmlwidget"] = function()
     end
     return M
 end
+local shell_instance
 package.preload["ui/shell"] = function()
     local M = {}
     function M:new(opts)
         captured_shell = opts
         shown = shown + 1
-        return {
+        shell_instance = {
             show = function() end,
             request_close = function() end,
         }
+        local factory = opts.body_factory
+        opts.body_factory = function(w, h)
+            local body = factory(w, h)
+            body.dialog = shell_instance
+            body.show_parent = shell_instance
+            opts.body = body
+            return body
+        end
+        return shell_instance
     end
     return M
 end
@@ -152,7 +162,8 @@ assert(w.html_body:find("kh:hn:4242", 1, true), "HN link missing")
 assert(w.html_body:find("&lt;b&gt;world", 1, true), "HN title should be escaped in link text")
 assert(w.html_body:find("kh:hn:test-phase3", 1, true) == nil, "test article link should be hidden by default")
 assert(type(w.html_link_tapped_callback) == "function", "link callback missing")
-assert(w.dialog == w, "dialog must point to the widget itself")
+assert(w.dialog == shell_instance and w.dialog ~= w, "dialog must point to the top-level shell")
+assert(w.show_parent == shell_instance, "show_parent must point to the top-level shell")
 assert(type(w.default_font_size) == "number", "font size should be numeric")
 assert(shown == 1, "shell not shown")
 

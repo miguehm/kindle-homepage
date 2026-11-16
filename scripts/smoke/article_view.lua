@@ -27,12 +27,23 @@ package.preload["ui/widget/scrollhtmlwidget"] = function()
     function M:new(o) captured = o; return o end
     return M
 end
+local shell_instance
 package.preload["ui/shell"] = function()
     local M = {}
     function M:new(o)
         captured_shell = o
         shown = shown + 1
-        return { show = function() end, _closing = false }
+        shell_instance = { show = function() end, _closing = false }
+        local factory = o.body_factory
+        o.body_factory = function(w, h)
+            local body = factory(w, h)
+            body.dialog = shell_instance
+            body.show_parent = shell_instance
+            if body.htmlbox_widget then body.htmlbox_widget.dialog = shell_instance end
+            o.body = body
+            return body
+        end
+        return shell_instance
     end
     return M
 end
@@ -72,7 +83,8 @@ assert(w, "no widget")
 assert(type(w.html_body) == "string")
 assert(not w.html_body:find("<html", 1, true), "fragment expected")
 assert(not w.html_body:find("kh:back", 1, true), "nav should be native, not HTML")
-assert(w.dialog == w, "dialog must be set")
+assert(w.dialog == shell_instance and w.dialog ~= w, "dialog must point to the top-level shell")
+assert(w.show_parent == shell_instance, "show_parent must point to the top-level shell")
 assert(type(w.html_link_tapped_callback) == "function")
 assert(type(w.default_font_size) == "number")
 assert(shown == 1)
