@@ -86,6 +86,9 @@ function Shell:init()
         if self.body.htmlbox_widget then
             self.body.htmlbox_widget.dialog = self
         end
+        if type(self.body.getCropRegion) == "function" then
+            self.cropping_widget = self.body
+        end
     end
 
     Logger.info("shell", "layout", {

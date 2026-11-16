@@ -1,11 +1,10 @@
 local Device = require("device")
 local NetworkMgr = require("ui/network/manager")
-local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local Logger = require("lib/logger")
-local Theme = require("lib/render/theme")
-local DashboardHtml = require("lib/render/dashboard_html")
+local DashboardModel = require("lib/dashboard_model")
+local DashboardBody = require("ui/dashboard_body")
 local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local WeatherState = require("lib/weather_state")
@@ -503,9 +502,10 @@ function Dashboard:show(opts)
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
 
     local show_test = not self.config or self.config:get("ui_show_test_article") == true
-    local body_html = DashboardHtml.build(state, { test_article_ready = show_test and state.test_article_ready })
-    local css = Theme.dashboard_css()
-    local font_size = Theme.font_size(self.config, Theme.UI_BASE)
+    local model = DashboardModel.build(state, {
+        now = os.time(),
+        test_article_ready = show_test and state.test_article_ready,
+    })
 
     local shell = Shell:new{
         title = "Kindle Home",
@@ -514,22 +514,19 @@ function Dashboard:show(opts)
         on_close = function() self:_shell_close() end,
         on_layout_change = function() self:show(opts) end,
         body_factory = function(width, height)
-            local body = ScrollHtmlWidget:new{
-                html_body = body_html,
-                css = css,
-                default_font_size = font_size,
-                width = width,
-                height = height,
-                html_link_tapped_callback = function(link)
-                    self:handle_link(link and link.uri)
-                end,
-            }
-            return body
+            return DashboardBody.build(model, self.config, width, height, {
+                on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
+                on_test = function() self:handle_link("kh:test") end,
+            })
         end,
     }
     self.widget = shell
     shell:show()
-    Logger.info("dashboard", "shown", { weather = state.weather and state.weather.status })
+    Logger.info("dashboard", "shown", {
+        weather = state.weather and state.weather.status,
+        hn_items = model.hn and #model.hn.items or 0,
+        native = true,
+    })
 end
 
 function Dashboard:refresh(opts)

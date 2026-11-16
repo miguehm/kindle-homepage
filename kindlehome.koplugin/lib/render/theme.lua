@@ -66,37 +66,4 @@ function Theme.scale_label(value)
     return "Extra large"
 end
 
--- Dashboard HTML -----------------------------------------------------------
---
--- Cards use borders + spacing instead of gray fills: large mid-tone areas
--- ghost badly on e-ink. Everything is a block element (no flex/grid) because
--- MuPDF's HTML layout support is intentionally small.
-local DASHBOARD_CSS = table.concat({
-    "@page{margin:0;}",
-    "body{margin:0;padding:0.8em;color:#000;background:#fff;font-family:sans-serif;line-height:1.45;}",
-    ".hero{margin:0 0 0.6em 0;}",
-    ".clock{font-size:2.1em;font-weight:bold;line-height:1.05;}",
-    ".date{font-size:1em;margin-top:0.15em;}",
-    ".status{border:0.07em solid #000;padding:0.45em 0.6em;margin:0 0 0.6em 0;font-size:0.9em;}",
-    ".card{border:0.07em solid #000;padding:0.6em 0.7em;margin:0.6em 0;}",
-    ".card-title{font-size:0.82em;font-weight:bold;letter-spacing:0.04em;margin:0 0 0.35em 0;}",
-    ".temp{font-size:1.9em;font-weight:bold;line-height:1.1;}",
-    ".cond{font-size:1.05em;}",
-    ".small{font-size:0.85em;color:#222;margin-top:0.2em;}",
-    ".muted{font-size:0.82em;color:#222;margin-top:0.2em;}",
-    ".hint{border:0.07em solid #000;padding:0.45em 0.6em;margin:0 0 0.6em 0;font-size:0.9em;}",
-    ".hn{padding:0.55em 0;border-top:0.05em solid #000;}",
-    ".hn-first{border-top:0;}",
-    ".hn-title{font-size:1em;font-weight:bold;}",
-    ".rank{font-weight:bold;}",
-    ".hn-meta{font-size:0.82em;color:#222;margin-top:0.15em;}",
-    ".badge{font-size:0.8em;color:#222;}",
-    "a{color:#000;text-decoration:underline;}",
-    ".footer-note{font-size:0.8em;color:#222;margin-top:1em;}",
-}, "")
-
-function Theme.dashboard_css()
-    return DASHBOARD_CSS
-end
-
 return Theme
