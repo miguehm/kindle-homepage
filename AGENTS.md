@@ -28,3 +28,8 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 - No dead code; no silent broad exception swallowing that hides corruption/state bugs.
 - Keep UI messages brief/actionable (no stack traces to end users). Prefer centralized mapping in `ui/messages.lua` for user-facing states/errors.
 - Record deviations and verification runs in `PLAN.md` ledgers when work diverges or is validated.
+
+## Lua dialect (hard requirement)
+- KOReader on Kindle runs **Lua 5.1 / LuaJIT**. Do not use Lua 5.2+ syntax: no bitwise operators (`~ & | << >>`), no integer division `//`, no `goto`/labels, no `table.unpack`/`math.tointeger`-only paths.
+- Mandatory gates before release: `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax; uses `luac5.1`/`lua5.1`/`luajit`) , `./scripts/check_invariants.sh` (e.g. every `ScrollHtmlWidget:new` must set `dialog`, which KOReader's scroll handlers dereference) and `./scripts/smoke_ui.sh` (offline Lua 5.1 rendering of dashboard/article with stubbed KOReader modules). A system `luac` from 5.3+ is **not** a valid substitute: it accepts syntax that fails on device.
+- Plugin load failures surface as `WARN Error when loading .../main.lua` in KOReader `crash.log`; treat any such line as a blocking defect.
