@@ -80,7 +80,22 @@ function Shell:init()
     self.body = self.body_factory and self.body_factory(Screen:getWidth(), body_height) or nil
     if not self.body then
         Logger.err("shell", "body_missing")
+    else
+        self.body.dialog = self
+        self.body.show_parent = self
+        if self.body.htmlbox_widget then
+            self.body.htmlbox_widget.dialog = self
+        end
     end
+
+    Logger.info("shell", "layout", {
+        screen_w = Screen:getWidth(),
+        screen_h = Screen:getHeight(),
+        header = header_height,
+        footer = footer_height,
+        body_h = body_height,
+        fullscreen = fullscreen,
+    })
 
     local group = VerticalGroup:new{ align = "left" }
     if self.title_bar then table.insert(group, self.title_bar) end

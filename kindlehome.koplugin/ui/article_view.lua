@@ -156,8 +156,6 @@ function ArticleView:show(doc)
                     self:handle_link(link and link.uri)
                 end,
             }
-            -- Required: ScrollHtmlWidget scroll handlers touch self.dialog.movable.
-            widget.dialog = widget
             return widget
         end,
     }

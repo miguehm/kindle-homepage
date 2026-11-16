@@ -524,10 +524,6 @@ function Dashboard:show(opts)
                     self:handle_link(link and link.uri)
                 end,
             }
-            -- ScrollHtmlWidget requires `dialog`: its scroll handlers touch
-            -- self.dialog.movable and pass it to UIManager:setDirty. Pointing
-            -- it at the widget itself is safe (no `movable`).
-            body.dialog = body
             return body
         end,
     }
