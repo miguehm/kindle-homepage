@@ -21,6 +21,10 @@ local MAP = {
     corrupted_file = "Content file is unavailable or corrupted.",
     not_found = "Content not found.",
     downloading = "Downloading article…",
+    path_invalid = "Use an absolute path such as /mnt/us/My Docs. Paths with '..' are not allowed.",
+    path_saved = "Custom content folder saved.",
+    path_reset = "Custom content folder cleared. Using the default location.",
+    path_unwritable = "Folder saved, but it could not be created. Check the path and permissions.",
 }
 
 function M.for_kind(kind, fallback)

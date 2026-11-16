@@ -1,6 +1,7 @@
 local UIManager = require("ui/uimanager")
 local InputDialog = require("ui/widget/inputdialog")
 local InfoMessage = require("ui/widget/infomessage")
+local PathChooser = require("ui/widget/pathchooser")
 local _ = require("gettext")
 
 local Geocoding = require("lib/geocoding")
@@ -16,6 +17,11 @@ end
 
 local function bool_text(v)
     return v and _("On") or _("Off")
+end
+
+local function custom_folder_active(config)
+    local value = config:get("custom_content_dir")
+    return type(value) == "string" and value ~= ""
 end
 
 local function refresh_dashboard(main_instance)
@@ -194,6 +200,54 @@ function Menus:edit_documents_subdir(config, on_done)
         if on_done then on_done() end
         return true, _("Documents subdir saved.")
     end)
+end
+
+local function apply_custom_content_dir(config, paths, value, on_done, message_kind)
+    value = tostring(value or "")
+    if config.validate_custom_dir and not config:validate_custom_dir(value) then
+        show_info(Messages.for_kind("path_invalid", _("Invalid folder path.")))
+        return false
+    end
+    config:set("custom_content_dir", value)
+    config:flush()
+    local ok, ensured = true, true
+    if type(paths and paths.ensure_base_dirs) == "function" then
+        ok, ensured = pcall(function() return paths:ensure_base_dirs() end)
+    end
+    if not ok or not ensured then
+        Logger.warn("menus", "custom_dir_not_ready", { err = tostring(ensured) })
+        if on_done then on_done() end
+        show_info(Messages.for_kind("path_unwritable", _("Folder could not be created.")))
+        return false
+    end
+    Logger.info("menus", "custom_content_dir_saved")
+    if on_done then on_done() end
+    show_info(Messages.for_kind(message_kind or "path_saved", _("Custom content folder saved.")))
+    return true
+end
+
+function Menus:edit_custom_content_dir(config, paths, on_done)
+    local current = config:get("custom_content_dir")
+    if type(current) ~= "string" or current == "" then
+        current = type(paths and paths.documents_root) == "function" and paths:documents_root() or nil
+    end
+    local opts = {
+        title = _("Choose custom content folder"),
+        select_directory = true,
+        select_file = false,
+        show_files = false,
+        onConfirm = function(dir_path)
+            apply_custom_content_dir(config, paths, dir_path, on_done, "path_saved")
+        end,
+    }
+    if type(current) == "string" and current ~= "" then
+        opts.path = current
+    end
+    UIManager:show(PathChooser:new(opts))
+end
+
+function Menus:reset_custom_content_dir(config, paths, on_done)
+    apply_custom_content_dir(config, paths, "", on_done, "path_reset")
 end
 
 function Menus:add_settings(menu_items, main_instance)
@@ -404,7 +458,10 @@ function Menus:add_settings(menu_items, main_instance)
                 text = _("Paths and storage"),
                 sub_item_table = {
                     {
-                        text_func = function() return _("Storage mode: ") .. tostring(config:get("storage_mode")) end,
+                        text_func = function()
+                            local suffix = custom_folder_active(config) and _(" (fallback)") or ""
+                            return _("Storage mode: ") .. tostring(config:get("storage_mode")) .. suffix
+                        end,
                         keep_menu_open = true,
                         callback = function()
                             local current = config:get("storage_mode")
@@ -415,12 +472,40 @@ function Menus:add_settings(menu_items, main_instance)
                         end,
                     },
                     {
-                        text_func = function() return _("Documents subdir: ") .. tostring(config:get("documents_subdir")) end,
+                        text_func = function()
+                            local suffix = custom_folder_active(config) and _(" (fallback)") or ""
+                            return _("Documents subdir: ") .. tostring(config:get("documents_subdir")) .. suffix
+                        end,
                         keep_menu_open = true,
                         callback = function() Menus:edit_documents_subdir(config, function() refresh_dashboard(main_instance) end) end,
                     },
                     {
-                        text = _("Show resolved paths"),
+                        text_func = function()
+                            local value = config:get("custom_content_dir")
+                            return _("Choose custom content folder: ") .. ((type(value) == "string" and value ~= "") and value or _("(not set)"))
+                        end,
+                        keep_menu_open = true,
+                        callback = function()
+                            Menus:edit_custom_content_dir(config, paths, function()
+                                local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
+                                if d then d.last_test_doc = nil end
+                                refresh_dashboard(main_instance)
+                            end)
+                        end,
+                    },
+                    {
+                        text = _("Reset custom content folder"),
+                        keep_menu_open = true,
+                        callback = function()
+                            Menus:reset_custom_content_dir(config, paths, function()
+                                local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
+                                if d then d.last_test_doc = nil end
+                                refresh_dashboard(main_instance)
+                            end)
+                        end,
+                    },
+                    {
+                        text = _("Show active content paths"),
                         keep_menu_open = true,
                         callback = function()
                             if not paths then return show_info(_("Paths unavailable.")) end

@@ -1,9 +1,12 @@
 -- Smoke test: text-input menus must never build a ButtonTable row with a nil
--- hole, and the API-key Clear button must close its own dialog.
+-- hole, the API-key Clear button must close its own dialog, and the custom
+-- content folder is chosen with KOReader's native PathChooser.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 
 local closed = {}
 local created = {}
+local pickers = {}
+local messages = {}
 
 package.preload["ui/uimanager"] = function()
     return {
@@ -35,8 +38,22 @@ package.preload["ui/widget/inputdialog"] = function()
     }
 end
 
+package.preload["ui/widget/pathchooser"] = function()
+    return {
+        new = function(_, opts)
+            local picker = { opts = opts }
+            pickers[#pickers + 1] = picker
+            return picker
+        end,
+    }
+end
+
 package.preload["ui/widget/infomessage"] = function()
-    return { new = function(_, opts) return { text = opts and opts.text } end }
+    return { new = function(_, opts)
+        local msg = { text = opts and opts.text }
+        messages[#messages + 1] = msg
+        return msg
+    end }
 end
 package.preload["gettext"] = function()
     return function(s) return s end
@@ -71,6 +88,21 @@ local cfg = {
     get = function(_, key) return values[key] end,
     set = function(_, key, value) values[key] = value; return true end,
     flush = function() end,
+    validate_custom_dir = function(_, value)
+        if value == "" then return true end
+        if value:sub(1, 1) ~= "/" then return false end
+        for segment in value:gmatch("[^/]+") do
+            if segment == ".." then return false end
+        end
+        return true
+    end,
+}
+local dirs_ready = true
+local paths_stub = {
+    ensure_base_dirs = function() return dirs_ready end,
+    cache_dir = function() return "/cache/kindlehome" end,
+    documents_root = function() return values.custom_content_dir ~= "" and values.custom_content_dir or "/documents/KindleHome" end,
+    articles_hn_dir = function() return "/documents/KindleHome/articles/hn" end,
 }
 
 local function last_dialog()
@@ -136,4 +168,70 @@ assert(values.hnmd_api_key == "", "Clear must remove the API key")
 assert(#closed == before + 1 and closed[#closed] == d, "Clear must close its own dialog")
 assert(done == 5, "on_done not called after Clear")
 
-print("OK menus smoke: " .. #created .. " input dialogs, no nil button holes")
+values.custom_content_dir = ""
+local function last_picker()
+    return pickers[#pickers]
+end
+local function choose(path)
+    local picker = last_picker()
+    assert(type(picker.opts.onConfirm) == "function", "picker onConfirm missing")
+    picker.opts.onConfirm(path)
+end
+
+Menus:edit_custom_content_dir(cfg, paths_stub, on_done)
+local picker = last_picker()
+assert(picker.opts.select_directory == true and picker.opts.select_file == false
+    and picker.opts.show_files == false, "picker must be directory-only")
+assert(picker.opts.path == "/documents/KindleHome", "picker must start at the active content root")
+choose("/mnt/us/My Docs/Kindle")
+assert(values.custom_content_dir == "/mnt/us/My Docs/Kindle", "picked folder not saved")
+assert(done == 6, "on_done not called after choosing a folder")
+assert(messages[#messages].text == "Custom content folder saved.", "path_saved message missing")
+
+Menus:edit_custom_content_dir(cfg, paths_stub, on_done)
+assert(last_picker().opts.path == "/mnt/us/My Docs/Kindle", "picker must start at the current custom folder")
+choose("/mnt/us/../etc")
+assert(values.custom_content_dir == "/mnt/us/My Docs/Kindle", "invalid folder must not overwrite the saved value")
+assert(done == 6, "on_done must not run for an invalid folder")
+assert(messages[#messages].text == "Use an absolute path such as /mnt/us/My Docs. Paths with '..' are not allowed.", "path_invalid message missing")
+
+dirs_ready = false
+Menus:edit_custom_content_dir(cfg, paths_stub, on_done)
+choose("/mnt/us/Unwritable")
+assert(values.custom_content_dir == "/mnt/us/Unwritable", "folder is saved even if it cannot be created yet")
+assert(messages[#messages].text == "Folder saved, but it could not be created. Check the path and permissions.", "path_unwritable message missing")
+dirs_ready = true
+
+Menus:reset_custom_content_dir(cfg, paths_stub, on_done)
+assert(values.custom_content_dir == "", "reset must clear the custom folder")
+assert(done == 8, "on_done not called after reset")
+assert(messages[#messages].text == "Custom content folder cleared. Using the default location.", "path_reset message missing")
+
+local dashboard = { widget = {}, last_test_doc = { md_path = "/old/doc.md" } }
+local refresh_calls = 0
+function dashboard:refresh() refresh_calls = refresh_calls + 1 end
+local menu_items = {}
+Menus:add_settings(menu_items, {
+    config = cfg,
+    paths = paths_stub,
+    getDashboard = function() return dashboard end,
+})
+local paths_menu
+for _, item in ipairs(menu_items.kindlehome.sub_item_table) do
+    if item.text == "Paths and storage" then paths_menu = item.sub_item_table end
+end
+assert(paths_menu, "Paths and storage menu missing")
+local picker_entry
+for _, item in ipairs(paths_menu) do
+    if type(item.text_func) == "function" and item.text_func():match("^Choose custom content folder") then
+        picker_entry = item
+    end
+end
+assert(picker_entry and picker_entry.keep_menu_open, "picker menu entry missing")
+picker_entry.callback()
+choose("/mnt/us/From Menu")
+assert(values.custom_content_dir == "/mnt/us/From Menu", "menu callback did not apply the picked path")
+assert(dashboard.last_test_doc == nil, "menu callback must clear last_test_doc")
+assert(refresh_calls == 1, "menu callback must refresh the open dashboard")
+
+print("OK menus smoke: " .. #created .. " dialogs, " .. #pickers .. " folder pickers, no nil button holes")

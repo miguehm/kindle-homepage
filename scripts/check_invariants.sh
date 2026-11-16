@@ -21,6 +21,14 @@ if grep -rn '\.dialog[[:space:]]*=' --include='*.lua' \
     echo "FAIL: body widgets must not self-assign dialog; Shell wires it to itself"
     fail=1
 fi
+if ! grep -q 'bb:paintRect(x, y, w, h, Blitbuffer.COLOR_WHITE)' kindlehome.koplugin/ui/shell.lua; then
+    echo "FAIL: Shell must paint an opaque full-screen background (stale pixels in title area)"
+    fail=1
+fi
+if ! grep -q 'show_parent = self' kindlehome.koplugin/ui/shell.lua; then
+    echo "FAIL: TitleBar must use the Shell as repaint target"
+    fail=1
+fi
 if grep -n 'ScrollHtmlWidget\|dashboard_html\|DashboardHtml' kindlehome.koplugin/ui/dashboard.lua >/dev/null; then
     echo "FAIL: dashboard must use the native body, not HTML/ScrollHtmlWidget"
     fail=1
@@ -75,7 +83,25 @@ if [ -n "$bad_fs" ]; then
     fail=1
 fi
 
+# 6) The custom content folder must be sanitized in config and resolved only
+#    through paths.lua (never hard-coded in the UI layer).
+if ! grep -q 'custom_content_dir' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'sanitize_custom_dir' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'custom_content_dir' kindlehome.koplugin/lib/paths.lua; then
+    echo "FAIL: custom content folder must be sanitized in config and resolved in paths.lua"
+    fail=1
+fi
+if grep -rn '"/mnt/us/documents"' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
+    echo "FAIL: UI must not hard-code the content root; go through paths.lua"
+    fail=1
+fi
+if ! grep -q 'require("ui/widget/pathchooser")' kindlehome.koplugin/ui/menus.lua \
+        || ! grep -q 'reset_custom_content_dir' kindlehome.koplugin/ui/menus.lua; then
+    echo "FAIL: custom content folder must use the native PathChooser and offer Reset"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, top-level repaint target, menu registration, streamed downloads)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root)"
 fi
 exit "$fail"
