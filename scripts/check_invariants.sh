@@ -21,6 +21,18 @@ if grep -rn '\.dialog[[:space:]]*=' --include='*.lua' \
     echo "FAIL: body widgets must not self-assign dialog; Shell wires it to itself"
     fail=1
 fi
+if grep -n 'ScrollHtmlWidget\|dashboard_html\|DashboardHtml' kindlehome.koplugin/ui/dashboard.lua >/dev/null; then
+    echo "FAIL: dashboard must use the native body, not HTML/ScrollHtmlWidget"
+    fail=1
+fi
+if ! grep -q 'ScrollableContainer' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must scroll with ScrollableContainer"
+    fail=1
+fi
+if [ -e kindlehome.koplugin/lib/render/dashboard_html.lua ]; then
+    echo "FAIL: dead lib/render/dashboard_html.lua must be removed"
+    fail=1
+fi
 
 # 2) KOReader has no ui/elements/menu_items module; menus must be registered
 #    from addToMainMenu(menu_items).
@@ -55,6 +67,6 @@ if [ -n "$bad_fs" ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (top-level repaint target, menu registration, streamed downloads)"
+    echo "OK: plugin invariants (native dashboard scroll, top-level repaint target, menu registration, streamed downloads)"
 fi
 exit "$fail"

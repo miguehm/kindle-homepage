@@ -88,7 +88,10 @@ local shell = Shell:new{
     on_close = function() closed = true end,
     body_factory = function(w, h)
         body_args = { w = w, h = h }
-        return { dummy = true }
+        return {
+            dummy = true,
+            getCropRegion = function() return nil end,
+        }
     end,
 }
 
@@ -99,6 +102,7 @@ assert(shell.title_bar.left_icon == "chevron.left", "back icon missing")
 assert(shell.action_bar and #shell.action_bar.buttons == 2, "action bar not wired")
 assert(shell.body.dialog == shell, "body dialog must be the top-level shell")
 assert(shell.body.show_parent == shell, "body show_parent must be the top-level shell")
+assert(shell.cropping_widget == shell.body, "cropping_widget must be the scrollable body")
 
 shell:show()
 assert(UIManager._state.shown == 1, "shell not shown")
