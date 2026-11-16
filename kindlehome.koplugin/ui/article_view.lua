@@ -129,6 +129,20 @@ function ArticleView:show(doc)
     local font_size = Theme.font_size(self.config, Theme.ARTICLE_BASE)
     local title = doc.title or (doc.meta and doc.meta.title) or "Article"
 
+    -- Flujo por defecto: abrir el documento local persistido en el lector
+    -- nativo de KOReader (ReaderUI), que ofrece selección de texto,
+    -- anotaciones, progreso, diccionario y modo nocturno, todo offline.
+    if doc.html_path and can_open_in_reader() then
+        local ok, err = pcall(function()
+            self:openInReader(doc.html_path)
+        end)
+        if ok then
+            Logger.info("article_view", "opened_in_reader", { path = doc.html_path })
+            return
+        end
+        Logger.err("article_view", "open_reader_failed_fallback", { path = doc.html_path, err = tostring(err) })
+    end
+
     local shell = Shell:new{
         title = title,
         config = self.config,
@@ -143,6 +157,7 @@ function ArticleView:show(doc)
                 default_font_size = font_size,
                 width = width,
                 height = height,
+                highlight_text_selection = true,
                 html_link_tapped_callback = function(link)
                     self:handle_link(link and link.uri)
                 end,

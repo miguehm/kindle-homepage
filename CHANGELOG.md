@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2026-11-15
+
+### Changed
+- **Apertura de artículos por defecto en el lector nativo de KOReader.** Los artículos y digests con documento `.html` persistido localmente se abren ahora con `ReaderUI:showReader(path)` en lugar del overlay `ScrollHtmlWidget`, lo que habilita selección de texto, anotaciones, subrayados, diccionario, progreso y modo nocturno, todo offline y sin red.
+- El overlay `ScrollHtmlWidget` se mantiene solo como fallback cuando no existe `.html` local o el lector no está disponible; en ese fallback se activó `highlight_text_selection = true` para permitir selección de texto.
+
 ## [0.2.0] - 2026-11-15
 
 ### Changed
