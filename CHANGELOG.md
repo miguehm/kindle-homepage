@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.2.0] - 2026-11-16
+
+### Added
+- **Paperwhite Monochrome dashboard.** Combined hero/weather card (clock with AM/PM, short date, last-update time, WiFi and battery glyph on the left; temperature, condition, H/L, place, wind, humidity and tomorrow on the right), separated by a hairline. Paginated **Top Stories** card with an inverted `Y/HN` badge, in-card refresh, five numbered rows and a `Page N of M` next-page control (wraps at the end; resets on refresh, preserved when returning from an article). Fixed three-tab bottom bar; **Dashboard** is active, **Todo's** and **Store** are placeholders with a brief “Coming soon” notice.
+- **Custom dashboard header.** Literary serif title with settings and close buttons (settings opens the KOReader main menu, close keeps the existing exit path), wired to the Shell repaint target. Native `TitleBar`/action bar remain unchanged for the article fallback.
+- **Monochrome SVG glyphs** for weather (sun/partly/cloud/fog/rain/snow/storm) and navigation, shipped under `assets/icons/`; sharp corners, discrete grays and binary inversion only.
+- **12/24-hour clock** (`ui_clock_24h`, default `false` = 12 h with AM/PM) in the Interface menu.
+
+### Changed
+- **Weather payload extended** with current wind/humidity and a second forecast day (`forecast_days=2`, `wind_speed_unit=kmh`); additive, so older cache entries simply omit the new lines until their TTL expires. WMO codes now map to icon keys.
+- Typography follows DESIGN.md scale with KOReader's bundled **Noto Serif** (display/body) and **Noto Sans** (labels), with fallback to `cfont`; Literata/Inter are not bundled and would break the plugin's self-contained install.
+- Dashboard no longer uses the native action bar; refresh/close/settings live in the header and card as in the design.
+
+### Fixed
+- **Dashboard no longer fails to open.** `DashboardHeader` is now a real `InputContainer` widget (`getSize`/`paintTo`); previously it was a plain table and `Shell:init` crashed at `shell.lua:73` (`attempt to call method 'getSize'`). `Shell` also falls back to the native `TitleBar` if a custom header is not a valid widget.
+- **No more KOReader crash on the first touch.** `BatteryGlyph` is now a `Widget` subclass; as a plain table it lacked `handleEvent()` and broke `WidgetContainer:propagateEvent` on any tap. The dashboard smoke now walks the whole widget tree asserting `handleEvent()` on every child (negative test reproduces the old crash).
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (new guards for modular widgets, assets and sharp corners), `scripts/smoke_ui.sh` PASS (15 smokes incl. new `weather.lua` and rewritten `dashboard.lua` with pagination, header, nav and crop region; the header is asserted to expose `getSize`/`paintTo`, an invalid header must fall back, and every child in the widget tree must expose `handleEvent`).
+- Real KOReader/Linux modules (LuaJIT, PW5-scaled screen) rendered the full Shell (header + body) to PNG: no paint errors, correct header/body layout. A first Kindle PW5 attempt failed at `shell.lua:73`; the fix was reproduced and re-verified with real modules. **Kindle PW5 re-verification pending** (see `PLAN.md` §10).
+
 ## [2.1.0] - 2026-11-16
 
 ### Added
