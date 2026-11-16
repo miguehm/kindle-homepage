@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.1] - 2026-11-16
+
+### Changed
+- **Fallback de artículos con paginación nativa.** `ui/article_html_pager.lua` sustituye a `ScrollHtmlWidget`: usa `HtmlBoxWidget` a tamaño viewport, `VerticalScrollBar` e input nativo (swipe, tap en mitades, **pan/release** y teclas PgFwd/PgBack). Arrastrar lentamente avanza de página (antes no respondía). El lector nativo `ReaderUI` sigue siendo la vía principal.
+- Retirado `ScrollHtmlWidget` de todo el plugin; la selección de texto del fallback se retira (disponible en `ReaderUI`).
+- La tarjeta/visor de error nunca usa `kh:*` en el HTML; la navegación Back/Close sigue en la barra nativa.
+
+### Added
+- Config dev-only `ui_force_article_fallback` (default `false`) para forzar el pager y poder validarlo en Kindle sin depender de que `ReaderUI` falle. No se expone en menús.
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (prohíbe `ScrollHtmlWidget` en todo el plugin; exige `HtmlBoxWidget` + `VerticalScrollBar` en el pager), `scripts/smoke_ui.sh` PASS (9 smokes: dashboard, article_view, pager, shell, action_bar, md_render, article_download, hnmd_url, http_stream).
+- Pager smoke: 3 páginas, swipe/tap/pan-release/teclas/ratio, repintado hacia el `Shell` y caso de una sola página. Instanciación con módulos reales v2026.07.1: 41 páginas, cambio de página OK.
+
 ## [0.4.0] - 2026-11-16
 
 ### Changed
