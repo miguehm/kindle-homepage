@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0] - 2026-11-16
+
+### Changed
+- **Artículos HN como archivos Markdown descargados (contrato `hnmd` real).** `GET /v1/top` se usa solo como índice de metadatos (`schema_version`, `content_status`, `content_url`, `content_length`); al pulsar un ítem se descarga `GET /v1/articles/{id}.md` en `<content root>/articles/hn/<id>-<slug>.md` y se genera `<id>-<slug>.md.html` para abrirlo con `ReaderUI`.
+- `hnmd_base_url` por defecto pasa a `https://hnmd.miguehm.com/v1`; un host sin path recibe `/v1`. `content_url` se resuelve contra el origen (evita `/v1/v1/...`) y se rechazan URLs de otro origen.
+- Descarga **streaming a archivo** (`Http.get_to_file`): nunca se acumula el cuerpo en RAM (PW5 con ~15 MB libres), con límites `index_max_bytes` (128 KiB) y `article_max_bytes` (512 KiB), validación de `Content-Length` y `os.rename` atómico.
+- `Cache.SCHEMA_VERSION` a 2: cachés con payload completo anterior se ponen en cuarentena y se regeneran.
+- Re-descarga solo si el `.md` local falta/vacío; `404`, `503` o fallos de red **no** borran la copia local. No se usan `etag`/`last-modified`.
+- Renderizador extendido: `h4`–`h6`, `blockquote`, `hr`, imágenes reducidas a su texto alternativo (sin cargas remotas), `<!DOCTYPE html>` y `<title>` en documentos persistidos.
+- Eliminado `open_in_reader_enabled`: el lector nativo es el flujo por defecto; el overlay queda como fallback (Markdown crudo si el render falla).
+
+### Added
+- `lib/hnmd.lua`: `fetch_index` + `download_article` + `resolve_content_url` (validación de esquema/id/estados).
+- `lib/article_store.lua`: `ensure_local`, `is_local`, `render_derived` (regenera HTML si el `.md` es más reciente) y detección de frontmatter propio.
+- `lib/paths.lua`: `article_md_path` / `article_html_path`.
+- Errores tipados `http_404` e `incomplete`; mensajes `no_content`, `warming_up`, `offline_no_local`, `downloading`.
+- Smokes nuevos: `article_download.lua` (promoción/atomicidad/404 conserva copia/`.tmp` limpio), `md_render.lua` (extensiones y escape), `hnmd_url.lua` (resolución `/v1`, cross-origin, índice/límites), `http_stream.lua` (sink por chunks, `Content-Length`, `too_large`, 404/503 sin retry, timeout con 1 retry).
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (nuevos guards: descarga vía `get_to_file`, `ui/` sin HTTP/borrado, `os.remove/rename` solo sobre `.tmp`), `scripts/smoke_ui.sh` PASS (8 smokes).
+- Backend validado con datos reales (`/v1/top`, `HEAD`/`GET` de `50517488` 7938 B y `50516473` 72644 B, 401 con `WWW-Authenticate`). Verificación en Kindle PW5 pendiente.
+
 ## [0.2.1] - 2026-11-15
 
 ### Changed

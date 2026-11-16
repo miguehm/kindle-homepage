@@ -11,12 +11,14 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 - Treat API keys as local plaintext config (KOReader limitation); UI must mask by default when surfaced.
 
 ## Network and reliability
-- All HTTP must go through `lib/http.lua`: timeouts, `http_max_bytes`, `User-Agent`, typed results `{ok,status,body,headers?,error_kind}`.
-- Error kinds: `timeout, network, http_401, http_503, http_other, parse, too_large`.
+- All HTTP must go through `lib/http.lua`: timeouts, byte caps, `User-Agent`, typed results `{ok,status,body,headers?,error_kind}`.
+- Article bodies are downloaded with `Http.get_to_file` (streaming to a `.tmp` file, `os.rename` on success); never buffer an article in RAM. The in-memory `Http.get` is for small JSON only (`/v1/top`, weather).
+- Error kinds: `timeout, network, http_401, http_404, http_503, http_other, parse, too_large, incomplete`.
 - Retries: at most 1 for transient `timeout/network`; **never** retry-loop on `401`.
 - Respect `refresh_budget_s` and sequential per-source fetches to avoid freezing UI. Cache-first with stale fallback (see `lib/cache.lua`, `lib/refresh.lua`).
 
 ## Storage and data integrity
+- Downloaded articles: `<content root>/articles/hn/<id>-<slug>.md` (canonical, never rekeyed by rank) plus a derived `<id>-<slug>.md.html` regenerated when the `.md` mtime is newer. Never delete a local copy because of `404`/network errors.
 - Cache: `<DataDir>/cache/kindlehome/*.json` with versioned envelope (`schema_version`, `fetched_at`, `ttl_seconds`, `source`, `status`, `error?`, `payload`). Corrupt/incompatible cache must be quarantined/regenerated without crashing.
 - Use canonical paths via `lib/paths.lua`; create dirs on demand; safe filenames/slugs.
 - **Atomic writes** (tmp + rename) for cache and persisted content (`.md/.html`).

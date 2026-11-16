@@ -6,7 +6,7 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** F0–F7 implementadas; **F8 (8.1–8.5) preparada** y **F9 (rediseño UI/fullscreen) implementada en repo** (`check_lua51`, `check_invariants`, `smoke_ui` PASS; docs/`CHANGELOG.md`; `_meta.lua` v0.2.0; zip `kindlehome.koplugin-v0.2.0.zip`). **Pendiente verificación en Kindle real** (matriz F1–F9, legibilidad/targets, fullscreen/rotación, performance, smoke desde zip) para cierre formal. **8.6 diferido (post-MVP)**.
+- **Estado del repo:** F0–F7 implementadas; **F8 (8.1–8.5) preparada**, **F9 (rediseño UI/fullscreen)** y **F10 (migración a artículos Markdown descargados, 10.1–10.9) implementadas en repo** (`check_lua51`, `check_invariants`, `smoke_ui` con 8 smokes PASS; docs/`CHANGELOG.md`; `_meta.lua` v0.3.0). **Pendiente verificación en Kindle real** (matriz F1–F10, legibilidad/targets, fullscreen/rotación, descargas reales, performance, smoke desde zip) para cierre formal. **8.6 diferido (post-MVP)**.
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
 - **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
 - **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
@@ -33,7 +33,7 @@
 - **Sin RSS/Atom:** retirado del alcance (2026-11-15).
 
 ### Supuestos operativos
-- `hnmd` entrega `markdown` por item (cuando `status == ok`) y `hn_url` siempre presente; `url` puede ser `null` (Ask HN).
+- `hnmd` expone `/v1/top` como índice **sin cuerpos** y `/v1/articles/{id}.md` por artículo (Bearer en ambos); `content_url` llega origin-absolute (`/v1/...`), `content_length` permite verificar la descarga y `content_status` (`ok|no_content|warming_up|error`) indica si hay cuerpo. `url` puede ser `null` (Ask HN).
 - KOReader expone utilidades estándar: `socketutil`, `dkjson/json`, `LuaSettings`, `NetworkMgr`, `UIManager`, `ScrollHtmlWidget`, `util`, `datetime`, `DataStorage`.
 - Se prioriza robustez en e-ink: HTML/CSS simple, timeouts cortos, límites de bytes, sin trabajos pesados bloqueantes.
 
@@ -53,8 +53,8 @@
   - General/UI: `refresh_on_open` (bool), `show_battery` (bool), `show_network` (bool)
   - Rutas: `storage_mode` (`documents|datadir`), `documents_subdir` (`KindleHome`)
   - Clima: `weather_enabled`, `weather_lat`, `weather_lon`, `weather_place_name`, `weather_ttl_minutes`
-  - HN/hnmd: `hnmd_enabled`, `hnmd_base_url` (default `https://hnmd.miguehm.com`), `hnmd_api_key`, `hnmd_max_items` (1–20), `hnmd_ttl_minutes`
-  - Red: `http_timeout_s`, `http_max_bytes`, `refresh_budget_s` (presupuesto total por actualización)
+  - HN/hnmd: `hnmd_enabled`, `hnmd_base_url` (default `https://hnmd.miguehm.com/v1`; un host sin path recibe `/v1`), `hnmd_api_key`, `hnmd_max_items` (1–20), `hnmd_ttl_minutes`, `index_max_bytes` (32–256 KiB, default 128 KiB), `article_max_bytes` (16 KiB–1 MiB, default 512 KiB)
+  - Red: `http_timeout_s`, `http_max_bytes` (JSON de clima/otros), `refresh_budget_s` (presupuesto total por actualización)
 - **Seguridad:** `hnmd_api_key` se guarda en texto plano local (limitación KOReader). No loguear nunca; en UI mostrar enmascarada con opción de revelar/editar. Validar `hnmd_base_url` con esquema `https://` por defecto.
 
 ### 3.2 Rutas y persistencia (`lib/paths.lua`)
@@ -71,8 +71,8 @@
 - **Recuperación:** JSON corrupto o `schema_version` incompatible → mover/ignorar archivo y regenerar (sin crashear).
 
 ### 3.4 HTTP (`lib/http.lua`) y red
-- GET texto/JSON con `socketutil` timeouts, límite de bytes, `User-Agent`, y resultado tipado `{ok,status,body,headers?,error_kind}`.
-- **Error kinds mínimos:** `timeout`, `network`, `http_401`, `http_503`, `http_other`, `parse`, `too_large`.
+- `Http.get`/`get_json` (pequeños JSON en RAM: `/v1/top`, clima) y `Http.get_to_file` (cuerpos de artículo: streaming a `.tmp`, `Content-Length` verificado, `os.rename` atómico, `.tmp` borrado en fallo) con `socketutil` timeouts, límites de bytes, `User-Agent` y resultado tipado `{ok,status,body|bytes,headers?,error_kind}`.
+- **Error kinds mínimos:** `timeout`, `network`, `http_401`, `http_404`, `http_503`, `http_other`, `parse`, `too_large`, `incomplete`.
 - Retries: solo para fallos transitorios de red/timeout (máx. 1 reintento corto) y **nunca** en bucle para `401`.
 - Respetar presupuesto global de actualización (`refresh_budget_s`) y fetch secuencial por fuente para no congelar UI.
 
@@ -83,8 +83,8 @@
 ### 3.6 Modelos de dominio normalizados (internos)
 - `DashboardState`: hora, batería, red, clima, hn, errores/resumen de refresh, timestamps.
 - `WeatherView`: actual, min/max, código WMO+texto, `place_name`, `observed_at/fetched_at`, `is_stale`.
-- `HnItemView`: `id`, `rank`, `type`, `title`, `hn_url`, `url?`, `by`, `score`, `descendants`, `published_at`, `domain`, `markdown`, `status`, `error?`, `scraped_at`.
-- `ArticleDoc`: metadatos + cuerpo MD + HTML renderizado + rutas de archivo.
+- `HnItemView` (índice, sin cuerpo): `id`, `rank`, `type`, `title`, `hn_url`, `url?`, `by`, `score`, `descendants`, `published_at`, `domain`, `content_status` (`ok|no_content|warming_up|error`), `content_error?`, `content_url`, `content_type`, `content_length`, `updated_at`.
+- `ArticleDoc`: metadatos + `.md` descargado (canónico) + `.md.html` derivado + rutas de archivo.
 
 ## 4) Arquitectura objetivo (estructura de archivos)
 
@@ -232,6 +232,8 @@ repo/
 **Criterio de salida:** HN lista y abre artículos `markdown` desde `hnmd` con cache y manejo correcto de `401/503`.  
 **Verificación:** 200, 401, 503 warming_up, sin red con caché, item `status:error`/sin markdown, Ask HN (`url=null`). *(implementación en repo; pendiente validación en dispositivo/entorno KOReader)*
 
+> **Actualizado (2026-11-16):** el contrato real de `hnmd` ya no entrega cuerpos en `/top`; 5.3/5.7/5.8 quedan sustituidos por el índice + descarga de `/v1/articles/{id}.md` de la **Fase 10**. Los chequeos de estado se leen ahora de `content_status`.
+
 ### Fase 6 — Digest y pulido de lectura
 **Depende de:** Fases 4, 5 *(gates F1–F5 verificación runtime/ledger siguen pendientes; implementación F6 avanzada en repo sin cerrar gates previos)*
 - [x] **6.1** `lib/digest.lua`: modelo de portada diaria (hora, clima, top HN) + render MD/HTML.
@@ -291,6 +293,25 @@ repo/
 **Criterio de salida:** dashboard legible y operable en PW5 en retrato/apaisado, con salida siempre visible y sin artefactos e-ink. *(implementación en repo; pendiente verificación 9.8)*  
 **Verificación:** matriz F9 en Kindle + `check_lua51.sh`, `check_invariants.sh`, `smoke_ui.sh`. *(estático PASS; dispositivo pendiente)*
 
+### Fase 10 — Artículos Markdown descargados desde `hnmd` (lectura nativa, sin overlay)
+**Depende de:** Fases 5, 9 (contrato `hnmd` validado con datos reales el 2026-11-16)
+
+- [x] **10.1** `lib/config.lua`: `hnmd_base_url` default `https://hnmd.miguehm.com/v1` (host desnudo → `/v1`), `index_max_bytes=131072`, `article_max_bytes=524288` con clamps; retirado `open_in_reader_enabled`.
+- [x] **10.2** `lib/http.lua`: `Http.get_to_file` (sink a archivo, `too_large` por contador, `incomplete` por `Content-Length`, `.tmp` borrado en fallo, retry solo transitorio) y `http_404`.
+- [x] **10.3** `lib/hnmd.lua`: `fetch_index` (valida `schema_version==1`, normaliza `content_status`/`content_url`/`content_length`, ordena por rank) y `download_article` (resuelve `content_url` contra el origen, rechaza cross-origin y base no-https, verifica longitud declarada).
+- [x] **10.4** `lib/paths.lua`: `article_md_path` (`<id>-<slug>.md`) y `article_html_path` (`<md>.html`).
+- [x] **10.5** `lib/article_store.lua`: `is_local`, `ensure_local` (descarga solo si falta/vacío; promoción atómica `os.rename`) y `render_derived` (regenera si `mtime(html) < mtime(md)`; strip de frontmatter propio).
+- [x] **10.6** `ui/dashboard.lua`: tap → `ensure_local` con aviso breve, apertura vía `article_view`/`ReaderUI`; estados `no_content`/`warming_up`/`http_404` con mensaje corto; fallback a overlay con Markdown crudo si el render falla.
+- [x] **10.7** `ui/article_view.lua`/`ui/messages.lua`: retirado flag/acción `kh:reader` y añadidos `http_404`, `incomplete`, `no_content`, `warming_up`, `offline_no_local`, `downloading`.
+- [x] **10.8** Render: `h4`–`h6`, `blockquote`, imágenes → alt (sin cargas remotas), `<!DOCTYPE html>`/`<title>`; `Cache.SCHEMA_VERSION=2`.
+- [x] **10.9** Gates/smokes: `article_download.lua`, `md_render.lua`, `hnmd_url.lua`, `http_stream.lua`; invariantes nuevos (descarga vía `get_to_file`, `ui/` sin HTTP ni borrados, `os.remove/rename` solo sobre `.tmp`); `PLAN`/`AGENTS`/`README`/`CHANGELOG` y `_meta.lua` 0.3.0.
+- [ ] **10.10** Verificación en Kindle PW5: descarga real de `50517488` (7938 B) y `50516473` (72644 B), apertura en `ReaderUI` con progreso/anotaciones, segundo tap sin re-descarga, 404/offline con copia local intacta, `.tmp` sin residuos; registrar en §10.
+
+> **Nota (2026-11-16):** contrato validado contra el backend real (`/v1/top` índice, `HEAD`/`GET /v1/articles/{id}.md`, `schema_version:1`, `content_status`, `content_length`, 401 con `WWW-Authenticate`). `content_url` es **origin-absolute** (`/v1/...`): se resuelve contra `https://host` para no producir `/v1/v1/...`. KOReader v2026.07 registra `md` como `text/plain` (crengine lo muestra crudo), por eso el `.md.html` derivado es el que abre el lector nativo; el `.md` queda como copia canónica. Deuda conocida: al salir del lector se vuelve al explorador de archivos, no al dashboard.
+
+**Criterio de salida:** cada artículo HN se lee en `ReaderUI` desde un `.md` local duradero, sin overlay como flujo principal y sin re-descargas innecesarias. *(implementación en repo; pendiente 10.10)*  
+**Verificación:** datos reales, `check_lua51.sh`, `check_invariants.sh`, `smoke_ui.sh`, Kindle PW5.
+
 ## 7) Matriz de verificación mínima (por fase)
 
 > **Referencia:** la validación objetivo es **Kindle real** (e-ink/KOReader). Pruebas en desktop/PC son auxiliares y no sustituyen la verificación en Kindle.
@@ -303,6 +324,7 @@ repo/
 - **F6–F7 (integración):** digest parcial/completo, refresh al abrir, gestos/profiles, reentrada.
 - **F8 (dispositivo):** smoke + regresión en **Kindle real** y tiempos aceptables (obligatorio para cierre MVP).
 - **F9 (UI/e-ink):** legibilidad y targets en PW5 (retrato/apaisado), fullscreen/refresco sin ghosting, salida por icono/Back/swipe, tamaño S–XL y rotación sin pérdida de estado.
+- **F10 (artículos `.md`):** descarga real de 2 ids, `ReaderUI` con `.md.html`, segundo tap sin red, `404`/offline conserva copia local, `.tmp` limpio, límites `article_max_bytes`.
 
 ## 8) Riesgos, mitigaciones y decisiones abiertas
 
@@ -338,6 +360,7 @@ repo/
 | 2026-11-15 | F7/7.x (menús) | **Defecto funcional:** `ui/menus.lua` hacía `require("ui/elements/menu_items")` (módulo inexistente en KOReader) y registraba el menú fuera del mecanismo oficial; `main.lua:39` lo silenciaba con `pcall`, así que el submenú de ajustes nunca se registraba | Detección durante el diagnóstico de carga; el patrón correcto es `addToMainMenu(menu_items)` invocado por `ReaderMenu`/`FileManagerMenu` | Medio (dashboard alcanzable por Dispatcher, pero ajustes inaccesibles) | ✔ resuelta (repo 0.1.1) | `Menus:add_settings(menu_items, main_instance)` registra una única entrada `kindlehome` (`sorting_hint="tools"`) con "Open dashboard" + secciones; eliminado el `pcall`, el código muerto de `main.lua` y `name` deprecado de `_meta.lua`; zip regenerado sin directorios vacíos `lib/rss/` |
 | 2026-11-15 | F8/8.1 (crash en dispositivo) | **Defecto bloqueante:** `ScrollHtmlWidget` creado sin `dialog` en `ui/dashboard.lua` y `ui/article_view.lua` → al primer swipe/tap KOReader aborta (`attempt to index field 'dialog' (a nil value)` en `scrollhtmlwidget.lua:182`). Además `actions`/`title` no son campos del widget (las acciones nunca se renderizaban) y el cuerpo HTML se pasaba como documento completo (anidado). | Verificación real en Kindle PaperWhite 5 + KOReader v2026.07: 3 tracebacks tras `[KindleHome] event=shown` | Alto (app inutilizable; pérdida de sesión de lectura) | ✔ resuelta (repo 0.1.2) | `widget.dialog = widget` antes de `UIManager:show`; acciones como enlaces `kh:*` vía `html_link_tapped_callback`; `MdToHtml.document_body` (fragmento + `css`); `Actions:dispatch` usa forma `prefijo:arg`; nuevo gate `scripts/check_invariants.sh` |
 | 2026-11-15 | F7/F8 (red y rutas) | `refresh_on_open` default `true` ejecutaba geocoding+clima+HN síncronos antes del primer pintado (hasta ~30 s de UI bloqueada); `http_max_bytes` 512 KiB con 15 MB libres; contenido escrito en `/mnt/us/koreader/KindleHome` (`getFullDataDir()` = dir de instalación en Kindle) | Riesgo de watchdog/OOM en dispositivo con poca RAM; contenido invisible en la biblioteca del Kindle | Medio | ✔ resuelta (repo 0.1.2) | `refresh_on_open=false` en MVP (refresco diferido con `UIManager:scheduleIn` si se activa); `http_timeout_s` 10→6 s; `http_max_bytes` 512→256 KiB; `documents_root()` resuelve `<home_dir>/documents/<subdir>` (`/mnt/us/documents/KindleHome`) |
+| 2026-11-16 | F10 (pre-gate F1–F9) | Migración de “markdown embebido en `/top`” a índice + descarga de `/v1/articles/{id}.md`, `.md` canónico + `.md.html` derivado, retirada de `open_in_reader_enabled` y del overlay como flujo principal | Contrato real de `hnmd` validado con datos de producción: `/top` ya no entrega cuerpos; el lector nativo solo renderiza HTML y `md` se abre como texto plano en credocument | Medio (cambio incompatible de `/top` y del flujo de lectura; caché v1 invalidada) | ✔ resuelta (repo 0.3.0) | `hnmd.fetch_index`/`download_article`, `Http.get_to_file` (streaming), `article_store.ensure_local`/`render_derived`, `SCHEMA_VERSION=2`, smokes e invariantes nuevos. Breaking change documentado en `CHANGELOG.md`; verificación 10.10 en Kindle pendiente |
 | YYYY-MM-DD | F0/0.x | (ej.) Se cambió ruta de cache | (motivo) | (bajo/medio/alto) | ⏸ diferida / ✔ resuelta | (acción tomada o pendiente) |
 
 ## 10) Ledger de verificación (plantilla)
@@ -360,6 +383,8 @@ repo/
 | 2026-11-15 | F9.1 (causa raíz) | Kindle PW5 — KOReader v2026.07 | Diagnóstico de texto ilegible: `font-size` absolutos en px (`dashboard.lua:237-244`, `md_to_html.lua:5-16`, `article_view.lua:127-128`) anulaban el `default_font_size` escalado por DPI (`Screen:scaleBySize(20)`); PW5 1236×1648 a 300 ppp ⇒ ~2.06 px/dp | ✔ resuelta (repo 0.2.0) | CSS migrado a unidades relativas (em) y base 26 dp escalada; tamaños nativos vía `Theme.native_size`; `ui_font_scale` aplica a HTML y barra | Confirmar en dispositivo que el cuerpo queda ≥ ~44 px y que S/M/L/XL cambia el render |
 | 2026-11-15 | Gates estáticos (repo) | Linux dev | `luac5.1 -p` (22 archivos) + `scripts/check_invariants.sh` (ScrollHtmlWidget con `dialog`; sin `ui/elements/menu_items`) y prueba negativa del invariante | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)`; 
 | 2026-11-15 | Smoke offline UI (repo) | Linux dev (`lua5.1` + módulos KOReader simulados) | `scripts/smoke_ui.sh`: construye dashboard y artículo, valida `css`/fragmento (sin `<html>`), `dialog`, callback de enlaces (`kh:refresh`, `kh:hn:<id>`, `kh:digest`, `kh:close`, `kh:back`, `kh:dashboard`) y ausencia de `kh:reader` cuando está desactivado | PASS | `OK dashboard smoke: body=1268B css=461B dispatching=4`; `OK article_view smoke: body=321B`; `OK: UI smoke tests (lua5.1)` | Render real en e-ink aún depende del re-test en dispositivo |
+| 2026-11-16 | Contrato `hnmd` (backend real) | Linux dev + endpoint de producción | `GET /v1/top` (índice, `schema_version=1`), `HEAD`/`GET /v1/articles/50517488.md` y `50516473.md`, 401 sin token (`WWW-Authenticate: Bearer`) | PASS | Índice sin cuerpos con `content_status`/`content_url`/`content_length`; artículos 7938 B y 72644 B (`text/markdown`, `Content-Disposition`); `content_url` resultó origin-absolute (`/v1/...`) → resolución contra origen | `404` real y `503+Retry-After` no ejercitados (manejo genérico); sin clave API en esta máquina |
+| 2026-11-16 | F10 (impl. base) | Linux dev (repo) | `check_lua51.sh`, `check_invariants.sh` (nuevos guards: `hnmd` usa `get_to_file`, `ui/` sin HTTP ni `os.remove/rename`, `article_store` solo toca `.tmp`), `smoke_ui.sh` (8 smokes: dashboard, article_view, shell, action_bar, md_render, article_download, hnmd_url, http_stream) | PASS (estático/offline) | `smoke_ui.sh`: article download (sin re-descarga, `404` conserva copia, `.tmp` limpio), md render (`h4`–`h6`/blockquote/imágenes sin `img`/escape), hnmd URL (`/v1`, relativo, cross-origin rechazado). Sin runtime KOReader/PW5 | Pendiente 10.10 en Kindle: datos reales, `ReaderUI`, progreso/anotaciones, límites y residuos `.tmp` |
 | YYYY-MM-DD | F0 | KOReader desktop Linux / Kindle FW ... | Carga plugin, abrir/cerrar dashboard | PASS/FAIL | log, screenshot, pasos | (si aplica) |
 
 ## 11) Criterios de aceptación del MVP (definición de terminado)
@@ -368,6 +393,6 @@ repo/
 - Dashboard abre desde menú/gesto en Kindle y muestra hora/fecha + estado básico + secciones disponibles.
 - Clima y HN (`hnmd`) funcionan con **cache-first**, estados de error manejados y sin crashes offline.
 - HN soporta `hnmd_api_key` por UI y por `settings/kindlehome.lua`, con manejo correcto de `200/401/503 warming_up` contra `https://hnmd.miguehm.com/top` (o `hnmd_base_url` configurada).
-- Artículos HN y digest se pueden renderizar en overlay, persistir en `.md/.html` y reabrir.
+- Artículos HN se descargan como `.md` canónico (streaming, sin RAM) con `.md.html` derivado y se leen en el lector nativo (`ReaderUI`); el digest persiste en `.md/.html` y se reabre.
 - Configuración y rutas están documentadas; no se registran secretos en logs; caché corrupta se recupera automáticamente.
 - Existe verificación registrada por fases críticas y **smoke/regresión en Kindle real** (obligatorio).
