@@ -23,7 +23,7 @@ Phases 0–8 are implemented in repo, plus **F9 UI redesign** and **F10 Markdown
 
 KOReader on Linux desktop may be used for quick iteration (not a supported target): copy/symlink to `~/.config/koreader/plugins/kindlehome.koplugin/` and restart KOReader. Final behavior/UX validation is on **Kindle real**.
 
-**Required gates before committing/releasing:** `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax), `./scripts/check_invariants.sh` (e.g. every `ScrollHtmlWidget:new` must set `dialog`) and `./scripts/smoke_ui.sh` (offline render + link wiring). KOReader on Kindle runs Lua 5.1/LuaJIT; Lua 5.3+ bitwise/integer syntax (e.g. `~`, `//`) crashes plugin loading, while a system `luac` 5.3+ accepts it silently.
+**Required gates before committing/releasing:** `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax), `./scripts/check_invariants.sh` (native dashboard scroll, top-level repaint target, menu registration, streamed downloads) and `./scripts/smoke_ui.sh` (offline model/widget rendering + action wiring). KOReader on Kindle runs Lua 5.1/LuaJIT; Lua 5.3+ bitwise/integer syntax (e.g. `~`, `//`) crashes plugin loading, while a system `luac` 5.3+ accepts it silently.
 
 ## Configuration
 
@@ -54,7 +54,7 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 ## Usage
 
 - Dashboard shows date/time, device status, weather, HN, and digest sections (toggleable).
-- **Actions:** tap the links at the bottom of the dashboard (`Refresh`, `Generate digest`, `Open latest digest`, `Open test article`, `HN <rank>: <title>`, `Close`). KOReader's `ScrollHtmlWidget` has no buttons; links are routed through `html_link_tapped_callback`.
+- **Dashboard:** the body is built with native KOReader widgets inside a `ScrollableContainer` (drag to scroll, swipe to page, native scrollbar). Tap a headline to open it; `Refresh`, `Digest` and `Exit` are always reachable in the native action bar. The DIGEST card only reports whether a digest exists (no HTML link). The test-article row appears only when `ui_show_test_article = true`.
 - **Refresh:** manual by default (`refresh_on_open = false` in this MVP). When enabled it paints cached state first and refreshes right after, cache-first and conditioned by connectivity/TTL/budget; brief progress/status messages, no stack traces.
 - **Dispatcher:** `kindlehome_show_dashboard` (safe/idempotent) for gestures/Profiles.
 - **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), regenerates `<id>-<slug>.md.html` when the Markdown is newer, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. If the reader is unavailable or rendering fails, the raw Markdown falls back to the in-plugin overlay. Exiting the reader returns to KOReader's file manager (documented debt: no direct return to the dashboard).
@@ -76,8 +76,8 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 - **Plugin not visible:** ensure the folder is `kindlehome.koplugin` directly under `/mnt/us/koreader/plugins/` (not nested) and **restart KOReader**. Then check `crash.log` for `WARN Error when loading plugins/kindlehome.koplugin/main.lua`:
   - `unexpected symbol near '~'` (or `//`, `goto`) ⇒ Lua 5.1 incompatibility; run `./scripts/check_lua51.sh` in the repo and reinstall.
   - Any load error means `init()` never ran: no `cache/kindlehome`, no menu entry, nothing in **Plugin management → User plugins**. Fix the error and reinstall rather than only restarting.
-- **Entry exists but dashboard/settings missing:** verify the plugin version is 0.3.0+.
-- **KOReader closes right after opening the dashboard:** fixed in 0.1.2 (`ScrollHtmlWidget` without `dialog` → `attempt to index field 'dialog'` on swipe/tap). Update the plugin; if it reappears, run `./scripts/check_invariants.sh`.
+- **Entry exists but dashboard/settings missing:** verify the plugin version is 0.4.0+.
+- **KOReader closes right after opening the dashboard:** fixed in 0.1.2; scrolling without repaint fixed in 0.3.1 (`Shell` must be the `dialog`/`show_parent` of the body). Update the plugin; if it reappears, run `./scripts/check_invariants.sh`.
 - **Performance on e-ink:** reduce `hnmd_max_items`, increase TTLs, or adjust `refresh_budget_s`/timeouts within sane limits.
 
 ## Release checklist (8.5)

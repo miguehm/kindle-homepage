@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] - 2026-11-16
+
+### Changed
+- **Dashboard con interfaz nativa.** El cuerpo HTML (`ScrollHtmlWidget` + CSS) se sustituye por un árbol de widgets de KOReader (`TextBoxWidget`/`TextWidget`/`FrameContainer`/`LineWidget`) dentro de un `ScrollableContainer`: scroll continuo por pan y paginado por flick, con scrollbar nativa. El reloj/fecha, estado, clima, HN y digest se construyen como widgets; el tap en un titular usa la misma ruta `kh:hn:<id>` de siempre.
+- La tarjeta DIGEST ya no contiene el enlace “Open latest digest”: solo informa del estado; el botón Digest de la barra nativa genera/abre el resumen.
+- Eliminados `lib/render/dashboard_html.lua` y `Theme.dashboard_css` (código muerto).
+
+### Added
+- `lib/dashboard_model.lua`: modelo de vista puro (sin dependencias de KOReader) que normaliza `state` a secciones/filas; permite verificar el dashboard en Lua 5.1 sin stubs de widgets.
+- `ui/dashboard_body.lua`: constructor del cuerpo nativo con anchos calculados para evitar scroll horizontal y `LeftContainer` como hijo único del contenedor de scroll.
+- `Shell` registra `cropping_widget` cuando el cuerpo sabe recortar (`ScrollableContainer`).
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (nuevos guards: dashboard sin HTML/`ScrollHtmlWidget`, cuerpo nativo con `ScrollableContainer`, sin `dashboard_html.lua`), `scripts/smoke_ui.sh` PASS (modelo con 10 filas, viewport 1200×1400, hijo único ancho 1170, 11 taps → `open_hn:*`, `cropping_widget`).
+- Instanciado con módulos reales de KOReader v2026.07.1 (LuaJIT): cuerpo 1236×1400, contenido 1200×2380 → scrollable sin desbordamiento horizontal. Verificación en Kindle PW5 pendiente.
+
 ## [0.3.1] - 2026-11-16
 
 ### Fixed

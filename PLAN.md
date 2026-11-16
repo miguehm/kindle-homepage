@@ -6,7 +6,7 @@
 
 ## 1) Estado, alcance y convenciones
 
-- **Estado del repo:** F0–F7 implementadas; **F8 (8.1–8.5) preparada**, **F9 (rediseño UI/fullscreen)** y **F10 (migración a artículos Markdown descargados, 10.1–10.9) implementadas en repo** (`check_lua51`, `check_invariants`, `smoke_ui` con 8 smokes PASS; docs/`CHANGELOG.md`). **Hotfix 0.3.1** aplicado: `Shell` cablea `dialog`/`show_parent` al widget de nivel superior para que `UIManager:setDirty` repinte el cuerpo al desplazarse (validado en Kindle PW5: navegación por flick/tap OK). Refactor del cuerpo a UI nativa (dashboard + fallback de artículos) planificado como siguiente fase. **Pendiente verificación en Kindle real** (matriz F1–F10, legibilidad/targets, fullscreen/rotación, descargas reales, performance, smoke desde zip) para cierre formal. **8.6 diferido (post-MVP)**.
+- **Estado del repo:** F0–F7 implementadas; **F8 (8.1–8.5) preparada**, **F9 (rediseño UI/fullscreen)**, **F10 (migración a artículos Markdown descargados)** y **F11 (dashboard nativo)** implementadas en repo (`check_lua51`, `check_invariants`, `smoke_ui` con 8 smokes PASS; docs/`CHANGELOG.md`; `_meta.lua` v0.4.0). **Hotfix 0.3.1** validado en Kindle PW5 (navegación HTML restablecida); F11 sustituye el cuerpo HTML por widgets nativos + `ScrollableContainer`. **Pendiente F12** (fallback de `article_view` a scroll nativo) y **F13** (gates/docs finales). **Pendiente verificación en Kindle real** de F11 (scroll pan/flick, taps, rotación, S–XL, sin ghosting) para cierre formal. **8.6 diferido (post-MVP)**.
 - **Tier de método:** `Standard` (mhproject) — `PLAN.md` + `AGENTS.md` + `README.md`, fases con dependencias, verificación por fase y registro de desviaciones/ledger.
 - **Plataforma objetivo:** **Kindle con KOReader (e-ink)**. El plugin está enfocado a Kindle; **no** se orienta ni garantiza para KOReader en PC/desktop.
 - **Entorno de desarrollo:** KOReader en Linux desktop puede usarse solo como entorno auxiliar de iteración rápida (sin ser objetivo). La referencia de comportamiento, UX y validación final es **Kindle real**.
@@ -112,11 +112,12 @@ repo/
       weather.lua
       hnmd.lua
       digest.lua
+      dashboard_model.lua          # modelo de vista puro (sin KOReader)
       render/
         md_to_html.lua
-        dashboard_html.lua
     ui/
       dashboard.lua
+      dashboard_body.lua           # cuerpo nativo + ScrollableContainer
       article_view.lua
       menus.lua                # ajustes/configuración (incl. HN)
       actions.lua              # acciones internas y ruteo (fallback sin deep-links HTML)
@@ -312,6 +313,18 @@ repo/
 **Criterio de salida:** cada artículo HN se lee en `ReaderUI` desde un `.md` local duradero, sin overlay como flujo principal y sin re-descargas innecesarias. *(implementación en repo; pendiente 10.10)*  
 **Verificación:** datos reales, `check_lua51.sh`, `check_invariants.sh`, `smoke_ui.sh`, Kindle PW5.
 
+### Fase 11 — Dashboard con interfaz nativa
+**Depende de:** Fases 9; hotfix de repintado 0.3.1 (causa raíz del scroll)
+
+- [x] **11.1** `lib/dashboard_model.lua`: modelo puro `state → hero/status/hint/weather/hn/digest/footer`, con `fmt_temp`/`fmt_relative`/meta HN portados; digest sin enlace.
+- [x] **11.2** `ui/dashboard_body.lua`: `ScrollableContainer` + widgets nativos; ancho interior `width - getScrollbarWidth()`, filas HN táctiles (`InputContainer` con `range = Geom`), tarjetas con borde/blanco y separadores; sin HTML/CSS.
+- [x] **11.3** `ui/dashboard.lua`: usa modelo+builder, mantiene `handle_link`/`Actions`/`ActionBar`/`TitleBar`; scroll **reset** en cada rebuild.
+- [x] **11.4** `ui/shell.lua`: `cropping_widget` cuando el cuerpo expone `getCropRegion`.
+- [x] **11.5** Borrado `lib/render/dashboard_html.lua` y `Theme.dashboard_css`; invariantes/smokes reescritos; `_meta.lua` 0.4.0.
+- [ ] **11.6** Verificación en Kindle PW5: pan/flick con 10 ítems, taps, clima, digest sin enlace, rotación, S–XL, sin ghosting y `crash.log` limpio.
+
+**Criterio de salida:** el dashboard se desplaza con pan y flick, las filas abren artículos por la ruta estable y no queda código HTML del dashboard. **Verificación:** gates + smoke + dispositivo *(repo PASS; 11.6 pendiente)*.
+
 ## 7) Matriz de verificación mínima (por fase)
 
 > **Referencia:** la validación objetivo es **Kindle real** (e-ink/KOReader). Pruebas en desktop/PC son auxiliares y no sustituyen la verificación en Kindle.
@@ -325,6 +338,7 @@ repo/
 - **F8 (dispositivo):** smoke + regresión en **Kindle real** y tiempos aceptables (obligatorio para cierre MVP).
 - **F9 (UI/e-ink):** legibilidad y targets en PW5 (retrato/apaisado), fullscreen/refresco sin ghosting, salida por icono/Back/swipe, tamaño S–XL y rotación sin pérdida de estado.
 - **F10 (artículos `.md`):** descarga real de 2 ids, `ReaderUI` con `.md.html`, segundo tap sin red, `404`/offline conserva copia local, `.tmp` limpio, límites `article_max_bytes`.
+- **F11 (dashboard nativo):** pan y flick con 10 ítems y scrollbar visible, tap por fila, tarjeta digest sin enlace, rotación y S–XL sin pérdida de layout, sin ghosting; sin errores en `crash.log`.
 
 ## 8) Riesgos, mitigaciones y decisiones abiertas
 
@@ -362,6 +376,7 @@ repo/
 | 2026-11-15 | F7/F8 (red y rutas) | `refresh_on_open` default `true` ejecutaba geocoding+clima+HN síncronos antes del primer pintado (hasta ~30 s de UI bloqueada); `http_max_bytes` 512 KiB con 15 MB libres; contenido escrito en `/mnt/us/koreader/KindleHome` (`getFullDataDir()` = dir de instalación en Kindle) | Riesgo de watchdog/OOM en dispositivo con poca RAM; contenido invisible en la biblioteca del Kindle | Medio | ✔ resuelta (repo 0.1.2) | `refresh_on_open=false` en MVP (refresco diferido con `UIManager:scheduleIn` si se activa); `http_timeout_s` 10→6 s; `http_max_bytes` 512→256 KiB; `documents_root()` resuelve `<home_dir>/documents/<subdir>` (`/mnt/us/documents/KindleHome`) |
 | 2026-11-16 | F10 (pre-gate F1–F9) | Migración de “markdown embebido en `/top`” a índice + descarga de `/v1/articles/{id}.md`, `.md` canónico + `.md.html` derivado, retirada de `open_in_reader_enabled` y del overlay como flujo principal | Contrato real de `hnmd` validado con datos de producción: `/top` ya no entrega cuerpos; el lector nativo solo renderiza HTML y `md` se abre como texto plano en credocument | Medio (cambio incompatible de `/top` y del flujo de lectura; caché v1 invalidada) | ✔ resuelta (repo 0.3.0) | `hnmd.fetch_index`/`download_article`, `Http.get_to_file` (streaming), `article_store.ensure_local`/`render_derived`, `SCHEMA_VERSION=2`, smokes e invariantes nuevos. Breaking change documentado en `CHANGELOG.md`; verificación 10.10 en Kindle pendiente |
 | 2026-11-16 | F9 (scroll en dispositivo) | **Defecto funcional:** `ScrollHtmlWidget` recibía `dialog` apuntando al cuerpo anidado (`dashboard.lua:530`, `article_view.lua:160`); `UIManager:setDirty` solo marca widgets en `_window_stack`, así que el swipe/tap encolaba el refresh (flash e-ink) pero no repintaba la página siguiente. La paginación era correcta (4 páginas a 1400 px), por lo que no era un fallo de MuPDF | Diagnóstico por SSH en Kindle PW5 / KOReader v2026.07: `modes` 1236×1648, `virtual_size` 1248×3296 (doble búfer); `logger` sin tracebacks; taps despachaban `open_hn:*`; artículos en `ReaderUI`; RAM 102 MB libres / 154 MB disponibles | Alto (dashboard inutilizable: no se puede leer la lista HN) | ✔ resuelta (repo 0.3.1, validado en dispositivo) | `Shell:init` asigna `body.dialog`, `body.show_parent` y `body.htmlbox_widget.dialog` al `Shell`; eliminadas las auto-asignaciones en dashboard/article; invariante y smokes reescritos (destino de repintado = widget superior). Re-test en Kindle PW5 PASS (navegación restablecida). Siguiente: refactor de cuerpo nativo |
+| 2026-11-16 | F11 (UI nativa) | Sustitución del cuerpo HTML del dashboard por widgets nativos + `ScrollableContainer`; se conserva el shell nativo (TitleBar/ActionBar) y se elimina `dashboard_html.lua`/`dashboard_css` | Solicitud explícita tras el bug de scroll: el body HTML paginado dependía de `page_count`/gestos poco fiables en e-ink; el hotfix 0.3.1 demostró que el repintado era el fallo, pero la UI nativa elimina esa clase de problema y añade pan/scrollbar | Medio (reescritura de la capa de vista; paridad visual/ergonómica pendiente de validar en dispositivo) | ✔ resuelta (repo 0.4.0), pendiente verificación 11.6 | Modelo puro + builder nativo; smokes reescritos; instanciación con módulos reales v2026.07.1 PASS (contenido 1200×2380 en viewport 1236×1400). F12 (article_view) y F13 (gates finales) quedan como fases siguientes |
 | YYYY-MM-DD | F0/0.x | (ej.) Se cambió ruta de cache | (motivo) | (bajo/medio/alto) | ⏸ diferida / ✔ resuelta | (acción tomada o pendiente) |
 
 ## 10) Ledger de verificación (plantilla)
@@ -388,6 +403,7 @@ repo/
 | 2026-11-16 | F10 (impl. base) | Linux dev (repo) | `check_lua51.sh`, `check_invariants.sh` (nuevos guards: `hnmd` usa `get_to_file`, `ui/` sin HTTP ni `os.remove/rename`, `article_store` solo toca `.tmp`), `smoke_ui.sh` (8 smokes: dashboard, article_view, shell, action_bar, md_render, article_download, hnmd_url, http_stream) | PASS (estático/offline) | `smoke_ui.sh`: article download (sin re-descarga, `404` conserva copia, `.tmp` limpio), md render (`h4`–`h6`/blockquote/imágenes sin `img`/escape), hnmd URL (`/v1`, relativo, cross-origin rechazado). Sin runtime KOReader/PW5 | Pendiente 10.10 en Kindle: datos reales, `ReaderUI`, progreso/anotaciones, límites y residuos `.tmp` |
 | 2026-11-16 | Hotfix scroll 0.3.1 (diagnóstico) | Kindle PW5 — KOReader v2026.07 (SSH, solo lectura) | `git-rev` v2026.07; `modes` U:1236x1648p-0; `virtual_size` 1248x3296 (doble búfer, no usar); md5 de `scrollhtmlwidget.lua`/`htmlboxwidget.lua`/`mupdf.lua` idénticos a .07.1; layout del dashboard 1236x1400 → `pages=4`/`usedH≈4139` en device y en repo; `crash.log` sin `[KindleHome]` errors; `settings/kindlehome.lua` con `ui_fullscreen=true`; `gestures.lua` sin swipes globales de pantalla completa | FAIL funcional pre-fix / diagnóstico PASS | Pruebas manuales: sin scrollbar aparente, 1 titular visible y cortado, tap/swipe/flick no avanzan, sí parpadea; barra de acciones visible; artículos abiertos en `ReaderUI` (`opened_in_reader`) | Re-test 0.3.1 en Kindle PW5 PASS (2026-11-16): flick/tap avanzan de página |
 | 2026-11-16 | Hotfix scroll 0.3.1 (repo) | Linux dev | `check_lua51.sh`, `check_invariants.sh` (nuevo guard: `Shell` debe cablear `body.dialog`/`body.show_parent`; prohibida auto-asignación de `dialog`), `smoke_ui.sh` (dashboard/article/shell verifican `dialog == shell` y `show_parent == shell`) | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)`; `OK: plugin invariants (top-level repaint target, menu registration, streamed downloads)`; 8 smokes PASS | Evidencia en Kindle 2026-11-16: navegación dashboard PASS (flick/tap); rotación y fallback pendientes |
+| 2026-11-16 | F11 (repo) | Linux dev + KOReader v2026.07.1 (LuaJIT, módulos reales) | `check_lua51.sh`, `check_invariants.sh` (dashboard sin HTML, cuerpo con `ScrollableContainer`, sin `dashboard_html.lua`), `smoke_ui.sh` (modelo 10 filas, viewport 1200×1400, hijo único 1170, 11 taps, `cropping_widget`); instanciación real del cuerpo con 10 HN + clima + digest | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)`; `OK: plugin invariants (native dashboard scroll, …)`; `OK dashboard smoke: model rows=10 native viewport=1200x1400 taps=11`; real: `body 1236x1400, content 1200x2380` | Falta 11.6 en Kindle PW5 (pan/flick, rotación, S–XL, ghosting) |
 | YYYY-MM-DD | F0 | KOReader desktop Linux / Kindle FW ... | Carga plugin, abrir/cerrar dashboard | PASS/FAIL | log, screenshot, pasos | (si aplica) |
 
 ## 11) Criterios de aceptación del MVP (definición de terminado)
