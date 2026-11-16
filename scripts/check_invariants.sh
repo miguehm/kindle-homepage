@@ -6,10 +6,10 @@ cd "$(dirname "$0")/.."
 
 fail=0
 
-# 1) ScrollHtmlWidget scroll handlers call UIManager:setDirty(self.dialog, ...).
-#    UIManager only flags widgets in _window_stack, so `dialog` must be the
-#    top-level Shell (the widget shown via UIManager:show). A self-assigned
-#    dialog avoids the old nil crash but makes scrolling flash without repaint.
+# 1) Scrolling repaints must target the top-level Shell (the widget in
+#    _window_stack); UIManager:setDirty on a nested widget only flashes.
+#    The dashboard uses ScrollableContainer and the article fallback uses the
+#    plugin-local paginated pager; KOReader's ScrollHtmlWidget is banned.
 for field in dialog show_parent; do
     if ! grep -q "self\.body\.$field = self" kindlehome.koplugin/ui/shell.lua; then
         echo "FAIL: Shell must wire self.body.$field = self (top-level repaint target)"
@@ -31,6 +31,15 @@ if ! grep -q 'ScrollableContainer' kindlehome.koplugin/ui/dashboard_body.lua; th
 fi
 if [ -e kindlehome.koplugin/lib/render/dashboard_html.lua ]; then
     echo "FAIL: dead lib/render/dashboard_html.lua must be removed"
+    fail=1
+fi
+if grep -rn 'ScrollHtmlWidget' --include='*.lua' kindlehome.koplugin >/dev/null; then
+    echo "FAIL: ScrollHtmlWidget must not be used (native scroll bodies only)"
+    fail=1
+fi
+if ! grep -q 'HtmlBoxWidget' kindlehome.koplugin/ui/article_html_pager.lua \
+        || ! grep -q 'VerticalScrollBar' kindlehome.koplugin/ui/article_html_pager.lua; then
+    echo "FAIL: article pager must use HtmlBoxWidget + VerticalScrollBar"
     fail=1
 fi
 
@@ -67,6 +76,6 @@ if [ -n "$bad_fs" ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native dashboard scroll, top-level repaint target, menu registration, streamed downloads)"
+    echo "OK: plugin invariants (native scroll bodies, top-level repaint target, menu registration, streamed downloads)"
 fi
 exit "$fail"

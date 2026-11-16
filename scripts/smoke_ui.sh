@@ -18,7 +18,7 @@ fi
 
 status=0
 root_dir="$(pwd)"
-for test_file in scripts/smoke/dashboard.lua scripts/smoke/article_view.lua scripts/smoke/shell.lua scripts/smoke/action_bar.lua scripts/smoke/md_render.lua scripts/smoke/article_download.lua scripts/smoke/hnmd_url.lua scripts/smoke/http_stream.lua; do
+for test_file in scripts/smoke/dashboard.lua scripts/smoke/article_view.lua scripts/smoke/article_pager.lua scripts/smoke/shell.lua scripts/smoke/action_bar.lua scripts/smoke/md_render.lua scripts/smoke/article_download.lua scripts/smoke/hnmd_url.lua scripts/smoke/http_stream.lua; do
     if ! ( cd "$plugin_dir" && LUA_PATH="./?.lua;;" "$lua_bin" "$root_dir/$test_file" "$plugin_dir" ); then
         echo "FAIL: $test_file"
         status=1
