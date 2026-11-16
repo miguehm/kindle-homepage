@@ -7,7 +7,7 @@ local Logger = require("lib/logger")
 local Cache = {}
 Cache.__index = Cache
 
-Cache.SCHEMA_VERSION = 1
+Cache.SCHEMA_VERSION = 2
 
 local function now_epoch()
     return os.time()

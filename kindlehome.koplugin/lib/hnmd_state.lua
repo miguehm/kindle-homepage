@@ -34,9 +34,9 @@ function HnmdState.load(config, paths, opts)
         allow_network = opts.allow_network ~= false,
         budget = budget,
         fetch_fn = function()
-            return Hnmd.fetch(config, {
+            return Hnmd.fetch_index(config, {
                 timeout_s = config:get("http_timeout_s"),
-                max_bytes = config:get("http_max_bytes"),
+                max_bytes = config:get("index_max_bytes"),
             })
         end,
     })

@@ -2,6 +2,7 @@ local Device = require("device")
 local NetworkMgr = require("ui/network/manager")
 local ScrollHtmlWidget = require("ui/widget/scrollhtmlwidget")
 local UIManager = require("ui/uimanager")
+local InfoMessage = require("ui/widget/infomessage")
 local Logger = require("lib/logger")
 local Theme = require("lib/render/theme")
 local DashboardHtml = require("lib/render/dashboard_html")
@@ -221,30 +222,18 @@ function Dashboard:build_state(opts)
     return state
 end
 
-function Dashboard:open_hn_item(id)
-    if id == "test-phase3" then
-        self:open_test_article()
-        return
-    end
-    local item = self:get_hn_item(id)
-    if not item then
-        if self.article_view then
-            self.article_view:show({
-                title = "Article unavailable",
-                status = "not_found",
-                meta = { id = tostring(id or ""), status = "not_found", source = "hn" },
-                on_back = function() self:show() end,
-            })
-        end
-        return
-    end
+function Dashboard:show_notice(text)
+    if not text or text == "" then return end
+    UIManager:show(InfoMessage:new{ text = text, timeout = 4 })
+end
 
-    local meta = {
+function Dashboard:_article_meta(item)
+    return {
         id = tostring(item.id or ""),
         title = tostring(item.title or "HN article"),
         source = "hnmd",
         date = item.published_at or os.date("%Y-%m-%d"),
-        status = tostring(item.status or "ok"),
+        status = tostring(item.content_status or "ok"),
         hn_url = item.hn_url,
         url = item.url,
         by = item.by,
@@ -252,43 +241,81 @@ function Dashboard:open_hn_item(id)
         descendants = item.descendants,
         domain = item.domain,
     }
+end
 
-    if item.status ~= "ok" or not item.has_markdown or item.markdown == "" then
-        if self.article_view then
-            self.article_view:show({
-                title = meta.title,
-                status = "no_markdown",
-                meta = meta,
-                md = (item.markdown and item.markdown ~= "") and item.markdown or nil,
-                on_back = function() self:show() end,
-            })
-        end
+function Dashboard:_download_article(item)
+    local notice = InfoMessage:new{ text = Messages.for_kind("downloading", "Downloading article…") }
+    UIManager:show(notice)
+    pcall(function() UIManager:forceRePaint() end)
+    local res = self.article_store:ensure_local(self.config, item)
+    pcall(function() UIManager:close(notice) end)
+    return res
+end
+
+function Dashboard:open_hn_item(id)
+    if id == "test-phase3" then
+        self:open_test_article()
+        return
+    end
+    local item = self:get_hn_item(id)
+    if not item then
+        self:show_notice(Messages.reading("not_found"))
+        return
+    end
+    if not (self.paths and self.article_store) then
+        self:show_notice(Messages.reading("content_unavailable"))
         return
     end
 
-    local doc = nil
-    if self.paths and self.article_store then
-        self.paths:ensure_base_dirs()
-        self.paths:ensure_dir(self.paths:articles_hn_dir())
-        local saved, err = self.article_store:save({ kind = "hn", meta = meta, md = item.markdown })
-        if saved then
-            doc = {
-                kind = "hn",
-                id = meta.id,
-                title = meta.title,
-                meta = meta,
-                md = item.markdown,
-                html = saved.html,
-                html_path = saved.html_path,
-                md_path = saved.md_path,
-                status = "ok",
-            }
+    local meta = self:_article_meta(item)
+    local md_path = self.paths:article_md_path(item)
+    local has_local = self.article_store:is_local(md_path)
+    local status = item.content_status or "ok"
+
+    if status ~= "ok" and not has_local then
+        if status == "no_content" or status == "warming_up" then
+            self:show_notice(Messages.for_kind(status, Messages.reading("content_unavailable")))
         else
-            Logger.err("dashboard", "hn_article_save_failed", { id = meta.id, err = tostring(err) })
-            doc = { title = meta.title, meta = meta, md = item.markdown, status = "ok" }
+            self:show_notice(Messages.reading("content_unavailable"))
         end
+        Logger.info("dashboard", "hn_no_content", { id = meta.id, status = status })
+        return
+    end
+
+    local res
+    if has_local then
+        local html_path = self.article_store:render_derived(md_path, item, false)
+        res = { ok = true, md_path = md_path, html_path = html_path }
+        Logger.info("dashboard", "hn_local_hit", { id = meta.id })
     else
-        doc = { title = meta.title, meta = meta, md = item.markdown, status = "ok" }
+        res = self:_download_article(item)
+    end
+
+    if not res.ok then
+        local kind = res.error_kind
+        if (kind == "network" or kind == "timeout") and not res.stale then
+            kind = "offline_no_local"
+        end
+        self:show_notice(Messages.for_kind(kind, Messages.reading("content_unavailable")))
+        Logger.warn("dashboard", "hn_open_failed", { id = meta.id, kind = res.error_kind })
+        return
+    end
+
+    local doc = {
+        kind = "hn",
+        id = meta.id,
+        title = meta.title,
+        meta = meta,
+        status = "ok",
+        md_path = res.md_path,
+        html_path = res.html_path,
+        on_back = function() self:show({ allow_network = false }) end,
+    }
+    if not doc.html_path then
+        -- Render failure: hand the raw Markdown to the in-plugin viewer rather
+        -- than blocking the item entirely.
+        local md = self.article_store:load_md(res.md_path)
+        doc.md = md or ""
     end
 
     self:_teardown()

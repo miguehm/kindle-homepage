@@ -104,10 +104,8 @@ function Digest.build(state, opts)
             if item.by and item.by ~= "" then table.insert(bits, "by " .. tostring(item.by)) end
             if item.domain and item.domain ~= "" then table.insert(bits, tostring(item.domain)) end
             local suffix = ""
-            if item.status and item.status ~= "ok" then
-                suffix = " [status:" .. tostring(item.status) .. "]"
-            elseif not item.has_markdown then
-                suffix = " [no markdown]"
+            if item.content_status and item.content_status ~= "ok" then
+                suffix = " [status:" .. tostring(item.content_status) .. "]"
             end
             if item.url == nil then table.insert(bits, "Ask HN") end
             table.insert(md_lines, rank .. ". " .. title .. suffix)

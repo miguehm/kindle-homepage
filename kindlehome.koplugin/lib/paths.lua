@@ -134,6 +134,26 @@ function Paths:articles_hn_dir()
     return join(self:documents_root(), "articles", "hn")
 end
 
+-- Stable, user-visible name for a downloaded article. The id leads the name so
+-- the file is located regardless of rank changes; the slug is cosmetic.
+function Paths:article_md_path(item)
+    local id = tostring(item and item.id or "")
+    id = id:gsub("[^%w_%-]", "")
+    if id == "" then id = "unknown" end
+    local slug = slugify(item and item.title or "", "article")
+    if #slug > 60 then
+        slug = slug:sub(1, 60):gsub("%-+$", "")
+    end
+    return join(self:articles_hn_dir(), id .. "-" .. slug .. ".md")
+end
+
+-- Derived render opened by KOReader's native reader; KOReader's own file
+-- converter uses the same "<file>.html" convention.
+function Paths:article_html_path(md_path)
+    if type(md_path) ~= "string" or md_path == "" then return nil end
+    return md_path .. ".html"
+end
+
 function Paths:digest_dir()
     return join(self:documents_root(), "digest")
 end

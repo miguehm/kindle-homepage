@@ -12,7 +12,6 @@ local DEFAULTS = {
     show_weather = true,
     show_hn = true,
     show_digest = true,
-    open_in_reader_enabled = false,
     ui_font_scale = 1.0, -- 0.85 .. 1.6 (small .. extra large)
     ui_fullscreen = true,
     ui_show_test_article = false, -- dev/debug entry in the dashboard
@@ -27,10 +26,12 @@ local DEFAULTS = {
     weather_ttl_minutes = 60,
     -- HN/hnmd
     hnmd_enabled = true,
-    hnmd_base_url = "https://hnmd.miguehm.com",
+    hnmd_base_url = "https://hnmd.miguehm.com/v1",
     hnmd_api_key = "",
     hnmd_max_items = 10,
     hnmd_ttl_minutes = 30,
+    index_max_bytes = 131072,   -- 128 KiB: /top metadatos (sin cuerpos)
+    article_max_bytes = 524288, -- 512 KiB por artículo .md descargado
     -- Red
     http_timeout_s = 6,
     http_max_bytes = 262144, -- 256 KiB (Kindle has little free RAM)
@@ -66,6 +67,9 @@ local function as_string(v, default)
     return default
 end
 
+-- hnmd API paths are versioned (/v1/top). A bare host (legacy config or a
+-- custom server) is normalized to the current version so stored settings from
+-- older installs keep working without manual edits.
 local function sanitize_base_url(v, default)
     if type(v) ~= "string" then return default end
     v = v:match("^%s*(.-)%s*$") or ""
@@ -78,6 +82,11 @@ local function sanitize_base_url(v, default)
         end
     end
     v = v:gsub("/+$", "")
+    local rest = v:match("^https://(.+)$")
+    if not rest or rest == "" then return default end
+    if not rest:find("/", 1, true) then
+        v = v .. "/v1"
+    end
     return v
 end
 
@@ -92,7 +101,7 @@ end
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
         or key == "show_weather" or key == "show_hn" or key == "show_digest"
-        or key == "weather_enabled" or key == "hnmd_enabled" or key == "open_in_reader_enabled"
+        or key == "weather_enabled" or key == "hnmd_enabled"
         or key == "ui_fullscreen" or key == "ui_show_test_article" then
         return as_bool(value, default)
     elseif key == "ui_font_scale" then
@@ -119,6 +128,10 @@ local function sanitize(key, value, default)
         return clamp_int(value, 1, 10080, default) -- up to 7 days
     elseif key == "http_timeout_s" then
         return clamp_int(value, 1, 60, default)
+    elseif key == "index_max_bytes" then
+        return clamp_int(value, 32768, 262144, default) -- 32 .. 256 KiB
+    elseif key == "article_max_bytes" then
+        return clamp_int(value, 16384, 1048576, default) -- 16 KiB .. 1 MiB
     elseif key == "http_max_bytes" then
         return clamp_int(value, 16384, 10485760, default) -- 16 KiB .. 10 MiB
     elseif key == "refresh_budget_s" then

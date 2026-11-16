@@ -81,12 +81,6 @@ function ArticleView:handle_link(uri)
             self.actions:dispatch("close", { source = "article_view", view = self })
             return true
         end
-    elseif uri == "kh:reader" then
-        local doc = self.current or {}
-        if doc.html_path then
-            self:openInReader(doc.html_path)
-            return true
-        end
     elseif uri == "kh:close" then
         self:close()
         return true
@@ -104,7 +98,7 @@ local function build_actions(doc, view)
             callback = function() doc.on_back() end,
         })
     end
-    if view.config and view.config:get("open_in_reader_enabled") and can_open_in_reader() and doc.html_path then
+    if view.config and can_open_in_reader() and doc.html_path then
         table.insert(specs, {
             icon = "book.opened",
             label = "Reader",

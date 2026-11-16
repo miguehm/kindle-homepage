@@ -104,10 +104,8 @@ local function hn_meta_line(item)
     if item.by and item.by ~= "" then table.insert(parts, "by " .. escape_html(item.by)) end
     if item.url == nil then table.insert(parts, "Ask HN") end
     if item.domain and item.domain ~= "" then table.insert(parts, escape_html(item.domain)) end
-    if item.status and item.status ~= "ok" then
+    if item.content_status and item.content_status ~= "ok" then
         table.insert(parts, "unavailable")
-    elseif not item.has_markdown then
-        table.insert(parts, "no article text")
     end
     return table.concat(parts, " · ")
 end

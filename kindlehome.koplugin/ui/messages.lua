@@ -5,16 +5,22 @@ local MAP = {
     timeout = "Network timeout. Showing cached data if available.",
     network = "Network error. Showing cached data if available.",
     http_401 = "Invalid API key. Check HN settings.",
+    http_404 = "Article not available on the server.",
     http_503 = "hnmd server is starting, try again in a few minutes.",
     http_other = "Service unavailable. Try again later.",
     parse = "Data error. Try refreshing.",
     too_large = "Response too large. Try refreshing later.",
+    incomplete = "Download incomplete. Try again.",
+    no_content = "No article content for this item.",
+    warming_up = "Article is still being prepared. Try again shortly.",
+    offline_no_local = "Offline and no local copy. Turn on WiFi to download.",
     budget_exceeded = "Refresh budget exceeded. Showing cached data.",
     configure_location = "Set weather location in settings.",
     no_markdown = "No markdown available for this item.",
     content_unavailable = "Content unavailable.",
     corrupted_file = "Content file is unavailable or corrupted.",
     not_found = "Content not found.",
+    downloading = "Downloading article…",
 }
 
 function M.for_kind(kind, fallback)

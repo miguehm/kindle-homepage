@@ -10,6 +10,11 @@ local EINK_CSS = table.concat({
     "h1{font-size:1.6em;line-height:1.2;margin:0 0 0.5em 0;}",
     "h2{font-size:1.3em;line-height:1.25;margin:1.1em 0 0.4em 0;}",
     "h3{font-size:1.1em;line-height:1.3;margin:0.9em 0 0.3em 0;}",
+    "h4{font-size:1.05em;line-height:1.3;margin:0.8em 0 0.25em 0;}",
+    "h5{font-size:1em;line-height:1.3;margin:0.7em 0 0.2em 0;}",
+    "h6{font-size:0.95em;line-height:1.3;margin:0.6em 0 0.2em 0;}",
+    "blockquote{margin:0.8em 0;padding:0 0 0 0.7em;border-left:0.12em solid #000;}",
+    "blockquote div{margin:0.15em 0;font-size:0.9em;line-height:1.35;}",
     "p{line-height:1.5;margin:0 0 0.8em 0;}",
     "ul,ol{line-height:1.5;margin:0 0 0.9em 1.2em;padding:0;}",
     "li{margin:0.2em 0;}",
@@ -45,6 +50,11 @@ end
 
 local function render_inline(text)
     text = escape_html(text)
+    -- Remote images are out of scope on Kindle (they would trigger network
+    -- fetches from crengine). Keep the alt text, drop the image/link.
+    text = text:gsub("!%[([^%]]*)%]%([^%)]*%)", function(alt)
+        return (alt:match("^%s*(.-)%s*$") or "")
+    end)
     -- code spans first, keep simple (no nesting)
     text = text:gsub("`([^`]+)`", "<code>%1</code>")
     text = text:gsub("%*%*(.-)%*%*", "<strong>%1</strong>")
@@ -93,10 +103,15 @@ function MdToHtml.render(md_text)
     local in_code = false
     local code_lines = {}
     local list_state = { type = nil }
+    local in_quote = false
 
     local function end_block()
         flush_paragraph(pbuf, out)
         if list_state.type then close_list(list_state, out) end
+        if in_quote then
+            table.insert(out, "</blockquote>")
+            in_quote = false
+        end
     end
 
     for _, line in ipairs(lines) do
@@ -119,16 +134,25 @@ function MdToHtml.render(md_text)
                 end_block()
                 table.insert(out, "<hr/>")
             else
-                local h3 = line:match("^###%s+(.*)$")
-                local h2 = h3 == nil and line:match("^##%s+(.*)$") or nil
-                local h1 = (h3 == nil and h2 == nil) and line:match("^#%s+(.*)$") or nil
+                local quote = line:match("^%s*>%s?(.*)$")
+                local hashes, heading = line:match("^(#+)%s+(.*)$")
                 local ul = line:match("^%s*[%-%*]%s+(.*)$")
                 local ol = line:match("^%s*%d+%.%s+(.*)$")
-                if h1 or h2 or h3 then
+                if quote ~= nil then
+                    flush_paragraph(pbuf, out)
+                    if list_state.type then close_list(list_state, out) end
+                    if not in_quote then
+                        table.insert(out, "<blockquote>")
+                        in_quote = true
+                    end
+                    if quote ~= "" then
+                        table.insert(out, "<div>" .. render_inline(quote) .. "</div>")
+                    end
+                elseif hashes then
                     end_block()
-                    if h1 then table.insert(out, "<h1>" .. render_inline(h1) .. "</h1>")
-                    elseif h2 then table.insert(out, "<h2>" .. render_inline(h2) .. "</h2>")
-                    else table.insert(out, "<h3>" .. render_inline(h3) .. "</h3>") end
+                    local level = #hashes
+                    if level > 6 then level = 6 end
+                    table.insert(out, "<h" .. level .. ">" .. render_inline(heading) .. "</h" .. level .. ">")
                 elseif ul then
                     flush_paragraph(pbuf, out)
                     if list_state.type ~= "ul" then
@@ -205,8 +229,10 @@ end
 -- Full standalone document, used for persisted .html files.
 function MdToHtml.document(opts)
     opts = opts or {}
+    local title = escape_html(opts.title or (opts.meta and opts.meta.title) or "Kindle Home")
     return table.concat({
-        "<html><head><meta charset='utf-8'/>",
+        "<!DOCTYPE html><html><head><meta charset='utf-8'/>",
+        "<title>", title, "</title>",
         "<style>", EINK_CSS, (opts.css or ""), "</style>",
         "</head><body>",
         MdToHtml.document_body(opts),
