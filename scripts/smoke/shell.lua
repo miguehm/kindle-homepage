@@ -8,6 +8,9 @@ package.preload["device"] = function()
         getHeight = function() return 1600 end,
     } }
 end
+package.preload["ffi/blitbuffer"] = function()
+    return { COLOR_WHITE = 255 }
+end
 package.preload["ui/geometry"] = function()
     local Geom = {}
     Geom.__index = Geom
@@ -34,6 +37,9 @@ package.preload["ui/widget/container/inputcontainer"] = function()
         if o.init then o:init() end
         return o
     end
+    function M:paintTo(bb, x, y)
+        if self[1] and self[1].paintTo then self[1]:paintTo(bb, x, y) end
+    end
     return M
 end
 package.preload["ui/widget/verticalgroup"] = function()
@@ -56,12 +62,12 @@ package.preload["ui/widget/action_bar"] = function()
     return M
 end
 package.preload["ui/uimanager"] = function()
-    local state = { shown = 0, closed = 0, dirty = 0 }
-    local M = {
-        show = function(_, w) state.shown = state.shown + 1; return w end,
-        close = function() state.closed = state.closed + 1 end,
-        setDirty = function() state.dirty = state.dirty + 1 end,
-    }
+local state = { shown = 0, closed = 0, dirty = 0, dirty_widget = nil, dirty_type = nil, close_type = nil }
+local M = {
+    show = function(_, w) state.shown = state.shown + 1; return w end,
+    close = function(_, w, how) state.closed = state.closed + 1; state.close_type = how end,
+    setDirty = function(_, w, how) state.dirty = state.dirty + 1; state.dirty_widget = w; state.dirty_type = how end,
+}
     M._state = state
     return M
 end
@@ -98,6 +104,7 @@ local shell = Shell:new{
 assert(shell.covers_fullscreen == true, "covers_fullscreen must be set")
 assert(body_args and body_args.w == 1200 and body_args.h == 1420, "body must use remaining height")
 assert(shell.title_bar.close_callback, "exit icon callback missing")
+assert(shell.title_bar.show_parent == shell, "title bar repaint target must be the shell")
 assert(shell.title_bar.left_icon == "chevron.left", "back icon missing")
 assert(shell.action_bar and #shell.action_bar.buttons == 2, "action bar not wired")
 assert(shell.body.dialog == shell, "body dialog must be the top-level shell")
@@ -107,9 +114,11 @@ assert(shell.cropping_widget == shell.body, "cropping_widget must be the scrolla
 shell:show()
 assert(UIManager._state.shown == 1, "shell not shown")
 assert(UIManager._state.dirty >= 1, "full refresh on show missing")
+assert(UIManager._state.dirty_widget == shell and UIManager._state.dirty_type == "full", "show must queue setDirty(shell, 'full')")
 
 assert(shell:onBack() == true and back_called, "Back key should call on_back")
 assert(shell:onSwipeHeader(nil, { direction = "south" }) == true and UIManager._state.closed == 1, "swipe down should close")
+assert(UIManager._state.close_type == "full", "close must use a full e-ink refresh")
 assert(closed == true, "on_close should run on close")
 
 local plain = Shell:new{

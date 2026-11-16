@@ -9,6 +9,7 @@
 --   swipe down on the header).
 
 local Device = require("device")
+local Blitbuffer = require("ffi/blitbuffer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
@@ -60,6 +61,7 @@ function Shell:init()
             left_icon = left_icon,
             left_icon_tap_callback = left_callback or function() end,
             close_callback = function() self:request_close() end,
+            show_parent = self,
         }
         header_height = self.title_bar:getSize().h
     end
@@ -121,6 +123,16 @@ function Shell:init()
     }
 end
 
+-- The native TitleBar is a transparent OverlapGroup and covers_fullscreen
+-- makes UIManager skip repainting the previous screen. Without an opaque
+-- fill, stale pixels from the screen underneath show through the header.
+function Shell:paintTo(bb, x, y)
+    local w = self.dimen and self.dimen.w or Screen:getWidth()
+    local h = self.dimen and self.dimen.h or Screen:getHeight()
+    bb:paintRect(x, y, w, h, Blitbuffer.COLOR_WHITE)
+    InputContainer.paintTo(self, bb, x, y)
+end
+
 function Shell:show()
     UIManager:show(self)
     UIManager:setDirty(self, "full")
@@ -130,7 +142,7 @@ end
 function Shell:request_close()
     if self._closing then return true end
     self._closing = true
-    UIManager:close(self, "flashpartial")
+    UIManager:close(self, "full")
     UIManager:setDirty(nil, "full")
     if type(self.on_close) == "function" then
         self.on_close()
