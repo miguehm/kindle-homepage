@@ -11,7 +11,6 @@ local DEFAULTS = {
     show_network = true,
     show_weather = true,
     show_hn = true,
-    show_digest = true,
     ui_font_scale = 1.0, -- 0.85 .. 1.6 (small .. extra large)
     ui_fullscreen = true,
     ui_show_test_article = false, -- dev/debug entry in the dashboard
@@ -37,6 +36,14 @@ local DEFAULTS = {
     http_timeout_s = 6,
     http_max_bytes = 262144, -- 256 KiB (Kindle has little free RAM)
     refresh_budget_s = 20,
+}
+
+-- Keys whose default is intentionally nil: they must still be settable and
+-- reloadable (otherwise Config:set rejects them and the weather location is
+-- never persisted).
+local OPTIONAL_KEYS = {
+    weather_lat = true,
+    weather_lon = true,
 }
 
 local function is_number(v)
@@ -101,7 +108,7 @@ end
 
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
-        or key == "show_weather" or key == "show_hn" or key == "show_digest"
+        or key == "show_weather" or key == "show_hn"
         or key == "weather_enabled" or key == "hnmd_enabled"
          or key == "ui_fullscreen" or key == "ui_show_test_article"
          or key == "ui_force_article_fallback" then
@@ -160,6 +167,12 @@ function Config:load()
             self.values[k] = sanitize(k, stored, default)
         end
     end
+    for k in pairs(OPTIONAL_KEYS) do
+        local stored = self.settings:readSetting(k)
+        if stored ~= nil then
+            self.values[k] = sanitize(k, stored, DEFAULTS[k])
+        end
+    end
     return self
 end
 
@@ -180,7 +193,7 @@ function Config:defaults()
 end
 
 function Config:set(key, value)
-    if DEFAULTS[key] == nil then
+    if DEFAULTS[key] == nil and not OPTIONAL_KEYS[key] then
         return false
     end
     local sanitized = sanitize(key, value, DEFAULTS[key])

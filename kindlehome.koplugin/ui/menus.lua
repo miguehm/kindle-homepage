@@ -40,6 +40,39 @@ end
 local function prompt_text(title, input, hint, on_save, opts)
     opts = opts or {}
     local dialog
+    local buttons = {
+        {
+            {
+                text = _("Cancel"),
+                id = "close",
+                callback = function() UIManager:close(dialog) end,
+            },
+        },
+    }
+    if opts.extra_button then
+        local extra = {}
+        for k, v in pairs(opts.extra_button) do extra[k] = v end
+        local original_callback = extra.callback
+        extra.callback = function()
+            if original_callback then original_callback(dialog) end
+        end
+        table.insert(buttons[1], 2, extra)
+    end
+    table.insert(buttons[1], {
+        text = opts.save_text or _("Save"),
+        is_enter_default = true,
+        callback = function()
+            local val = dialog:getInputText() or ""
+            local ok, msg = on_save(val, dialog)
+            if ok == false then
+                show_info(msg or _("Invalid value."))
+                return
+            end
+            UIManager:close(dialog)
+            if msg then show_info(msg, opts.success_timeout or 3) end
+        end,
+    })
+
     dialog = InputDialog:new{
         title = title,
         input = input or "",
@@ -47,30 +80,7 @@ local function prompt_text(title, input, hint, on_save, opts)
         description = opts.description,
         text_type = opts.text_type,
         input_type = opts.input_type,
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    id = "close",
-                    callback = function() UIManager:close(dialog) end,
-                },
-                opts.extra_button,
-                {
-                    text = opts.save_text or _("Save"),
-                    is_enter_default = true,
-                    callback = function()
-                        local val = dialog:getInputText() or ""
-                        local ok, msg = on_save(val, dialog)
-                        if ok == false then
-                            show_info(msg or _("Invalid value."))
-                            return
-                        end
-                        UIManager:close(dialog)
-                        if msg then show_info(msg, opts.success_timeout or 3) end
-                    end,
-                },
-            },
-        },
+        buttons = buttons,
     }
     UIManager:show(dialog)
     dialog:onShowKeyboard()
@@ -305,12 +315,6 @@ function Menus:add_settings(menu_items, main_instance)
                         checked_func = function() return config:get("show_network") and true or false end,
                         callback = function() config:set("show_network", not config:get("show_network")); config:flush(); refresh_dashboard(main_instance) end,
                     },
-                    {
-                        text_func = function() return _("Show digest section: ") .. bool_text(config:get("show_digest")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("show_digest") and true or false end,
-                        callback = function() config:set("show_digest", not config:get("show_digest")); config:flush(); refresh_dashboard(main_instance) end,
-                    },
                 },
             },
             {
@@ -424,7 +428,6 @@ function Menus:add_settings(menu_items, main_instance)
                                 _("Cache: ") .. tostring(paths:cache_dir()),
                                 _("Content: ") .. tostring(paths:documents_root()),
                                 _("HN articles: ") .. tostring(paths:articles_hn_dir()),
-                                _("Digest: ") .. tostring(paths:digest_dir()),
                             }, "\n")
                             show_info(msg, 8)
                         end,
