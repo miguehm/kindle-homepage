@@ -3,5 +3,5 @@ local _ = require("gettext")
 return {
     fullname = _("Kindle Home"),
     description = _("Homepage for Kindle with clock, weather, and news."),
-    version = "1.0.0",
+    version = "2.0.0",
 }

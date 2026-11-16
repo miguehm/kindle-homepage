@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0] - 2026-11-16
+
+### Removed
+- **Digest (breaking change).** Eliminado `lib/digest.lua` y todas sus integraciones: tarjeta y botón del dashboard, acciones `generate_digest`/`open_digest`, ajuste `show_digest`, ruta `digest/`, ramas en `ArticleStore` y referencias en docs/smokes. Los archivos `digest/*.md/.html` ya generados en el dispositivo **no se borran**.
+
+### Added
+- **Link cards persistentes.** Si falla la descarga y no hay copia local, se escribe/abre `<id>-<slug>-links.md` (y su `.md.html`) con la URL de HN, la URL de origen (o “Ask HN”) y el motivo del error. La tarjeta permanece en la biblioteca incluso si luego la descarga tiene éxito.
+- **Enlaces reales en el documento.** La meta del `.md.html` incluye `<a href>` para la conversación de HN y la URL de origen; al tocarlos en `ReaderUI`, KOReader ofrece Copiar / QR / Abrir en navegador. Los `.md.html` antiguos se regeneran mediante una marca de esquema de render.
+
+### Fixed
+- **Crash de menús.** `prompt_text` ya no inserta un botón `nil` en la fila de `InputDialog` (causa de los crashes al abrir clima o “Documents subdir”). El botón Clear del API key cierra correctamente su diálogo.
+- **Clima sin ubicación.** `weather_lat`/`weather_lon` (defaults `nil`) ahora se pueden guardar y recargar desde `settings/kindlehome.lua`; antes `Config:set` los rechazaba y el clima nunca consultaba la API.
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (12 smokes: nuevos `config.lua`, `menus.lua` y `link_card.lua`; dashboard/action bar sin digest; renderer con enlaces y marca de migración).
+- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** matriz F14 completa — menús Weather/Documents subdir sin crash, coordenadas persistentes tras reinicio, digest ausente, link cards con URLs, enlaces en el documento, lectura sin regresión, instalación limpia desde `kindlehome.koplugin-v2.0.0.zip` y `crash.log` limpio. Registrada en `PLAN.md` §10.
+
 ## [1.0.0] - 2026-11-16
 
 ### Changed

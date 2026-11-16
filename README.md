@@ -2,12 +2,12 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 1.0.0
+- **Version:** 2.0.0
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
 
-Phases 0–12 are implemented in repo; **F13 (MVP closure)** is prepared as release 1.0.0. The dashboard uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM) with a derived `.md.html` opened by KOReader's native reader; returning from `ReaderUI` lands back on the dashboard. The full MVP matrix (F1–F12) PASSed on Kindle PW5 on 2026-11-16, including the article pager, reader round-trip, real downloads/error states, UI/e-ink, security/performance and clean install from zip; see `PLAN.md` §7/§10. MVP formally closed with release 1.0.0.
+Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 after the full matrix PASSed on Kindle PW5 (2026-11-16; see `PLAN.md` §7/§10). **Release 2.0.0** adds the post-MVP mitigations from `REVIEW.md`: the digest feature is gone (breaking release), weather coordinates are now really saved/loaded, the menu crashes are fixed, failed downloads open a persistent link card with the source URLs, and HN/source URLs render as real links inside the document. The dashboard still uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM) with a derived `.md.html` opened by KOReader's native reader; returning from `ReaderUI` lands back on the dashboard. Release 2.0.0 was verified on Kindle PW5 (2026-11-16; see `PLAN.md` §10).
 
 ## Installation (Kindle — target)
 
@@ -17,7 +17,7 @@ Phases 0–12 are implemented in repo; **F13 (MVP closure)** is prepared as rele
 3. Open **Tools → Kindle Home** (with the default `sorting_hint`) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v1.0.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.0.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 
@@ -36,7 +36,7 @@ KOReader on Linux desktop may be used for quick iteration (not a supported targe
 - `hnmd_api_key` (Bearer token) — set via UI or edit `hnmd_api_key = "..."` in `kindlehome.koplugin` settings file
 - `hnmd_max_items` (1–20), `hnmd_ttl_minutes`, `index_max_bytes` (32–256 KiB, default 128 KiB), `article_max_bytes` (16 KiB–1 MiB, default 512 KiB)
 
-Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fallback; `401` actionable and never auto-retried; `503 warming_up`, offline/network/timeout/parse/too_large fall back to cached HN when available). Tapping an item resolves `content_url` (origin-absolute `/v1/articles/{id}.md`), streams the Markdown to `<content root>/articles/hn/<id>-<slug>.md` and writes a derived `<id>-<slug>.md.html` for `ReaderUI`. A local copy is only re-downloaded when missing/empty; `404` and network errors never delete it. Items with `content_status != ok` and no local copy show a short message instead of downloading. Ask HN (`url == null`) uses hnmd content only.
+Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fallback; `401` actionable and never auto-retried; `503 warming_up`, offline/network/timeout/parse/too_large fall back to cached HN when available). Tapping an item resolves `content_url` (origin-absolute `/v1/articles/{id}.md`), streams the Markdown to `<content root>/articles/hn/<id>-<slug>.md` and writes a derived `<id>-<slug>.md.html` for `ReaderUI`. A local copy is only re-downloaded when missing/empty; `404` and network errors never delete it. If the article cannot be downloaded and there is no local copy, the plugin writes and opens `<id>-<slug>-links.md` / `.md.html`: a small link card with the HN discussion URL, the source URL (or “Ask HN”), and the failure reason. The card stays in the library even after a later successful download. Ask HN (`url == null`) uses hnmd content only.
 
 ### Weather (Open-Meteo)
 - `weather_enabled`, `show_weather`, location search or `weather_lat`/`weather_lon`, `weather_place_name`, `weather_ttl_minutes`
@@ -49,16 +49,15 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 - Content root:
   - `storage_mode = "documents"` (default): `<documents root>/<documents_subdir>` — on Kindle `/mnt/us/documents/KindleHome` (resolved from `home_dir` + `documents`, so content shows up in the device library)
   - `storage_mode = "datadir"`: `<DataDir>/news/kindlehome`
-  - HN articles: `<content root>/articles/hn/`; digests: `<content root>/digest/`
+  - HN articles: `<content root>/articles/hn/` (canonical `<id>-<slug>.md`, derived `<id>-<slug>.md.html`, and persistent fallback `<id>-<slug>-links.md/.html`)
 
 ## Usage
 
-- Dashboard shows date/time, device status, weather, HN, and digest sections (toggleable).
-- **Dashboard:** the body is built with native KOReader widgets inside a `ScrollableContainer` (drag to scroll, swipe to page, native scrollbar). Tap a headline to open it; `Refresh`, `Digest` and `Exit` are always reachable in the native action bar. The DIGEST card only reports whether a digest exists (no HTML link). The test-article row appears only when `ui_show_test_article = true`.
+- Dashboard shows date/time, device status, weather and HN sections (toggleable).
+- **Dashboard:** the body is built with native KOReader widgets inside a `ScrollableContainer` (drag to scroll, swipe to page, native scrollbar). Tap a headline to open it; `Refresh` and `Exit` are always reachable in the native action bar. The test-article row appears only when `ui_show_test_article = true`.
 - **Refresh:** manual by default (`refresh_on_open = false` in this MVP). When enabled it paints cached state first and refreshes right after, cache-first and conditioned by connectivity/TTL/budget; brief progress/status messages, no stack traces.
 - **Dispatcher:** `kindlehome_show_dashboard` (safe/idempotent) for gestures/Profiles.
-- **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), regenerates `<id>-<slug>.md.html` when the Markdown is newer, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. Exiting the reader returns to the dashboard. If the reader is unavailable or rendering fails, the in-plugin fallback uses a native paginated HTML pager (swipe, tap, pan and PgFwd/PgBack).
-- **Digest:** generate/open latest or by date from cached dashboard state (partial data supported).
+- **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), regenerates `<id>-<slug>.md.html` when the Markdown is newer *or when the derived HTML predates the link-meta format*, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. HN and source URLs appear as real links in the document metadata; tapping one in `ReaderUI` offers Copy / QR / Open in browser. Exiting the reader returns to the dashboard. If the reader is unavailable or rendering fails, the in-plugin fallback uses a native paginated HTML pager (swipe, tap, pan and PgFwd/PgBack).
 
 ## Security and privacy
 
@@ -71,7 +70,7 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 - **401 (HN):** verify API key in Settings or `settings/kindlehome.lua`; restart refresh. No automatic retry on 401.
 - **503 warming_up / offline / timeout / network / parse / too_large:** plugin keeps/uses cached data when available and shows brief status; retry when network/service is ready.
 - **No location/weather:** configure place or lat/lon in Settings.
-- **No article content (`no_content`/`warming_up`):** hnmd has not extracted that item yet; retry later. **`http_404`:** the server has no body for that id (a local copy is kept if present). **`incomplete`:** length mismatch while downloading; retry. Ask HN uses hnmd content only (no external fetch).
+- **No article content (`no_content`/`warming_up`):** hnmd has not extracted that item yet; the plugin opens a persistent link card with the available URLs, and you can retry later. **`http_404`:** the server has no body for that id (a local copy is kept if present; otherwise a link card opens). **`incomplete`:** length mismatch while downloading; retry. Ask HN uses hnmd content only (no external fetch).
 - **Corrupted cache:** removed/quarantined automatically and regenerated on next fetch.
 - **Plugin not visible:** ensure the folder is `kindlehome.koplugin` directly under `/mnt/us/koreader/plugins/` (not nested) and **restart KOReader**. Then check `crash.log` for `WARN Error when loading plugins/kindlehome.koplugin/main.lua`:
   - `unexpected symbol near '~'` (or `//`, `goto`) ⇒ Lua 5.1 incompatibility; run `./scripts/check_lua51.sh` in the repo and reinstall.
