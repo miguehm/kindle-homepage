@@ -2,12 +2,12 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 0.3.0
+- **Version:** 1.0.0
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
 
-Phases 0–8 are implemented in repo, plus **F9 UI redesign** and **F10 Markdown-download reading flow**: relative `em` typography sized to Kindle PaperWhite 5 (base 26 dp, S/M/L/XL via `ui_font_scale`), native title bar + action bar shell with `covers_fullscreen` and full refresh at open/close, always-visible exit paths, one Hacker News list with full titles, weather/digest cards, and an Interface menu. HN articles are downloaded on demand as `.md` (streamed to disk, never buffered in RAM) next to a derived `.md.html` that KOReader's native reader opens, enabling text selection, annotations, dictionary, progress, and night mode, all offline. Device runtime verification (legibility, targets, rotation, ghosting, reader round-trip, real downloads) on Kindle PW5 is still pending — see `PLAN.md` §7, §9, §10.
+Phases 0–12 are implemented in repo; **F13 (MVP closure)** is prepared as release 1.0.0. The dashboard uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM) with a derived `.md.html` opened by KOReader's native reader; returning from `ReaderUI` lands back on the dashboard. The full MVP matrix (F1–F12) PASSed on Kindle PW5 on 2026-11-16, including the article pager, reader round-trip, real downloads/error states, UI/e-ink, security/performance and clean install from zip; see `PLAN.md` §7/§10. MVP formally closed with release 1.0.0.
 
 ## Installation (Kindle — target)
 
@@ -17,7 +17,7 @@ Phases 0–8 are implemented in repo, plus **F9 UI redesign** and **F10 Markdown
 3. Open **Tools → Kindle Home** (with the default `sorting_hint`) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v0.3.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v1.0.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 
@@ -57,7 +57,7 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 - **Dashboard:** the body is built with native KOReader widgets inside a `ScrollableContainer` (drag to scroll, swipe to page, native scrollbar). Tap a headline to open it; `Refresh`, `Digest` and `Exit` are always reachable in the native action bar. The DIGEST card only reports whether a digest exists (no HTML link). The test-article row appears only when `ui_show_test_article = true`.
 - **Refresh:** manual by default (`refresh_on_open = false` in this MVP). When enabled it paints cached state first and refreshes right after, cache-first and conditioned by connectivity/TTL/budget; brief progress/status messages, no stack traces.
 - **Dispatcher:** `kindlehome_show_dashboard` (safe/idempotent) for gestures/Profiles.
-- **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), regenerates `<id>-<slug>.md.html` when the Markdown is newer, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. If the reader is unavailable or rendering fails, the in-plugin fallback uses a native paginated HTML pager (swipe, tap, pan and PgFwd/PgBack). Exiting the reader returns to KOReader's file manager (documented debt: no direct return to the dashboard).
+- **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), regenerates `<id>-<slug>.md.html` when the Markdown is newer, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. Exiting the reader returns to the dashboard. If the reader is unavailable or rendering fails, the in-plugin fallback uses a native paginated HTML pager (swipe, tap, pan and PgFwd/PgBack).
 - **Digest:** generate/open latest or by date from cached dashboard state (partial data supported).
 
 ## Security and privacy
@@ -83,10 +83,10 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 ## Release checklist (8.5)
 
 - [x] `./scripts/check_lua51.sh`, `./scripts/check_invariants.sh` and `./scripts/smoke_ui.sh` pass (syntax, structural invariants, offline UI rendering)
-- [ ] 8.1 matrix executed on **Kindle (KOReader)** and recorded in `PLAN.md` §10 (or blocking issues documented)
-- [ ] 8.2 performance observations/defaults reviewed on Kindle; 8.3 runtime security/privacy validation on Kindle
-- [x] `README.md`, `CHANGELOG.md`, `PLAN.md` updated; `_meta.lua` version bumped (repo prep)
-- [x] Zip contains only `kindlehome.koplugin/` (no `.git`, no local artifacts, no empty dirs), verified via listing; **clean Kindle install from zip pending device run**
+- [x] 8.1 matrix executed on **Kindle (KOReader)** and recorded in `PLAN.md` §10 (PASS 2026-11-16; no blocking issues)
+- [x] 8.2 performance observations/defaults reviewed on Kindle; 8.3 runtime security/privacy validation on Kindle (PASS 2026-11-16)
+- [x] `README.md`, `CHANGELOG.md`, `PLAN.md` updated; `_meta.lua` version bumped to 1.0.0 (repo prep, F13)
+- [x] Zip contains only `kindlehome.koplugin/` (no `.git`, no local artifacts, no empty dirs), verified via listing; **clean Kindle install from zip verified on device (PASS 2026-11-16)**
 
 ## Deferred / out of scope (MVP)
 

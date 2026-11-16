@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0] - 2026-11-16
+
+### Changed
+- **MVP release candidate.** Versión final del artefacto de release; repositorio, gates y documentación listos para el cierre con evidencia en Kindle (`PLAN.md` F13).
+- **Retorno desde el lector nativo al dashboard.** `Dashboard` mantiene su shell vivo debajo de `ReaderUI` cuando el artículo se abre en el lector; al cerrar el lector se vuelve al dashboard en lugar del explorador de archivos. El fallback paginado cierra el dashboard como antes; si `ReaderUI` falla al abrir, se cierra y se muestra el pager (`on_fallback`). Aplica también a artículos de prueba y digests.
+
+### Fixed
+- `ArticleView:show` ahora comprueba el valor devuelto por `openInReader`: un `ReaderUI:showReader` que falla silenciosamente (`false`) ya no impide el fallback al pager.
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (9 smokes; dashboard comprueba que el shell permanece bajo `ReaderUI` y que el fallback lo cierra; article_view comprueba `will_open_in_reader`, apertura correcta y fallback tras fallo del lector).
+- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** matriz F13 completa — pager de artículos, retorno desde `ReaderUI` al dashboard, UI/e-ink (retrato/apaisado, S–XL), descargas reales y estados de error, clima, digest, menús/Dispatcher, rendimiento/seguridad e instalación limpia desde zip. Registrada en `PLAN.md` §10; MVP cerrado.
+
 ## [0.4.1] - 2026-11-16
 
 ### Changed
