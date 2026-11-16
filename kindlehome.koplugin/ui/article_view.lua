@@ -112,6 +112,13 @@ local function build_actions(doc, view)
     return specs
 end
 
+function ArticleView:will_open_in_reader(doc)
+    doc = doc or {}
+    local force_fallback = self.config and type(self.config.get) == "function"
+        and self.config:get("ui_force_article_fallback") == true
+    return not not (doc.html_path and can_open_in_reader() and not force_fallback)
+end
+
 function ArticleView:show(doc)
     doc = doc or {}
     local body = self:_resolve_body(doc)
@@ -125,17 +132,21 @@ function ArticleView:show(doc)
     -- Flujo por defecto: abrir el documento local persistido en el lector
     -- nativo de KOReader (ReaderUI), que ofrece selección de texto,
     -- anotaciones, progreso, diccionario y modo nocturno, todo offline.
-    local force_fallback = self.config and type(self.config.get) == "function"
-        and self.config:get("ui_force_article_fallback") == true
-    if doc.html_path and can_open_in_reader() and not force_fallback then
-        local ok, err = pcall(function()
-            self:openInReader(doc.html_path)
+    if self:will_open_in_reader(doc) then
+        local ok, opened = pcall(function()
+            return self:openInReader(doc.html_path)
         end)
-        if ok then
+        if ok and opened ~= false then
             Logger.info("article_view", "opened_in_reader", { path = doc.html_path })
             return
         end
-        Logger.err("article_view", "open_reader_failed_fallback", { path = doc.html_path, err = tostring(err) })
+        Logger.err("article_view", "open_reader_failed_fallback", {
+            path = doc.html_path,
+            err = ok and "reader_returned_false" or tostring(opened),
+        })
+        if type(doc.on_fallback) == "function" then
+            doc.on_fallback()
+        end
     end
 
     local shell = Shell:new{

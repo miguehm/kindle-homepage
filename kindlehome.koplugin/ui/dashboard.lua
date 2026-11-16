@@ -309,6 +309,7 @@ function Dashboard:open_hn_item(id)
         md_path = res.md_path,
         html_path = res.html_path,
         on_back = function() self:show({ allow_network = false }) end,
+        on_fallback = function() self:_teardown() end,
     }
     if not doc.html_path then
         -- Render failure: hand the raw Markdown to the in-plugin viewer rather
@@ -317,7 +318,10 @@ function Dashboard:open_hn_item(id)
         doc.md = md or ""
     end
 
-    self:_teardown()
+    local keep_dashboard = self.article_view
+        and type(self.article_view.will_open_in_reader) == "function"
+        and self.article_view:will_open_in_reader(doc)
+    if not keep_dashboard then self:_teardown() end
     if self.article_view then
         self.article_view:show(doc)
     else
@@ -382,6 +386,7 @@ function Dashboard:ensure_test_article()
         html_path = saved.html_path,
         md_path = saved.md_path,
         on_back = function() self:show() end,
+        on_fallback = function() self:_teardown() end,
     }
     Logger.info("dashboard", "test_article_saved", { md = saved.md_path, html = saved.html_path })
     return self.last_test_doc
@@ -395,7 +400,10 @@ function Dashboard:open_test_article()
         end
         return
     end
-    self:_teardown()
+    local keep_dashboard = self.article_view
+        and type(self.article_view.will_open_in_reader) == "function"
+        and self.article_view:will_open_in_reader(doc)
+    if not keep_dashboard then self:_teardown() end
     if self.article_view then
         self.article_view:show(doc)
     else

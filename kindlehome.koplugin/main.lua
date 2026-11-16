@@ -188,8 +188,14 @@ function KindleHome:registerActions()
             return
         end
         local dash = (ctx and ctx.dashboard) or self:getDashboard()
-        if dash then dash:_teardown() end
-        self:getArticleView():show(doc)
+        local view = self:getArticleView()
+        local keep_dashboard = view and type(view.will_open_in_reader) == "function"
+            and view:will_open_in_reader(doc)
+        doc.on_fallback = function()
+            if dash then dash:_teardown() end
+        end
+        if not keep_dashboard and dash then dash:_teardown() end
+        view:show(doc)
     end)
 end
 
