@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.0] - 2026-11-16
+
+### Added
+- **Custom content folder.** Nueva clave `custom_content_dir` y opción **Choose custom content folder** en Paths and storage: ruta absoluta arbitraria y anidada para los documentos descargados (p. ej. `/mnt/us/My Docs/KindleHome`). Se rechazan rutas relativas, segmentos `..` y el directorio de instalación de KOReader; vacía restaura `storage_mode`/`documents_subdir`. Las rutas se resuelven solo en `lib/paths.lua`; la caché permanece en `<DataDir>`.
+- **Selector nativo de carpetas (F15.4).** La carpeta se elige con el `PathChooser` de KOReader (modo solo directorio, con creación de carpetas y navegación paginada) en lugar de escribir la ruta; la entrada **Reset custom content folder** vuelve a la ubicación por defecto. Ambos comparten la validación/sanitización existente.
+
+### Fixed
+- **Elementos detrás del título.** El Shell pinta ahora un fondo blanco opaco a pantalla completa antes de dibujar sus hijos (`Shell:paintTo`), porque `TitleBar` es un `OverlapGroup` transparente y `covers_fullscreen` impide que UIManager repinte la pantalla anterior. El `TitleBar` también recibe `show_parent = self` como destino de repintado. Los cierres usan refresco `full`.
+- **Visibilidad de rutas.** "Documents subdir" y "Storage mode" se marcan como *(fallback)* cuando hay una carpeta custom activa, y "Show resolved paths" pasa a "Show active content paths".
+
+### Changed
+- **Sin migración de archivos.** Al cambiar de carpeta, los `.md/.md.html` y link cards ya descargados permanecen en su ubicación anterior y se descargan de nuevo al abrirlos; no se copian ni se borran (invariante de AGENTS.md).
+
+### Verification
+- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (15 smokes: nuevos `shell_paint.lua` — cobertura opaca del header — y `paths.lua` — carpeta custom, fallback, rutas canónicas y escritura atómica; `config.lua`/`menus.lua` ampliados).
+- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** header sin iconos de la pantalla anterior y carpeta custom absoluta/anidada con persistencia y descarga correctas (F15.1–F15.3; registro en `PLAN.md` §10).
+- **F15.4 (selector nativo + Reset):** gates PASS con 4 pickers simulados en el smoke de menús; pendiente de verificación en Kindle. Se añade a este mismo release 2.1.0 porque aún no se había publicado.
+
 ## [2.0.0] - 2026-11-16
 
 ### Removed

@@ -2,12 +2,12 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 2.0.0
+- **Version:** 2.1.0
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
 
-Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 after the full matrix PASSed on Kindle PW5 (2026-11-16; see `PLAN.md` §7/§10). **Release 2.0.0** adds the post-MVP mitigations from `REVIEW.md`: the digest feature is gone (breaking release), weather coordinates are now really saved/loaded, the menu crashes are fixed, failed downloads open a persistent link card with the source URLs, and HN/source URLs render as real links inside the document. The dashboard still uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM) with a derived `.md.html` opened by KOReader's native reader; returning from `ReaderUI` lands back on the dashboard. Release 2.0.0 was verified on Kindle PW5 (2026-11-16; see `PLAN.md` §10).
+Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 after the full matrix PASSed on Kindle PW5 (2026-11-16; see `PLAN.md` §7/§10). **Release 2.0.0** adds the post-MVP mitigations from `REVIEW.md`: the digest feature is gone (breaking release), weather coordinates are now really saved/loaded, the menu crashes are fixed, failed downloads open a persistent link card with the source URLs, and HN/source URLs render as real links inside the document. The dashboard still uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM) with a derived `.md.html` opened by KOReader's native reader; returning from `ReaderUI` lands back on the dashboard. Release 2.0.0 was verified on Kindle PW5 (2026-11-16; see `PLAN.md` §10). **Release 2.1.0** fixes the title-area bleed-through (the Shell now paints an opaque full-screen background before the native `TitleBar`) and adds a **custom content folder** for an arbitrary absolute/nested downloads directory, chosen with KOReader's native folder picker (plus a **Reset** entry); existing downloads are not migrated (they are re-downloaded when opened).
 
 ## Installation (Kindle — target)
 
@@ -17,7 +17,7 @@ Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 afte
 3. Open **Tools → Kindle Home** (with the default `sorting_hint`) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.0.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.1.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 
@@ -44,9 +44,10 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 
 ### Refresh, limits and paths
 - `refresh_on_open`, `refresh_budget_s`, `http_timeout_s`, `http_max_bytes` (weather/menus), `index_max_bytes`/`article_max_bytes` (downloads; enforced while streaming; sequential per-source, reentry-guarded)
-- `storage_mode` (`documents|datadir`), `documents_subdir` (default `KindleHome`)
-- Cache: `<DataDir>/cache/kindlehome/*.json` (versioned envelope; corrupt/incompatible cache quarantined/regenerated)
-- Content root:
+- `storage_mode` (`documents|datadir`), `documents_subdir` (default `KindleHome`), `custom_content_dir` (default empty = disabled)
+- Cache: `<DataDir>/cache/kindlehome/*.json` (versioned envelope; corrupt/incompatible cache quarantined/regenerated) — never moves with the content root
+- Content root (in precedence order):
+  - `custom_content_dir` (set via **Paths and storage → Choose custom content folder**, which opens KOReader's native folder picker): an absolute, normalized path such as `/mnt/us/My Docs/KindleHome`; nested paths are allowed, but relative paths, `..` segments and KOReader's own install directory (`/mnt/us/koreader`) are rejected. **Reset custom content folder** clears it and restores the options below. On Kindle touch devices, long-press a folder name to select it (or use the first “choose current folder” row); the picker also has a **New folder** action via long-press on its home icon. Existing downloads are **not** migrated: they stay in their old folder and are re-downloaded when opened.
   - `storage_mode = "documents"` (default): `<documents root>/<documents_subdir>` — on Kindle `/mnt/us/documents/KindleHome` (resolved from `home_dir` + `documents`, so content shows up in the device library)
   - `storage_mode = "datadir"`: `<DataDir>/news/kindlehome`
   - HN articles: `<content root>/articles/hn/` (canonical `<id>-<slug>.md`, derived `<id>-<slug>.md.html`, and persistent fallback `<id>-<slug>-links.md/.html`)
@@ -86,6 +87,7 @@ Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fall
 - [x] 8.2 performance observations/defaults reviewed on Kindle; 8.3 runtime security/privacy validation on Kindle (PASS 2026-11-16)
 - [x] `README.md`, `CHANGELOG.md`, `PLAN.md` updated; `_meta.lua` version bumped to 1.0.0 (repo prep, F13)
 - [x] Zip contains only `kindlehome.koplugin/` (no `.git`, no local artifacts, no empty dirs), verified via listing; **clean Kindle install from zip verified on device (PASS 2026-11-16)**
+- [x] Fase 15 (2.1.0): opaque full-screen Shell background + custom content folder; `_meta.lua` bumped to 2.1.0, gates and 15 smokes PASS. **Kindle PW5 matrix PASS for F15.1–F15.3 (confirmed 2026-11-16).** F15.4 (native folder picker + Reset) repo PASS, pending device verification (see `PLAN.md` §10).
 
 ## Deferred / out of scope (MVP)
 
