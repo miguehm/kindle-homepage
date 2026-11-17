@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.3.1] - 2026-11-16
+
+### Fixed
+- **Dashboard elements are no longer vertically centered.** The fit path used `LeftContainer` with the full viewport height, which centers its child vertically (`y + (dimen.h - content.h)/2`) and left the content floating with large blank areas. The content now lives in a top-aligned `HorizontalGroup` with a real left margin, followed by a `VerticalSpan` filler that pushes the fixed bottom tab bar down; pages with few stories start directly under the header.
+- **No more scroll bar with offline/refresh notices.** `refresh_hint`, `weather.message` and `hn.message` could show the same connectivity status three times, adding enough height to trigger the scroll fallback. A global hint now suppresses redundant per-source notices, and section gaps/card padding were slightly reduced.
+
+### Changed
+- **Row count degrades before scrolling.** Top Stories still prefers 4 rows, but if the measured content does not fit the available height the dashboard rebuilds its model with 3 rows, then 2, then 1. A native `ScrollableContainer` is created only when even a single row cannot fit (very large `ui_font_scale` or landscape). Pagination and the next-page control use the chosen row count; the bottom tab bar stays fixed outside the scroll area.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: top-left anchoring with symmetric margins, no centering `LeftContainer`, 4→3→2→1 degradation before scroll, notice dedup) and `./scripts/smoke_ui.sh` PASS (dashboard smoke asserts the top-anchored tree, dedup of offline notices, a forced 3-row layout with tall text, and the native scroll fallback). Kindle PW5 matrix pending.
+
+## [2.3.0] - 2026-11-16
+
+### Changed
+- **Dashboard fits one screen.** Top Stories now shows **4 rows per page** instead of 5. The "Last refreshed" footer section is gone: a compact relative time (`2 min ago`) now sits to the left of the refresh button in the Top Stories header. The body is built without a scroll container when its measured height fits the available viewport; a native `ScrollableContainer` is created **only** as a fallback when the content cannot fit (very large `ui_font_scale` or landscape), with the bottom tab bar always fixed outside it.
+
+### Fixed
+- **Unwanted vertical scroll on the dashboard at normal scales.** Removing a whole story row and the footer section, and no longer adding a gap after the last section, brings the PW5 (1236×1648, scale 1.0) content within the available body height.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: measured scroll fallback, 4-row pagination, no body footer) and `./scripts/smoke_ui.sh` PASS (dashboard smoke covers both the fit path and the forced-overflow fallback path; 4 rows/page, compact header label). Kindle PW5 matrix pending.
+
 ## [2.2.0] - 2026-11-16
 
 ### Added
