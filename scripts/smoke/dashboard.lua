@@ -83,21 +83,39 @@ assert(model.weather.icon == "cloud" and model.weather.wind == "12 km/h", "weath
 assert(model.weather.humidity == "54%" and model.weather.place == "Madrid", "weather humidity/place missing")
 assert(model.weather.tomorrow.hi == "18°C" and model.weather.tomorrow.lo == "11°C", "tomorrow missing")
 assert(model.hn.badge == "Y/HN" and model.hn.title == "TOP STORIES", "stories header missing")
-assert(model.hn.pages == 3 and #model.hn.items == 5, "pagination missing")
-assert(model.hn.items[1].rank == 1 and model.hn.items[5].rank == 5, "page 1 ranks wrong")
+assert(model.hn.pages == 3 and #model.hn.items == 4, "pagination missing")
+assert(model.hn.items[1].rank == 1 and model.hn.items[4].rank == 4, "page 1 ranks wrong")
 assert(model.hn.items[1].meta:find("example.com", 1, true), "domain missing")
 assert(model.hn.items[1].meta:find("10 pts", 1, true), "score missing")
 assert(model.hn.items[1].meta:find("3 comments", 1, true), "comments missing")
 assert(model.hn.items[1].meta:find("by user1", 1, true), "author missing")
 assert(model.hn.items[1].meta:find("1h", 1, true), "age missing")
-assert(model.last_refreshed and model.last_refreshed.text:find("Last refreshed:", 1, true), "footer missing")
+assert(model.hn.refreshed == "5 min ago", "compact refreshed label missing")
+assert(model.last_refreshed == nil, "obsolete footer model field must be gone")
+local notice_state = fixture_state()
+notice_state.weather = {
+    status = "error",
+    line = "Offline. Turn on WiFi and refresh.",
+    message = "Offline. Turn on WiFi and refresh.",
+}
+notice_state.hn.message = "Offline or network error. Showing cached HN."
+local notice_model = DashboardModel.build(notice_state, { now = NOW })
+assert(notice_model.hint == "Offline. Turn on WiFi and refresh."
+    and notice_model.weather.message == nil and notice_model.weather.fallback == nil
+    and notice_model.hn.message == nil,
+    "global hint must suppress duplicate connectivity notices")
+local no_hint_state = fixture_state()
+no_hint_state.refresh_hint = nil
+no_hint_state.hn.message = "Offline or network error. Showing cached HN."
+assert(DashboardModel.build(no_hint_state, { now = NOW }).hn.message ~= nil,
+    "source message must survive without a global hint")
 assert(#model.nav.tabs == 3 and model.nav.active == "dashboard", "nav model missing")
 assert(model.digest == nil and model.footer == nil, "obsolete model fields must be gone")
 
 local page2 = DashboardModel.build(state, { now = NOW, page = 2 })
-assert(page2.hn.page == 2 and page2.hn.items[1].rank == 6 and #page2.hn.items == 5, "page 2 wrong")
+assert(page2.hn.page == 2 and page2.hn.items[1].rank == 5 and #page2.hn.items == 4, "page 2 wrong")
 local page3 = DashboardModel.build(state, { now = NOW, page = 9 })
-assert(page3.hn.page == 3 and #page3.hn.items == 2, "page clamp wrong")
+assert(page3.hn.page == 3 and #page3.hn.items == 4, "page clamp wrong")
 local hour24 = DashboardModel.build(state, { now = NOW, clock_24h = true })
 assert(hour24.hero.clock == "10:42" and hour24.hero.meridiem == nil, "24h clock wrong")
 local hidden_state = fixture_state()
@@ -209,11 +227,12 @@ end
 package.preload["ui/size"] = function()
     return { border = { window = 2 }, line = { thin = 1 } }
 end
+local TEXT_H = 14
 package.preload["ui/widget/textwidget"] = function()
     local M = {}
     function M:new(o)
         o.text = tostring(o.text or "")
-        o.getSize = function(self) return { w = math.min(#self.text * 6, 400), h = 14 } end
+        o.getSize = function(self) return { w = math.min(#self.text * 6, 400), h = TEXT_H } end
         return o
     end
     return M
@@ -222,7 +241,7 @@ package.preload["ui/widget/textboxwidget"] = function()
     local M = {}
     function M:new(o)
         o.text = tostring(o.text or "")
-        o.getSize = function(self) return { w = self.width, h = 14 } end
+        o.getSize = function(self) return { w = self.width, h = TEXT_H } end
         return o
     end
     return M
@@ -485,16 +504,32 @@ assert(captured_header:getSize().h > 0, "header must report a positive height")
 assert(captured_shell.actions == nil, "dashboard must not use the native action bar")
 assert(type(captured_shell.body_factory) == "function", "body factory missing")
 
+local function has_text(widget, text)
+    if type(widget) ~= "table" then return false end
+    if widget.text == text then return true end
+    for index = 1, #widget do
+        if has_text(widget[index], text) then return true end
+    end
+    return false
+end
+
 local body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
-assert(captured == body.scroll, "ScrollableContainer not captured")
-assert(body.scroll.dimen.w == SCREEN_W and body.scroll.dimen.h > 0, "scroll viewport wrong")
-assert(body.nav and body.nav ~= body.scroll, "bottom nav must be outside the scroll")
-assert(body.scroll.show_parent == shell_instance and body.scroll.dialog == shell_instance, "repaint target wrong")
+assert(body.fits == true and body.scroll == nil, "dashboard must fit 1200x1400 without scrolling")
+assert(body.content_width > 0 and body.viewport:getSize().h > 0, "fit viewport wrong")
+assert(body.page_size == 4 and body.model == d.model, "fit body must keep four rows and the chosen model")
+assert(body.nav and body.nav ~= body.viewport, "bottom nav must be outside the content")
 assert(body.nav.show_parent == shell_instance, "nav repaint target wrong")
 assert(shell_instance.cropping_widget == body, "cropping_widget must be the body wrapper")
-assert(body:getCropRegion() == body.scroll.dimen, "crop region must be the scroll viewport")
+assert(body:getCropRegion() == body.dimen, "crop region must be the whole fit body")
 assert_event_tree(body, "dashboard-body")
-assert(body[1][1] == body.scroll and body[1][2] == body.nav, "nav must be fixed below the scroll")
+assert(body[1][1] == body.viewport and body[1][2] == body.filler and body[1][3] == body.nav,
+    "content must be top-anchored with a filler above the fixed nav")
+assert(body.viewport[1] and body.viewport[1].width > 0
+    and body.viewport[1].width * 2 + body.content_width == SCREEN_W,
+    "left margin is missing from the content row")
+assert(d.model.hn.refreshed and has_text(body, d.model.hn.refreshed),
+    "compact refreshed label must be in the stories header")
+assert(not has_text(body, "Last refreshed:"), "obsolete footer label must be gone")
 assert(shown == 1, "shell not shown")
 
 local rows, nav_cells = {}, {}
@@ -502,7 +537,7 @@ for _, input in ipairs(inputs) do
     if input.is_row then rows[#rows + 1] = input end
     if input.name then nav_cells[#nav_cells + 1] = input end
 end
-assert(#rows == 6, "expected 5 stories + dev row, got " .. tostring(#rows))
+assert(#rows == 5, "expected 4 stories + dev row, got " .. tostring(#rows))
 assert(#nav_cells == 3, "expected 3 nav tabs, got " .. tostring(#nav_cells))
 for _, cell in ipairs(nav_cells) do
     assert(type(cell.on_tap) == "function" and cell.show_parent == shell_instance, "nav cell wiring wrong")
@@ -537,12 +572,12 @@ for _, row in ipairs(rows) do
         opened = opened + 1
     end
 end
-assert(opened == 6, "all visible rows must be tappable")
+assert(opened == 5, "all visible rows must be tappable")
 local hn_dispatched = 0
 for _, entry in ipairs(dispatched) do
     if entry.id:match("^open_hn:%d+$") then hn_dispatched = hn_dispatched + 1 end
 end
-assert(hn_dispatched == 5, "HN rows must dispatch open_hn:<id>")
+assert(hn_dispatched == 4, "HN rows must dispatch open_hn:<id>")
 
 local next_icon
 for _, icon in ipairs(tap_icons) do
@@ -551,7 +586,7 @@ end
 assert(next_icon and type(next_icon.on_tap) == "function", "pager control missing")
 next_icon.on_tap()
 assert(d.hn_page == 2 and shown > 1, "next page must rebuild without refetch")
-assert(d.model.hn.page == 2 and d.model.hn.items[1].rank == 6, "page 2 content wrong")
+assert(d.model.hn.page == 2 and d.model.hn.items[1].rank == 5, "page 2 content wrong")
 d:set_hn_page(1)
 
 d:open_hn_item("1001")
@@ -567,4 +602,26 @@ assert(d.hn_page == 1, "refresh must reset pagination")
 captured_shell.on_close()
 assert(dispatched[#dispatched].id == "close", "shell close should exit dashboard")
 
-print("OK dashboard smoke: pages=" .. model.hn.pages .. " rows=" .. tostring(#rows) .. " nav=3 viewport=1200x" .. tostring(body.scroll.dimen.h) .. " taps=" .. opened)
+TEXT_H = 54
+local tight = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(tight.fits == true and tight.page_size == 3,
+    "tall text must degrade from 4 to 3 rows without scrolling")
+assert(tight.model.hn.page_size == 3 and #tight.model.hn.items == 3,
+    "degraded model must render three rows")
+TEXT_H = 14
+
+-- Forced-overflow path: a short viewport must use the native scroll fallback,
+-- reserve the scrollbar width and keep the bottom nav outside the scroll area.
+local small = captured_shell.body_factory(SCREEN_W, 500, shell_instance)
+assert(small.fits == false and small.scroll == captured, "overflow must use native scroll fallback")
+assert(small.scroll.dimen.w == SCREEN_W and small.scroll.dimen.h > 0, "fallback viewport wrong")
+assert(small.content_width < body.content_width, "fallback must reserve scrollbar width")
+assert(small.scroll.show_parent == shell_instance and small.scroll.dialog == shell_instance,
+    "fallback repaint target wrong")
+assert(small:getCropRegion() == small.scroll:getCropRegion(), "fallback crop region wrong")
+assert(small[1][1] == small.scroll and small[1][2] == small.nav, "nav must be fixed below the scroll")
+assert_event_tree(small, "dashboard-body-fallback")
+
+print("OK dashboard smoke: pages=" .. model.hn.pages .. " rows=" .. tostring(#rows)
+    .. " nav=3 fit=1200x" .. tostring(body.viewport:getSize().h)
+    .. " fallback=1200x" .. tostring(small.scroll.dimen.h) .. " taps=" .. opened)

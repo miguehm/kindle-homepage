@@ -1,5 +1,5 @@
 -- Top Stories card: inverted Y/HN badge, in-card refresh, numbered rows and
--- a binary-inverted next-page control. Five rows per page by design.
+-- a binary-inverted next-page control. Four rows per page by default.
 local Geom = require("ui/geometry")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
@@ -30,14 +30,28 @@ local function build_header(hn, config, content_w, callbacks)
         },
     }
     local title_widget = DesignText.line(hn.title or "TOP STORIES", config, "label_lg", true)
-    table.insert(row, badge)
-    table.insert(row, HorizontalSpan:new{ width = Theme.native_size(config, Theme.space.sm) })
-    table.insert(row, title_widget)
-    local spent = badge:getSize().w + Theme.native_size(config, Theme.space.sm)
-        + title_widget:getSize().w
+    local gap = Theme.native_size(config, Theme.space.sm)
     local icon_size = Theme.native_size(config, 22)
-    spent = spent + icon_size
+    local fixed = badge:getSize().w + gap + title_widget:getSize().w + icon_size
+
+    local label = nil
+    local label_gap = 0
+    if hn.refreshed and content_w - fixed - 2 * gap >= Theme.native_size(config, 40) then
+        label = DesignText.line(hn.refreshed, config, "label_md", false, Theme.color.muted)
+        local max_label = math.max(1, content_w - fixed - 2 * gap)
+        if label:getSize().w > max_label then label.max_width = max_label end
+        label_gap = gap
+    end
+    local spent = fixed + (label and (label:getSize().w + label_gap) or 0)
+
+    table.insert(row, badge)
+    table.insert(row, HorizontalSpan:new{ width = gap })
+    table.insert(row, title_widget)
     table.insert(row, HorizontalSpan:new{ width = math.max(0, content_w - spent) })
+    if label then
+        table.insert(row, label)
+        table.insert(row, HorizontalSpan:new{ width = label_gap })
+    end
     table.insert(row, TapIcon:new{
         icon = "cre.render.reload",
         width = icon_size,
@@ -106,7 +120,7 @@ end
 
 function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir)
     local border = Theme.hairline(config)
-    local padding = Theme.native_size(config, 12)
+    local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
     local content = VerticalGroup:new{ align = "left" }
     table.insert(content, build_header(hn, config, content_w, callbacks))

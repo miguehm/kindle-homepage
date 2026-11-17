@@ -68,7 +68,7 @@ Theme.faces = {
     sans_bold = "NotoSans-Bold.ttf",
 }
 
-Theme.STORY_PAGE_SIZE = 5
+Theme.STORY_PAGE_SIZE = 4
 
 local function clamp(v, lo, hi)
     if v < lo then return lo end

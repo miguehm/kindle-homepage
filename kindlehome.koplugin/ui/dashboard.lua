@@ -535,13 +535,19 @@ function Dashboard:show(opts)
 
     local show_test = not self.config or self.config:get("ui_show_test_article") == true
     local clock_24h = self.config and self.config:get("ui_clock_24h") == true
-    local model = DashboardModel.build(state, {
-        now = os.time(),
-        test_article_ready = show_test and state.test_article_ready,
-        page = self.hn_page,
-        clock_24h = clock_24h,
-    })
+    local now = os.time()
+    local function build_model(page_size)
+        return DashboardModel.build(state, {
+            now = now,
+            test_article_ready = show_test and state.test_article_ready,
+            page = self.hn_page,
+            clock_24h = clock_24h,
+            page_size = page_size,
+        })
+    end
+    local model = build_model(nil)
     self.model = model
+    local current_model = model
 
     local shell = Shell:new{
         title = "Kindle Home",
@@ -560,26 +566,31 @@ function Dashboard:show(opts)
             }
         end,
         body_factory = function(width, height, parent)
-            return DashboardBody.build(model, self.config, width, height, {
+            local body = DashboardBody.build(model, self.config, width, height, {
                 show_parent = parent,
                 plugin_dir = self.plugin_dir,
+                model_for = build_model,
                 on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
                 on_test = function() self:handle_link("kh:test") end,
                 on_refresh = function() self:handle_link("kh:refresh") end,
                 on_next_page = function()
-                    local pages = model.hn and model.hn.pages or 0
+                    local pages = current_model.hn and current_model.hn.pages or 0
                     self:set_hn_page((self.hn_page % math.max(pages, 1)) + 1)
                 end,
                 on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
             })
+            current_model = body.model or model
+            self.model = current_model
+            return body
         end,
     }
     self.widget = shell
     shell:show()
     Logger.info("dashboard", "shown", {
         weather = state.weather and state.weather.status,
-        hn_items = model.hn and #model.hn.items or 0,
-        hn_page = model.hn and model.hn.page or nil,
+        hn_items = current_model.hn and #current_model.hn.items or 0,
+        hn_page = current_model.hn and current_model.hn.page or nil,
+        page_size = current_model.hn and current_model.hn.page_size or nil,
         native = true,
     })
 end

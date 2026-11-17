@@ -8,8 +8,9 @@ fail=0
 
 # 1) Scrolling repaints must target the top-level Shell (the widget in
 #    _window_stack); UIManager:setDirty on a nested widget only flashes.
-#    The dashboard uses ScrollableContainer and the article fallback uses the
-#    plugin-local paginated pager; KOReader's ScrollHtmlWidget is banned.
+#    The dashboard fits one screen and uses ScrollableContainer only as a
+#    measured fallback; the article fallback uses the plugin-local paginated
+#    pager; KOReader's ScrollHtmlWidget is banned.
 for field in dialog show_parent; do
     if ! grep -q "self\.body\.$field = self" kindlehome.koplugin/ui/shell.lua; then
         echo "FAIL: Shell must wire self.body.$field = self (top-level repaint target)"
@@ -33,8 +34,47 @@ if grep -n 'ScrollHtmlWidget\|dashboard_html\|DashboardHtml' kindlehome.koplugin
     echo "FAIL: dashboard must use the native body, not HTML/ScrollHtmlWidget"
     fail=1
 fi
-if ! grep -q 'ScrollableContainer' kindlehome.koplugin/ui/dashboard_body.lua; then
-    echo "FAIL: dashboard_body must scroll with ScrollableContainer"
+if ! grep -q 'if root:getSize().h <= viewport_h then' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must measure content before deciding to scroll"
+    fail=1
+fi
+if ! grep -q 'if root:getSize().h > viewport_h then' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must keep native scroll as a last-resort fallback"
+    fail=1
+fi
+if ! grep -q 'ScrollableContainer:new{' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must keep native scroll as measured fallback"
+    fail=1
+fi
+if ! grep -q 'body.fits = scroll == nil' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must expose the fit/no-scroll state"
+    fail=1
+fi
+if ! grep -q 'local PAGE_SIZE_CHOICES = { 4, 3, 2, 1 }' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'body.page_size = chosen_size' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must degrade rows before showing the scroll bar"
+    fail=1
+fi
+if ! grep -q 'HorizontalGroup:new{ align = "top" }' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'HorizontalSpan:new{ width = Theme.margin(config) }' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'VerticalSpan:new{ width = math.max(0, viewport_h - row:getSize().h) }' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard content must be top-left anchored with symmetric margins"
+    fail=1
+fi
+if grep -q 'viewport = LeftContainer' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: LeftContainer would vertically center the dashboard content"
+    fail=1
+fi
+if grep -q 'Last refreshed' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: Last refreshed must live in the stories header, not as a body section"
+    fail=1
+fi
+if ! grep -q 'local PAGE_SIZE = 4' kindlehome.koplugin/lib/dashboard_model.lua; then
+    echo "FAIL: Top Stories must prefer 4 items per page"
+    fail=1
+fi
+if ! grep -q 'redundant_notice' kindlehome.koplugin/lib/dashboard_model.lua; then
+    echo "FAIL: global hint must suppress duplicated per-source notices"
     fail=1
 fi
 if [ -e kindlehome.koplugin/lib/render/dashboard_html.lua ]; then

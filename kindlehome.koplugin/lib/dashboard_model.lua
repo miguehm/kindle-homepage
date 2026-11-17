@@ -1,6 +1,6 @@
 local DashboardModel = {}
 
-local PAGE_SIZE = 5
+local PAGE_SIZE = 4
 
 local function fmt_temp(value)
     if type(value) ~= "number" then return nil end
@@ -15,6 +15,17 @@ end
 local function non_empty(value)
     if type(value) ~= "string" or value == "" then return nil end
     return value
+end
+
+local function redundant_notice(message, hint)
+    if not hint or not message then return false end
+    if message == hint then return true end
+    return message:find("Offline", 1, true) ~= nil
+        or message:find("Network timeout", 1, true) ~= nil
+        or message:find("Network error", 1, true) ~= nil
+        or message:find("cached", 1, true) ~= nil
+        or message:find("Refresh issue", 1, true) ~= nil
+        or message:find("Refresh budget exceeded", 1, true) ~= nil
 end
 
 -- Local timezone offset in seconds east of UTC, computed at `now`.
@@ -145,6 +156,11 @@ function DashboardModel.build(state, opts)
     if state.show_weather ~= false then
         local w = state.weather or {}
         local p = w.payload or {}
+        local weather_message = non_empty(w.message)
+        if redundant_notice(weather_message, hint) then weather_message = nil end
+        local weather_fallback = (not fmt_temp(p.current_temp) and not non_empty(p.condition_text))
+            and tostring(w.line or "Weather unavailable.") or nil
+        if redundant_notice(weather_fallback, hint) then weather_fallback = nil end
         weather = {
             icon = non_empty(p.icon) or "unknown",
             temp = fmt_temp(p.current_temp),
@@ -159,9 +175,8 @@ function DashboardModel.build(state, opts)
                 hi = fmt_temp(p.tomorrow_temp_max),
                 lo = fmt_temp(p.tomorrow_temp_min),
             },
-            fallback = (not fmt_temp(p.current_temp) and not non_empty(p.condition_text))
-                and tostring(w.line or "Weather unavailable.") or nil,
-            message = non_empty(w.message),
+            fallback = weather_fallback,
+            message = weather_message,
             stale = w.stale and true or false,
         }
     end
@@ -181,6 +196,12 @@ function DashboardModel.build(state, opts)
                 unavailable = item.content_status ~= nil and item.content_status ~= "ok",
             })
         end
+        local refreshed = nil
+        if type(state.refreshed_at) == "number" then
+            refreshed = fmt_relative(state.refreshed_at, now)
+        end
+        local hn_message = non_empty(h.message)
+        if redundant_notice(hn_message, hint) then hn_message = nil end
         local pages = math.ceil(#items / page_size)
         local page = tonumber(opts.page) or 1
         if page < 1 then page = 1 end
@@ -197,19 +218,9 @@ function DashboardModel.build(state, opts)
             pages = pages,
             page_size = page_size,
             empty = #items == 0 and tostring(h.line or "HN unavailable.") or nil,
-            message = non_empty(h.message),
+            message = hn_message,
+            refreshed = refreshed,
         }
-    end
-
-    local last_refreshed = nil
-    if type(state.refreshed_at) == "number" then
-        local relative = fmt_relative(state.refreshed_at, now)
-        if relative then
-            last_refreshed = {
-                text = "Last refreshed: " .. relative,
-                stale = state.refreshed_stale and true or false,
-            }
-        end
     end
 
     return {
@@ -217,7 +228,6 @@ function DashboardModel.build(state, opts)
         hint = hint,
         weather = weather,
         hn = hn,
-        last_refreshed = last_refreshed,
         nav = { active = "dashboard", tabs = { "dashboard", "todos", "store" } },
         test_article = opts.test_article_ready == true,
     }

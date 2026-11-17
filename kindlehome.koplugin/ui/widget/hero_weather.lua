@@ -138,7 +138,7 @@ end
 
 function HeroWeather.build(hero, config, inner_w, weather, plugin_dir)
     local border = Theme.hairline(config)
-    local padding = Theme.native_size(config, 12)
+    local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
     local gap = Theme.native_size(config, 16)
     local usable_w = math.max(1, content_w - 2 * gap - border)
