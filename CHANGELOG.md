@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.4.0] - 2026-11-18
+
+### Added
+- **Previous-page control in Top Stories.** The pager now shows both arrows, wraps symmetrically in both directions, and is hidden when there is only one page. New monochrome `prev.svg` / `prev-inverse.svg` assets match the redesigned `next` glyph (plain paths, no SVG transforms).
+- **Visible refresh feedback.** The hero shows `Updating…` (with the last update time when known) before the blocking network work starts, so the user sees that the dashboard is refreshing; the final state replaces it with the rebuilt data or the existing brief error hint.
+- **Settings inside Kindle Home.** The dashboard gear now opens a single-tab native `TouchMenu` with the plugin settings (Weather, Hacker News, Sections, Interface, Refresh/network, Paths/storage). Setting changes repaint the dashboard on closing the menu, never over it.
+
+### Fixed
+- **Tools → Kindle Home opens the dashboard directly** instead of an intermediate submenu.
+- **Pager and active-tab icons are visible again.** KOReader's `IconWidget` flattens icons onto white by default, which made the white `*-inverse.svg` glyphs disappear against the inverted black button/pressed tab; inverse icons now keep their alpha channel.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: direct Tools callback, in-dashboard `TouchMenu`, alpha on inverse icons, previous-page and refresh wiring) and `./scripts/smoke_ui.sh` PASS (16 smokes, including pager wrap/hidden pager, refresh indicator and deferred settings repaint). Kindle PW5 matrix pending.
+
 ## [2.3.1] - 2026-11-16
 
 ### Fixed

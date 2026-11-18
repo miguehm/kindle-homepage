@@ -2,7 +2,7 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 2.3.1
+- **Version:** 2.4.0
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
@@ -11,6 +11,8 @@ Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 afte
 
 **Release 2.2.0** refactors the dashboard to the **Paperwhite Monochrome** design (`DESIGN.md`, `dashboard.png`): a single hero/weather card, a paginated **Top Stories** card with an in-card refresh and next-page button, a fixed bottom tab bar (**Dashboard**, **Todo's**, **Store** — the last two are placeholders), a custom header with settings and close, and monochrome SVG glyphs. Typography uses KOReader's bundled Noto Serif/Noto Sans (Literata/Inter are not available on device). Weather now shows wind, humidity and tomorrow's high/low; the hero clock defaults to 12 h with AM/PM (`ui_clock_24h` restores 24 h).
 
+**Release 2.4.0** opens the dashboard directly from **Tools → Kindle Home**; all settings now live in the dashboard's gear button (a single-tab native `TouchMenu`). Top Stories has a previous-page arrow next to the next one (both wrap, hidden on a single page), inverse icons stay visible, and the hero shows `Updating…` while a refresh runs in the background.
+
 **Release 2.3.0** makes the dashboard fit one screen: **Top Stories shows 4 rows per page**, the compact refresh time (`2 min ago`) moved into the stories header next to the refresh button, and the old "Last refreshed" footer section is gone. The body is built without a scroll container when the measured content fits; a native `ScrollableContainer` is used **only** as a fallback for extreme font scales or landscape, with the bottom tab bar always fixed. **Release 2.3.1** anchors the content to the top-left (no more vertical centering or missing left margin), suppresses duplicated offline/refresh notices, and degrades the story rows from 4 to 3 (then 2 and 1) when the measured content would otherwise overflow: the scroll bar is now a last resort for extreme scales/landscape only.
 
 ## Installation (Kindle — target)
@@ -18,22 +20,22 @@ Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 afte
 1. Copy or extract `kindlehome.koplugin/` to:
    - `/mnt/us/koreader/plugins/kindlehome.koplugin/`
 2. **Restart KOReader** (required on Kindle for new plugins to load).
-3. Open **Tools → Kindle Home** (with the default `sorting_hint`) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
+3. Open **Tools → Kindle Home** (opens the dashboard directly) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.1.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.4.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 
 KOReader on Linux desktop may be used for quick iteration (not a supported target): copy/symlink to `~/.config/koreader/plugins/kindlehome.koplugin/` and restart KOReader. Final behavior/UX validation is on **Kindle real**.
 
-**Required gates before committing/releasing:** `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax), `./scripts/check_invariants.sh` (measured dashboard scroll fallback, native article pager, top-level repaint target, menu registration, streamed downloads) and `./scripts/smoke_ui.sh` (offline model/widget rendering, fit and fallback paths, action wiring). KOReader on Kindle runs Lua 5.1/LuaJIT; Lua 5.3+ bitwise/integer syntax (e.g. `~`, `//`) crashes plugin loading, while a system `luac` 5.3+ accepts it silently.
+**Required gates before committing/releasing:** `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax), `./scripts/check_invariants.sh` (measured dashboard scroll fallback, native article pager, top-level repaint target, menu registration, streamed downloads, in-dashboard settings, visible inverse icons) and `./scripts/smoke_ui.sh` (offline model/widget rendering, fit and fallback paths, action wiring). KOReader on Kindle runs Lua 5.1/LuaJIT; Lua 5.3+ bitwise/integer syntax (e.g. `~`, `//`) crashes plugin loading, while a system `luac` 5.3+ accepts it silently.
 
 ## Configuration
 
-- **Interface:** `ui_font_scale` (S–XL), `ui_clock_24h` (12/24 h), `ui_fullscreen`; the custom header exposes **settings** (opens the KOReader menu) and **close**.
+- **Interface:** `ui_font_scale` (S–XL), `ui_clock_24h` (12/24 h), `ui_fullscreen`; the custom header exposes **settings** (opens the in-dashboard plugin settings menu) and **close**.
 - **Settings file:** `<KOReader settings dir>/kindlehome.lua` (`LuaSettings`, i.e. `DataStorage:getSettingsDir()/kindlehome.lua`; defaults/sanitization in `lib/config.lua`). Out-of-range/invalid values fall back to defaults.
-- **In-app menu:** a single **Kindle Home** entry in the main menu (under Tools) whose submenu has **Open dashboard** plus the settings sections: Weather, Hacker News, Sections, Refresh & network, Paths/storage. You can also edit `settings/kindlehome.lua` manually while KOReader is not running.
+- **In-app menu:** a single **Kindle Home** entry in the main menu (under Tools) opens the dashboard directly. The dashboard's gear button opens the plugin settings as a single-tab `TouchMenu`: Weather, Hacker News, Sections, Refresh & network, Paths/storage. You can also edit `settings/kindlehome.lua` manually while KOReader is not running.
 
 ### Hacker News (`hnmd`)
 - `hnmd_enabled`, `show_hn`

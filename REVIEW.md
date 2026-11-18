@@ -11,4 +11,9 @@ Resuelto y verificado en Kindle PW5 en release 2.0.0 (Fase 14 de `PLAN.md`): lin
 
 Resuelto en release 2.1.0 (Fase 15 de `PLAN.md`): el Shell pinta ahora un fondo blanco opaco a pantalla completa, de modo que no se filtren los iconos de la pantalla anterior en la banda del título, y el `TitleBar` usa el Shell como destino de repintado. Nueva opción **Custom content folder** en Paths and storage: acepta rutas absolutas/anidadas (p. ej. `/mnt/us/My Docs/KindleHome`), rechaza relativas/`..` y el directorio de instalación de KOReader; si está vacía se mantienen `storage_mode`/`documents_subdir`. Los archivos ya descargados no se migran: permanecen en su carpeta anterior y se re-descargan al abrirlos. Verificado en repo con gates y smokes y **probado en Kindle PW5 (2026-11-16, confirmado por el usuario)**. Posteriormente se añadió en el mismo release 2.1.0 el selector nativo de carpetas (F15.4) y una opción Reset, aún pendiente de verificación en dispositivo.
 
-- Que Kindle Home se abra directamente y el menú de configuraciones esté dentro de kindle home y no como otras opciones
+- Que Kindle Home se abra directamente al seleccionarlo en las herramientas y el menú de configuraciones esté dentro de dashboard de kindle home
+- Mostrar "feedback" de que el dashboard se está actualizando
+- El icono de siguiente no se muestra correctamente
+- No hay icono de regresar a la pagina anterior cuando se avanza a la pagina siguiente en hackernews widget
+
+Implementado en release 2.4.0 (Fase 19 de `PLAN.md`), pendiente de verificación en Kindle PW5: Tools abre el dashboard sin submenú; los ajustes del plugin viven en un `TouchMenu` abierto desde el engranaje del dashboard; el hero muestra «Updating…» antes del refresco bloqueante; los iconos invertidos conservan su canal alpha (visibles en el pager y en la pestaña activa) y el pager de HN tiene flecha anterior con wrap simétrico (oculto con una sola página). Gates y smokes PASS en repo.
