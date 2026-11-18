@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.1] - 2026-11-18
+
+### Fixed
+- **The gear opens the settings menu at full width.** `TouchMenu` expects each entry of `tab_item_table` to be the item array itself; 2.4.0 wrapped the sections in a nested `item_table`, so the tab had zero items and rendered as a tiny empty frame. The gear now passes the settings array directly as the single tab, carrying `text` and `icon` as extra fields.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guard for the flat tab shape) and `./scripts/smoke_ui.sh` PASS (the menus smoke asserts `#tab == #settings_items` and no nested `item_table`). Pending: Kindle PW5 check of the gear.
+
 ## [2.4.0] - 2026-11-18
 
 ### Added

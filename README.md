@@ -2,7 +2,7 @@
 
 Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
 
-- **Version:** 2.4.0
+- **Version:** 2.4.1
 - **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
 
 ## Status
@@ -11,7 +11,7 @@ Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 afte
 
 **Release 2.2.0** refactors the dashboard to the **Paperwhite Monochrome** design (`DESIGN.md`, `dashboard.png`): a single hero/weather card, a paginated **Top Stories** card with an in-card refresh and next-page button, a fixed bottom tab bar (**Dashboard**, **Todo's**, **Store** — the last two are placeholders), a custom header with settings and close, and monochrome SVG glyphs. Typography uses KOReader's bundled Noto Serif/Noto Sans (Literata/Inter are not available on device). Weather now shows wind, humidity and tomorrow's high/low; the hero clock defaults to 12 h with AM/PM (`ui_clock_24h` restores 24 h).
 
-**Release 2.4.0** opens the dashboard directly from **Tools → Kindle Home**; all settings now live in the dashboard's gear button (a single-tab native `TouchMenu`). Top Stories has a previous-page arrow next to the next one (both wrap, hidden on a single page), inverse icons stay visible, and the hero shows `Updating…` while a refresh runs in the background.
+**Release 2.4.0** opens the dashboard directly from **Tools → Kindle Home**; all settings now live in the dashboard's gear button (a single-tab native `TouchMenu`). Top Stories has a previous-page arrow next to the next one (both wrap, hidden on a single page), inverse icons stay visible, and the hero shows `Updating…` while a refresh runs in the background. **Release 2.4.1** fixes the gear: the `TouchMenu` now receives the settings sections directly as its single tab, so it opens at full width instead of showing a tiny empty frame.
 
 **Release 2.3.0** makes the dashboard fit one screen: **Top Stories shows 4 rows per page**, the compact refresh time (`2 min ago`) moved into the stories header next to the refresh button, and the old "Last refreshed" footer section is gone. The body is built without a scroll container when the measured content fits; a native `ScrollableContainer` is used **only** as a fallback for extreme font scales or landscape, with the bottom tab bar always fixed. **Release 2.3.1** anchors the content to the top-left (no more vertical centering or missing left margin), suppresses duplicated offline/refresh notices, and degrades the story rows from 4 to 3 (then 2 and 1) when the measured content would otherwise overflow: the scroll bar is now a last resort for extreme scales/landscape only.
 
@@ -23,7 +23,7 @@ Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 afte
 3. Open **Tools → Kindle Home** (opens the dashboard directly) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
 
 ### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.4.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
+- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.4.1.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
 
 ## Development (auxiliary only)
 

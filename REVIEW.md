@@ -17,3 +17,5 @@ Resuelto en release 2.1.0 (Fase 15 de `PLAN.md`): el Shell pinta ahora un fondo 
 - No hay icono de regresar a la pagina anterior cuando se avanza a la pagina siguiente en hackernews widget
 
 Implementado en release 2.4.0 (Fase 19 de `PLAN.md`), pendiente de verificación en Kindle PW5: Tools abre el dashboard sin submenú; los ajustes del plugin viven en un `TouchMenu` abierto desde el engranaje del dashboard; el hero muestra «Updating…» antes del refresco bloqueante; los iconos invertidos conservan su canal alpha (visibles en el pager y en la pestaña activa) y el pager de HN tiene flecha anterior con wrap simétrico (oculto con una sola página). Gates y smokes PASS en repo.
+
+Corregido en release 2.4.1: en 2.4.0 el engranaje abría un recuadro diminuto porque `TouchMenu` interpreta cada entrada de `tab_item_table` como la lista de ítems misma, no como un descriptor con `item_table` anidado. El engranaje pasa ahora el array de secciones directamente como pestaña única; queda pendiente comprobar en PW5 que se despliega a lo ancho con las seis secciones.
