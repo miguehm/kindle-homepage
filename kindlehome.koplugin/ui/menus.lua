@@ -1,9 +1,8 @@
 local Device = require("device")
 local UIManager = require("ui/uimanager")
-local FrameContainer = require("ui/widget/container/framecontainer")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local InputDialog = require("ui/widget/inputdialog")
 local InfoMessage = require("ui/widget/infomessage")
-local ModalPanel = require("ui/widget/modal_panel")
 local PathChooser = require("ui/widget/pathchooser")
 local TouchMenu = require("ui/widget/touchmenu")
 local _ = require("gettext")
@@ -543,47 +542,26 @@ end
 function Menus:show_settings(main_instance)
     if main_instance.settings_menu then return end
     local screen = Device.screen
-    local config = main_instance.config
-    local border = math.max(2, Theme.native_size(config, 2))
-    local margin = Theme.native_size(config, Theme.space.xl)
-    local panel_w = math.max(math.floor(screen:getWidth() * 0.8), border * 4)
-    local max_panel_h = math.max(screen:getHeight() - 2 * margin, border * 4)
-    local content_w = panel_w - 2 * border
-
     local items = Menus:settings_items(main_instance)
     items.text = _("Kindle Home")
     items.icon = "appbar.settings"
 
-    local modal = ModalPanel:new{}
+    local container = CenterContainer:new{
+        covers_header = true,
+        ignore = "height",
+        dimen = screen:getSize(),
+    }
     local menu = TouchMenu:new{
-        width = content_w,
-        height = max_panel_h - 2 * border,
+        width = screen:getWidth(),
         tab_item_table = { items },
-        show_parent = modal,
+        show_parent = container,
     }
-    menu.bordersize = 0
-    menu.menu_frame.bordersize = 0
-    local update_items = menu.updateItems
-    update_items(menu, 1)
-    menu[1].dimen.w = content_w
-    menu.ges_events.TapCloseAllMenus = nil
-
-    local panel = FrameContainer:new{
-        width = panel_w,
-        bordersize = border,
-        margin = 0,
-        padding = 0,
-        background = Theme.color.canvas,
-        color = Theme.color.fg,
-        menu,
-    }
-    modal:set_panel(panel)
 
     local closed = false
     local function close_menu()
         if closed then return end
         closed = true
-        UIManager:close(modal)
+        UIManager:close(container)
         main_instance.settings_menu = nil
         if main_instance.dashboard_refresh_pending then
             main_instance.dashboard_refresh_pending = nil
@@ -591,24 +569,10 @@ function Menus:show_settings(main_instance)
         end
     end
     menu.close_callback = close_menu
-    modal.on_close = close_menu
+    container[1] = menu
 
-    local function sync_dimen()
-        local size = menu:getSize()
-        local panel_h = math.min(max_panel_h, (size and size.h or 0) + 2 * border)
-        local panel_x = math.floor((screen:getWidth() - panel_w) / 2)
-        local panel_y = math.floor((screen:getHeight() - panel_h) / 2)
-        menu.dimen.x = panel_x + border
-        menu.dimen.y = panel_y + border
-    end
-    function menu:updateItems(...)
-        update_items(self, ...)
-        sync_dimen()
-    end
-    sync_dimen()
-
-    main_instance.settings_menu = modal
-    UIManager:show(modal)
+    main_instance.settings_menu = container
+    UIManager:show(container)
 end
 
 return Menus
