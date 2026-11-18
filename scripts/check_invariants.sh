@@ -195,6 +195,11 @@ if ! grep -q 'require("ui/widget/touchmenu")' kindlehome.koplugin/ui/menus.lua \
     echo "FAIL: settings must be a TouchMenu opened from the dashboard"
     fail=1
 fi
+if ! grep -q 'tab_item_table = { items }' kindlehome.koplugin/ui/menus.lua \
+    || grep -q 'item_table = Menus:settings_items' kindlehome.koplugin/ui/menus.lua; then
+    echo "FAIL: TouchMenu tab must be the settings array itself (no nested item_table)"
+    fail=1
+fi
 if ! grep -q 'alpha = self.alpha' kindlehome.koplugin/ui/widget/tap_icon.lua \
     || ! grep -q 'alpha = true' kindlehome.koplugin/ui/widget/stories_card.lua \
     || ! grep -q 'alpha = self.active' kindlehome.koplugin/ui/widget/bottom_nav.lua; then

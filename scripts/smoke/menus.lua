@@ -280,14 +280,15 @@ local settings_menu = touch_menus[1]
 local tab = settings_menu.opts.tab_item_table[1]
 assert(tab.icon == "appbar.settings" and #settings_menu.opts.tab_item_table == 1,
     "settings menu must use one native tab")
-assert(#tab.item_table == #settings_items, "settings menu must reuse the plugin settings sections")
-for _, item in ipairs(tab.item_table) do
+assert(tab.item_table == nil and #tab == #settings_items,
+    "TouchMenu tab must be the settings array itself, not a nested item_table")
+for _, item in ipairs(tab) do
     assert(item.text ~= "Open dashboard", "dashboard settings must not expose Open dashboard")
 end
 assert(settings_menu.opts.show_parent == shown[#shown] and main_instance.settings_menu == shown[#shown],
     "settings menu must own its container")
 local weather_menu
-for _, item in ipairs(tab.item_table) do
+for _, item in ipairs(tab) do
     if item.text == "Weather" then weather_menu = item.sub_item_table end
 end
 assert(weather_menu and type(weather_menu[1].callback) == "function", "weather settings missing")

@@ -547,15 +547,12 @@ function Menus:show_settings(main_instance)
         ignore = "height",
         dimen = screen:getSize(),
     }
+    local items = Menus:settings_items(main_instance)
+    items.text = _("Kindle Home")
+    items.icon = "appbar.settings"
     local menu = TouchMenu:new{
         width = screen:getWidth(),
-        tab_item_table = {
-            {
-                text = _("Kindle Home"),
-                icon = "appbar.settings",
-                item_table = Menus:settings_items(main_instance),
-            },
-        },
+        tab_item_table = { items },
         show_parent = container,
     }
     menu.close_callback = function()
