@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.0] - 2026-11-18
+
+### Changed
+- **Settings use KOReader's native full-screen menu again.** The gear now opens a `TouchMenu` at full screen width inside a `CenterContainer` with `covers_header = true` / `ignore = "height"` — the same pattern as KOReader's ReaderMenu. The custom floating card (`ModalPanel`, frame, 80% geometry and gesture re-offsetting) is gone. The native outside-tap handler, close arrow and Back key all dismiss the menu, and setting changes still repaint the dashboard only after it closes.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (guard now requires the native full-screen container and forbids the card) and `./scripts/smoke_ui.sh` PASS (16 smokes; the menus smoke asserts full width, container flags and native close paths). Pending: Kindle PW5 visual check.
+
 ## [2.5.0] - 2026-11-18
 
 ### Changed
