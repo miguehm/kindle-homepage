@@ -21,6 +21,7 @@ package.preload["device"] = function()
     return {
         screen = {
             getWidth = function() return 1200 end,
+            getHeight = function() return 1600 end,
             getSize = function() return { w = 1200, h = 1600 } end,
         },
     }
@@ -35,10 +36,50 @@ package.preload["ui/widget/container/centercontainer"] = function()
     }
 end
 
+package.preload["ui/widget/container/framecontainer"] = function()
+    return {
+        new = function(_, opts)
+            local frame = { opts = opts }
+            function frame:getSize()
+                return { w = opts.width or 100, h = (opts[1] and opts[1].getSize and opts[1]:getSize().h or 100) + 4 }
+            end
+            return frame
+        end,
+    }
+end
+
+package.preload["ui/widget/modal_panel"] = function()
+    return {
+        new = function()
+            local modal = { on_close = function() end }
+            function modal:set_panel(panel) self.panel = panel end
+            function modal:onTapOutside(arg, ges)
+                if self.panel and self.panel.dimen and ges.pos
+                    and (ges.pos.x < self.panel.dimen.x
+                        or ges.pos.x >= self.panel.dimen.x + self.panel.dimen.w
+                        or ges.pos.y < self.panel.dimen.y
+                        or ges.pos.y >= self.panel.dimen.y + self.panel.dimen.h) then
+                    self:on_close()
+                end
+                return true
+            end
+            return modal
+        end,
+    }
+end
+
 package.preload["ui/widget/touchmenu"] = function()
     return {
         new = function(_, opts)
-            local menu = { opts = opts }
+            local menu = {
+                opts = opts,
+                ges_events = {},
+                menu_frame = {},
+                dimen = { x = 0, y = 0, w = opts.width, h = 600 },
+                [1] = { dimen = {} },
+            }
+            function menu:getSize() return self.dimen end
+            function menu:updateItems() end
             touch_menus[#touch_menus + 1] = menu
             return menu
         end,
@@ -108,6 +149,8 @@ package.preload["lib/render/theme"] = function()
         normalize_scale = function() return 1.0 end,
         font_size = function() return 20 end,
         native_size = function(_, v) return v end,
+        space = { xl = 36 },
+        color = { canvas = 0, fg = 1 },
     }
 end
 
@@ -276,6 +319,7 @@ assert(refresh_calls == 1, "menu callback must refresh the open dashboard")
 
 Menus:show_settings(main_instance)
 assert(#touch_menus == 1 and shown[#shown] ~= nil, "in-dashboard settings menu must be a shown TouchMenu")
+local modal = main_instance.settings_menu
 local settings_menu = touch_menus[1]
 local tab = settings_menu.opts.tab_item_table[1]
 assert(tab.icon == "appbar.settings" and #settings_menu.opts.tab_item_table == 1,
@@ -285,8 +329,15 @@ assert(tab.item_table == nil and #tab == #settings_items,
 for _, item in ipairs(tab) do
     assert(item.text ~= "Open dashboard", "dashboard settings must not expose Open dashboard")
 end
-assert(settings_menu.opts.show_parent == shown[#shown] and main_instance.settings_menu == shown[#shown],
-    "settings menu must own its container")
+assert(shown[#shown] == modal and settings_menu.opts.show_parent == modal,
+    "settings menu must live inside the modal panel")
+assert(modal.panel and modal.panel.opts.width == 960 and settings_menu.opts.width == 956,
+    "settings card must float at 80 percent width")
+assert(settings_menu[1].dimen.w == 956 and settings_menu.bordersize == 0
+    and settings_menu.ges_events.TapCloseAllMenus == nil,
+    "TouchMenu must fit the card and let the modal own outside taps")
+assert(settings_menu.dimen.x == 122 and settings_menu.dimen.y == 500,
+    "TouchMenu gestures must be offset to the centered card")
 local weather_menu
 for _, item in ipairs(tab) do
     if item.text == "Weather" then weather_menu = item.sub_item_table end
@@ -295,12 +346,32 @@ assert(weather_menu and type(weather_menu[1].callback) == "function", "weather s
 weather_menu[1].callback()
 assert(refresh_calls == 1 and main_instance.dashboard_refresh_pending == true,
     "setting changes must defer the dashboard repaint while the menu is open")
+local closed_before = #closed
 settings_menu.close_callback()
+assert(#closed == closed_before + 1 and closed[#closed] == modal,
+    "the native close arrow must close the modal")
 assert(refresh_calls == 2 and main_instance.settings_menu == nil
     and main_instance.dashboard_refresh_pending == nil,
     "closing the settings menu must flush the deferred repaint")
+
 Menus:show_settings(main_instance)
 assert(#touch_menus == 2, "settings menu must be reopenable after closing")
+local modal2 = main_instance.settings_menu
+modal2.panel.dimen = { x = 120, y = 498, w = 960, h = 604 }
+local closed_again = #closed
+modal2:onTapOutside(nil, { pos = { x = 10, y = 10 } })
+assert(#closed == closed_again + 1 and main_instance.settings_menu == nil,
+    "tapping outside the card must close the modal")
+local closed_third = #closed
+Menus:show_settings(main_instance)
+local modal3 = main_instance.settings_menu
+modal3.panel.dimen = { x = 120, y = 498, w = 960, h = 604 }
+modal3:onTapOutside(nil, { pos = { x = 600, y = 700 } })
+assert(#closed == closed_third and main_instance.settings_menu == modal3,
+    "tapping inside the card must not close the modal")
+modal3.on_close()
+assert(#closed == closed_third + 1 and main_instance.settings_menu == nil,
+    "Back and the close arrow must share the modal close path")
 
 print("OK menus smoke: " .. #created .. " dialogs, " .. #pickers .. " folder pickers, "
     .. #touch_menus .. " settings menus, no nil button holes")

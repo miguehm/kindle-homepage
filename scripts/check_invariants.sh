@@ -200,6 +200,15 @@ if ! grep -q 'tab_item_table = { items }' kindlehome.koplugin/ui/menus.lua \
     echo "FAIL: TouchMenu tab must be the settings array itself (no nested item_table)"
     fail=1
 fi
+if [ ! -f kindlehome.koplugin/ui/widget/modal_panel.lua ] \
+    || ! grep -q 'require("ui/widget/modal_panel")' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'FrameContainer:new' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'screen:getWidth() \* 0.8' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'TapCloseAllMenus = nil' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'notIntersectWith' kindlehome.koplugin/ui/widget/modal_panel.lua; then
+    echo "FAIL: settings must be a centered floating card that closes on outside tap"
+    fail=1
+fi
 if ! grep -q 'alpha = self.alpha' kindlehome.koplugin/ui/widget/tap_icon.lua \
     || ! grep -q 'alpha = true' kindlehome.koplugin/ui/widget/stories_card.lua \
     || ! grep -q 'alpha = self.active' kindlehome.koplugin/ui/widget/bottom_nav.lua; then
