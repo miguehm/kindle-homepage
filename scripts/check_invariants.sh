@@ -181,7 +181,43 @@ if ! grep -q 'Widget:extend' kindlehome.koplugin/ui/widget/battery_glyph.lua; th
     fail=1
 fi
 
+if ! grep -q 'callback = function() main_instance:onKindlehomeShowDashboard() end' \
+        kindlehome.koplugin/ui/menus.lua \
+    || grep -A4 'menu_items.kindlehome = {' kindlehome.koplugin/ui/menus.lua \
+        | grep -q 'sub_item_table'; then
+    echo "FAIL: Tools entry must open the dashboard directly (no settings submenu)"
+    fail=1
+fi
+if ! grep -q 'require("ui/widget/touchmenu")' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'function Menus:settings_items' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'function Menus:show_settings' kindlehome.koplugin/ui/menus.lua \
+    || ! grep -q 'Menus:show_settings(self)' kindlehome.koplugin/main.lua; then
+    echo "FAIL: settings must be a TouchMenu opened from the dashboard"
+    fail=1
+fi
+if ! grep -q 'alpha = self.alpha' kindlehome.koplugin/ui/widget/tap_icon.lua \
+    || ! grep -q 'alpha = true' kindlehome.koplugin/ui/widget/stories_card.lua \
+    || ! grep -q 'alpha = self.active' kindlehome.koplugin/ui/widget/bottom_nav.lua; then
+    echo "FAIL: inverse icon assets must keep alpha or they flatten to white and vanish"
+    fail=1
+fi
+for icon in prev.svg prev-inverse.svg next.svg next-inverse.svg; do
+    if [ ! -f "kindlehome.koplugin/assets/icons/action/$icon" ]; then
+        echo "FAIL: missing pager icon asset action/$icon"
+        fail=1
+    fi
+done
+if ! grep -q 'on_prev_page' kindlehome.koplugin/ui/widget/stories_card.lua \
+    || ! grep -q 'on_prev_page' kindlehome.koplugin/ui/dashboard.lua \
+    || ! grep -q 'set_refreshing(true)' kindlehome.koplugin/main.lua \
+    || ! grep -q 'function Dashboard:set_refreshing' kindlehome.koplugin/ui/dashboard.lua \
+    || ! grep -q 'refreshing = state.refreshing == true' kindlehome.koplugin/lib/dashboard_model.lua \
+    || ! grep -q 'hero.refreshing' kindlehome.koplugin/ui/widget/hero_weather.lua; then
+    echo "FAIL: previous-page control and visible refresh feedback must stay wired"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons)"
 fi
 exit "$fail"

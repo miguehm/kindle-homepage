@@ -25,7 +25,7 @@ local MAP = {
     path_saved = "Custom content folder saved.",
     path_reset = "Custom content folder cleared. Using the default location.",
     coming_soon = "Coming soon.",
-    settings_unavailable = "Open the KOReader menu to change settings.",
+    settings_unavailable = "Open Kindle Home settings from the dashboard gear.",
     path_unwritable = "Folder saved, but it could not be created. Check the path and permissions.",
 }
 

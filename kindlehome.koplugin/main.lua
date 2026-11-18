@@ -65,12 +65,21 @@ function KindleHome:request_dashboard_refresh(opts)
             UIManager:show(InfoMessage:new{ text = _("Refresh already in progress."), timeout = 2 })
             return
         end
-        if opts.user_initiated then
-            UIManager:show(InfoMessage:new{ text = _("Refreshing…"), timeout = 1 })
+        local notice = nil
+        if dashboard.widget then
+            dashboard:set_refreshing(true)
+            pcall(function() UIManager:forceRePaint() end)
+        elseif opts.user_initiated then
+            notice = InfoMessage:new{ text = _("Refreshing…"), timeout = 8 }
+            UIManager:show(notice)
+            pcall(function() UIManager:forceRePaint() end)
         end
         local ok, err = pcall(function()
             dashboard:refresh({ allow_network = net_allowed })
         end)
+        if notice then
+            pcall(function() UIManager:close(notice) end)
+        end
         Refresh.finish()
         if not ok then
             Logger.err("main", "refresh_failed", { err = tostring(err) })
@@ -108,12 +117,9 @@ end
 
 function KindleHome:registerActions()
     self.actions:register("settings", function()
-        local menu = self.ui and self.ui.menu
-        if menu and type(menu.onShowMenu) == "function" then
-            local ok, err = pcall(function() menu:onShowMenu() end)
-            if ok then return end
-            Logger.warn("main", "open_settings_failed", { err = tostring(err) })
-        end
+        local ok, err = pcall(function() Menus:show_settings(self) end)
+        if ok then return end
+        Logger.warn("main", "open_settings_failed", { err = tostring(err) })
         UIManager:show(InfoMessage:new{
             text = Messages.for_kind("settings_unavailable"), timeout = 4,
         })

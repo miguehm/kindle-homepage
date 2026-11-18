@@ -111,6 +111,11 @@ assert(DashboardModel.build(no_hint_state, { now = NOW }).hn.message ~= nil,
     "source message must survive without a global hint")
 assert(#model.nav.tabs == 3 and model.nav.active == "dashboard", "nav model missing")
 assert(model.digest == nil and model.footer == nil, "obsolete model fields must be gone")
+assert(model.hero.refreshing == false, "hero must not claim to be refreshing by default")
+local refreshing_state = fixture_state()
+refreshing_state.refreshing = true
+assert(DashboardModel.build(refreshing_state, { now = NOW }).hero.refreshing == true,
+    "refreshing state must reach the hero model")
 
 local page2 = DashboardModel.build(state, { now = NOW, page = 2 })
 assert(page2.hn.page == 2 and page2.hn.items[1].rank == 5 and #page2.hn.items == 4, "page 2 wrong")
@@ -579,15 +584,54 @@ for _, entry in ipairs(dispatched) do
 end
 assert(hn_dispatched == 4, "HN rows must dispatch open_hn:<id>")
 
-local next_icon
-for _, icon in ipairs(tap_icons) do
-    if icon.file and icon.file:find("next-inverse", 1, true) then next_icon = icon end
+local function pager_icon(name)
+    for _, icon in ipairs(tap_icons) do
+        if icon.file and icon.file:find(name, 1, true) then return icon end
+    end
+    return nil
 end
-assert(next_icon and type(next_icon.on_tap) == "function", "pager control missing")
+local next_icon, prev_icon = pager_icon("next-inverse"), pager_icon("prev-inverse")
+assert(next_icon and type(next_icon.on_tap) == "function", "next-page control missing")
+assert(prev_icon and type(prev_icon.on_tap) == "function", "previous-page control missing")
+assert(next_icon.alpha == true and prev_icon.alpha == true,
+    "inverse pager icons must keep their alpha or they flatten to white and vanish")
 next_icon.on_tap()
 assert(d.hn_page == 2 and shown > 1, "next page must rebuild without refetch")
 assert(d.model.hn.page == 2 and d.model.hn.items[1].rank == 5, "page 2 content wrong")
+prev_icon.on_tap()
+assert(d.hn_page == 1, "previous page must return to page 1")
 d:set_hn_page(1)
+prev_icon.on_tap()
+assert(d.hn_page == 3, "previous page must wrap to the last page")
+d:set_hn_page(1)
+
+d:set_refreshing(true)
+assert(d.refreshing == true, "refreshing flag missing")
+local refreshing_body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(has_text(refreshing_body, tostring(d.model.hero.updated_clock) .. " · Updating…"),
+    "refresh indicator missing from hero")
+d:set_refreshing(false)
+assert(d.refreshing == false, "refreshing flag must clear")
+
+local one_page_state = fixture_state()
+one_page_state.hn.items = { one_page_state.hn.items[1], one_page_state.hn.items[2],
+                            one_page_state.hn.items[3], one_page_state.hn.items[4] }
+local function pager_icon_count()
+    local count = 0
+    for _, icon in ipairs(tap_icons) do
+        if icon.file and (icon.file:find("next-inverse", 1, true)
+            or icon.file:find("prev-inverse", 1, true)) then
+            count = count + 1
+        end
+    end
+    return count
+end
+local icons_before = pager_icon_count()
+d:show({ state = one_page_state, allow_network = false })
+local one_page_body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(one_page_body.model.hn.pages == 1, "single-page model wrong")
+assert(pager_icon_count() == icons_before, "pager must be hidden when there is only one page")
+assert(one_page_body.fits == true, "single-page body must still fit")
 
 d:open_hn_item("1001")
 assert(last_shown_doc and last_shown_doc.html_path, "HN doc should carry html_path")

@@ -39,7 +39,13 @@ local function build_left(hero, config, width)
     table.insert(group, DesignText.span(config, Theme.space.sm))
 
     local status = {}
-    if hero.updated_clock then
+    if hero.refreshing then
+        if hero.updated_clock then
+            table.insert(status, hero.updated_clock .. " · Updating…")
+        else
+            table.insert(status, "Updating…")
+        end
+    elseif hero.updated_clock then
         table.insert(status, hero.updated_clock .. " · " .. (hero.stale and "Cached" or "Updated"))
     end
     local status_line = DesignText.box(join_parts(status), width, config, "label_md", false, Theme.color.muted)

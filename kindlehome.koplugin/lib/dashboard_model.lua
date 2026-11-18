@@ -146,6 +146,7 @@ function DashboardModel.build(state, opts)
         battery_pct = tonumber(battery:match("(%d+)%%")),
         charging = charging,
         wifi = network:find("connected", 1, true) and true or false,
+        refreshing = state.refreshing == true,
         show_battery = state.show_battery ~= false,
         show_network = state.show_network ~= false,
     }

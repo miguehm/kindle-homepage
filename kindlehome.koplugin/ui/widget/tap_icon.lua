@@ -11,6 +11,8 @@ local TapIcon = InputContainer:extend{
     file = nil,
     width = nil,
     height = nil,
+    alpha = false,
+    dim = nil,
     on_tap = nil,
     show_parent = nil,
 }
@@ -22,6 +24,8 @@ function TapIcon:init()
         file = self.file,
         width = self.width,
         height = self.height,
+        alpha = self.alpha,
+        dim = self.dim,
     }
     local size = self[1]:getSize()
     self.dimen = Geom:new{ x = 0, y = 0, w = size.w, h = size.h }

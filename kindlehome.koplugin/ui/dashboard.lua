@@ -208,6 +208,7 @@ function Dashboard:build_state(opts)
         hn = hn,
         refreshed_at = latest_fetch(weather, hn),
         refreshed_stale = (weather and weather.stale) or (hn and hn.stale) or false,
+        refreshing = opts.refreshing == true,
         show_battery = (not self.config) or self.config:get("show_battery"),
         show_network = (not self.config) or self.config:get("show_network"),
         show_weather = (not self.config) or self.config:get("show_weather"),
@@ -512,6 +513,15 @@ function Dashboard:set_hn_page(page)
     end
 end
 
+function Dashboard:set_refreshing(refreshing)
+    self.refreshing = refreshing and true or false
+    if not self.widget or not self.last_state then return end
+    local state = {}
+    for k, v in pairs(self.last_state) do state[k] = v end
+    state.refreshing = self.refreshing
+    self:show({ state = state, allow_network = false })
+end
+
 function Dashboard:_shell_close()
     self.widget = nil
     if self.actions then
@@ -530,6 +540,8 @@ function Dashboard:show(opts)
     else
         state = self:build_state(opts)
     end
+    if opts.refreshing ~= nil then state.refreshing = opts.refreshing == true end
+    self.refreshing = state.refreshing == true
     state.test_article_ready = self.last_test_doc ~= nil
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
 
@@ -576,6 +588,10 @@ function Dashboard:show(opts)
                 on_next_page = function()
                     local pages = current_model.hn and current_model.hn.pages or 0
                     self:set_hn_page((self.hn_page % math.max(pages, 1)) + 1)
+                end,
+                on_prev_page = function()
+                    local pages = current_model.hn and current_model.hn.pages or 0
+                    self:set_hn_page(((self.hn_page - 2) % math.max(pages, 1)) + 1)
                 end,
                 on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
             })

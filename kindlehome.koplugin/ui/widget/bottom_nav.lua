@@ -49,6 +49,7 @@ function NavCell:init()
         file = Theme.icon_file(self.plugin_dir, "nav", self.name, self.active),
         width = icon_size,
         height = icon_size,
+        alpha = self.active and true or false,
         dim = false,
     }
     local label = TextWidget:new{

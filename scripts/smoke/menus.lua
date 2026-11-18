@@ -7,11 +7,41 @@ local closed = {}
 local created = {}
 local pickers = {}
 local messages = {}
+local shown = {}
+local touch_menus = {}
 
 package.preload["ui/uimanager"] = function()
     return {
-        show = function() end,
+        show = function(_, widget) shown[#shown + 1] = widget end,
         close = function(_, widget) closed[#closed + 1] = widget end,
+    }
+end
+
+package.preload["device"] = function()
+    return {
+        screen = {
+            getWidth = function() return 1200 end,
+            getSize = function() return { w = 1200, h = 1600 } end,
+        },
+    }
+end
+
+package.preload["ui/widget/container/centercontainer"] = function()
+    return {
+        new = function(_, opts)
+            opts.getSize = function(self) return self.dimen end
+            return opts
+        end,
+    }
+end
+
+package.preload["ui/widget/touchmenu"] = function()
+    return {
+        new = function(_, opts)
+            local menu = { opts = opts }
+            touch_menus[#touch_menus + 1] = menu
+            return menu
+        end,
     }
 end
 
@@ -210,14 +240,24 @@ assert(messages[#messages].text == "Custom content folder cleared. Using the def
 local dashboard = { widget = {}, last_test_doc = { md_path = "/old/doc.md" } }
 local refresh_calls = 0
 function dashboard:refresh() refresh_calls = refresh_calls + 1 end
-local menu_items = {}
-Menus:add_settings(menu_items, {
+local opened_dashboard = 0
+local main_instance = {
     config = cfg,
     paths = paths_stub,
     getDashboard = function() return dashboard end,
-})
+    onKindlehomeShowDashboard = function() opened_dashboard = opened_dashboard + 1 end,
+}
+local menu_items = {}
+Menus:add_settings(menu_items, main_instance)
+assert(type(menu_items.kindlehome.callback) == "function"
+    and menu_items.kindlehome.sub_item_table == nil,
+    "Tools entry must open the dashboard directly")
+menu_items.kindlehome.callback()
+assert(opened_dashboard == 1, "Tools callback must open the dashboard")
+
+local settings_items = Menus:settings_items(main_instance)
 local paths_menu
-for _, item in ipairs(menu_items.kindlehome.sub_item_table) do
+for _, item in ipairs(settings_items) do
     if item.text == "Paths and storage" then paths_menu = item.sub_item_table end
 end
 assert(paths_menu, "Paths and storage menu missing")
@@ -234,4 +274,32 @@ assert(values.custom_content_dir == "/mnt/us/From Menu", "menu callback did not 
 assert(dashboard.last_test_doc == nil, "menu callback must clear last_test_doc")
 assert(refresh_calls == 1, "menu callback must refresh the open dashboard")
 
-print("OK menus smoke: " .. #created .. " dialogs, " .. #pickers .. " folder pickers, no nil button holes")
+Menus:show_settings(main_instance)
+assert(#touch_menus == 1 and shown[#shown] ~= nil, "in-dashboard settings menu must be a shown TouchMenu")
+local settings_menu = touch_menus[1]
+local tab = settings_menu.opts.tab_item_table[1]
+assert(tab.icon == "appbar.settings" and #settings_menu.opts.tab_item_table == 1,
+    "settings menu must use one native tab")
+assert(#tab.item_table == #settings_items, "settings menu must reuse the plugin settings sections")
+for _, item in ipairs(tab.item_table) do
+    assert(item.text ~= "Open dashboard", "dashboard settings must not expose Open dashboard")
+end
+assert(settings_menu.opts.show_parent == shown[#shown] and main_instance.settings_menu == shown[#shown],
+    "settings menu must own its container")
+local weather_menu
+for _, item in ipairs(tab.item_table) do
+    if item.text == "Weather" then weather_menu = item.sub_item_table end
+end
+assert(weather_menu and type(weather_menu[1].callback) == "function", "weather settings missing")
+weather_menu[1].callback()
+assert(refresh_calls == 1 and main_instance.dashboard_refresh_pending == true,
+    "setting changes must defer the dashboard repaint while the menu is open")
+settings_menu.close_callback()
+assert(refresh_calls == 2 and main_instance.settings_menu == nil
+    and main_instance.dashboard_refresh_pending == nil,
+    "closing the settings menu must flush the deferred repaint")
+Menus:show_settings(main_instance)
+assert(#touch_menus == 2, "settings menu must be reopenable after closing")
+
+print("OK menus smoke: " .. #created .. " dialogs, " .. #pickers .. " folder pickers, "
+    .. #touch_menus .. " settings menus, no nil button holes")

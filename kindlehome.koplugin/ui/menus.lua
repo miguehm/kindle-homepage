@@ -1,7 +1,10 @@
+local Device = require("device")
 local UIManager = require("ui/uimanager")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local InputDialog = require("ui/widget/inputdialog")
 local InfoMessage = require("ui/widget/infomessage")
 local PathChooser = require("ui/widget/pathchooser")
+local TouchMenu = require("ui/widget/touchmenu")
 local _ = require("gettext")
 
 local Geocoding = require("lib/geocoding")
@@ -29,11 +32,14 @@ local function refresh_dashboard(main_instance)
     local d = main_instance:getDashboard()
     -- Only repaint when the dashboard is already open; changing a setting must
     -- not pop it up on top of the menu.
-    if d and d.widget then
-        local ok, err = pcall(function() d:refresh({ allow_network = false }) end)
-        if not ok then
-            Logger.err("menus", "dashboard_refresh_failed", { err = tostring(err) })
-        end
+    if not (d and d.widget) then return end
+    if main_instance.settings_menu then
+        main_instance.dashboard_refresh_pending = true
+        return
+    end
+    local ok, err = pcall(function() d:refresh({ allow_network = false }) end)
+    if not ok then
+        Logger.err("menus", "dashboard_refresh_failed", { err = tostring(err) })
     end
 end
 
@@ -250,18 +256,11 @@ function Menus:reset_custom_content_dir(config, paths, on_done)
     apply_custom_content_dir(config, paths, "", on_done, "path_reset")
 end
 
-function Menus:add_settings(menu_items, main_instance)
+function Menus:settings_items(main_instance)
     local config = main_instance.config
     local paths = main_instance.paths
 
-    menu_items.kindlehome = {
-        text = _("Kindle Home"),
-        sorting_hint = "tools",
-        sub_item_table = {
-            {
-                text = _("Open dashboard"),
-                callback = function() main_instance:onKindlehomeShowDashboard() end,
-            },
+    local items = {
             {
                 text = _("Weather"),
                 sub_item_table = {
@@ -527,8 +526,49 @@ function Menus:add_settings(menu_items, main_instance)
                     },
                 },
             },
-        },
+        }
+
+    return items
+end
+
+function Menus:add_settings(menu_items, main_instance)
+    menu_items.kindlehome = {
+        text = _("Kindle Home"),
+        sorting_hint = "tools",
+        callback = function() main_instance:onKindlehomeShowDashboard() end,
     }
+end
+
+function Menus:show_settings(main_instance)
+    if main_instance.settings_menu then return end
+    local screen = Device.screen
+    local container = CenterContainer:new{
+        covers_header = true,
+        ignore = "height",
+        dimen = screen:getSize(),
+    }
+    local menu = TouchMenu:new{
+        width = screen:getWidth(),
+        tab_item_table = {
+            {
+                text = _("Kindle Home"),
+                icon = "appbar.settings",
+                item_table = Menus:settings_items(main_instance),
+            },
+        },
+        show_parent = container,
+    }
+    menu.close_callback = function()
+        UIManager:close(container)
+        main_instance.settings_menu = nil
+        if main_instance.dashboard_refresh_pending then
+            main_instance.dashboard_refresh_pending = nil
+            refresh_dashboard(main_instance)
+        end
+    end
+    container[1] = menu
+    main_instance.settings_menu = container
+    UIManager:show(container)
 end
 
 return Menus

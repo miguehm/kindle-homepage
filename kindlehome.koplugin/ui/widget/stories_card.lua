@@ -96,25 +96,32 @@ local function build_pager(hn, config, content_w, callbacks, plugin_dir)
     local button_w = icon_size + 2 * button_pad
     local gap = Theme.native_size(config, Theme.space.sm)
     local row = HorizontalGroup:new{ align = "center" }
+
+    local function build_button(name, fallback_icon, on_tap)
+        return FrameContainer:new{
+            margin = 0,
+            padding = button_pad,
+            bordersize = 0,
+            background = Theme.color.inverse_bg,
+            TapIcon:new{
+                icon = fallback_icon,
+                file = Theme.icon_file(plugin_dir, "action", name, true),
+                width = icon_size,
+                height = icon_size,
+                alpha = true,
+                show_parent = callbacks.show_parent,
+                on_tap = on_tap,
+            },
+        }
+    end
+
     table.insert(row, label_widget)
     table.insert(row, HorizontalSpan:new{
-        width = math.max(0, content_w - label_widget:getSize().w - button_w),
+        width = math.max(0, content_w - label_widget:getSize().w - 2 * button_w - gap),
     })
-    local button = FrameContainer:new{
-        margin = 0,
-        padding = button_pad,
-        bordersize = 0,
-        background = Theme.color.inverse_bg,
-        TapIcon:new{
-            icon = "chevron.right",
-            file = Theme.icon_file(plugin_dir, "action", "next", true),
-            width = icon_size,
-            height = icon_size,
-            show_parent = callbacks.show_parent,
-            on_tap = callbacks.on_next_page,
-        },
-    }
-    table.insert(row, button)
+    table.insert(row, build_button("prev", "chevron.left", callbacks.on_prev_page))
+    table.insert(row, HorizontalSpan:new{ width = gap })
+    table.insert(row, build_button("next", "chevron.right", callbacks.on_next_page))
     return row
 end
 
@@ -142,7 +149,7 @@ function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir)
         end
     end
 
-    if hn.pages > 0 then
+    if hn.pages > 1 then
         table.insert(content, DesignText.span(config, Theme.space.sm))
         table.insert(content, DesignText.divider(config, content_w))
         table.insert(content, DesignText.span(config, Theme.space.sm))
