@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.0] - 2026-11-18
+
+### Changed
+- **Settings open as a floating modal card.** The gear now shows a bordered white panel centered at 80% of the screen width, with the dashboard still visible around it. The panel grows with the current menu level up to a capped height, so submenus paginate inside the card. The native TouchMenu close arrow, the Back key and a tap outside the card all close it; setting changes still repaint the dashboard only after the modal closes.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new floating-card guard) and `./scripts/smoke_ui.sh` PASS (17 smokes, including the new modal-panel smoke and card geometry/close assertions). Pending: Kindle PW5 visual check.
+
 ## [2.4.1] - 2026-11-18
 
 ### Fixed
