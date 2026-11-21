@@ -4,7 +4,7 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 
 ## Platform and structure
 - Target: **Kindle with KOReader**. Do not assume desktop-only APIs/behavior.
-- Keep plugin autocontained under `kindlehome.koplugin/` (`lib/`, `ui/`, `_meta.lua`, `main.lua`). Follow `PLAN.md` structure/contracts.
+- Keep plugin autocontained under `kindlehome.koplugin/` (`lib/`, `ui/`, `_meta.lua`, `main.lua`). Follow the archived structure/contracts in `docs/internals/PLAN.md`.
 
 ## Security and privacy
 - **Never log `hnmd_api_key`, auth headers, or sensitive payloads.** `logger.lua` must stay structured and secret-free.
@@ -24,12 +24,12 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 - **Atomic writes** (tmp + rename) for cache and persisted content (`.md/.html`).
 
 ## Config
-- Centralize defaults/validation/sanitization in `lib/config.lua` (`LuaSettings`, `settings/kindlehome.lua`). Out-of-range/invalid values fall back to defaults.
+- Centralize defaults/validation/sanitization in `lib/config.lua` (`LuaSettings`, `<settings dir>/kindlehome.lua`). Out-of-range/invalid values fall back to defaults.
 
 ## Quality
 - No dead code; no silent broad exception swallowing that hides corruption/state bugs.
 - Keep UI messages brief/actionable (no stack traces to end users). Prefer centralized mapping in `ui/messages.lua` for user-facing states/errors.
-- Record deviations and verification runs in `PLAN.md` ledgers when work diverges or is validated.
+- Record deviations and verification runs in `docs/internals/PLAN.md` ledgers when work diverges or is validated.
 
 ## Lua dialect (hard requirement)
 - KOReader on Kindle runs **Lua 5.1 / LuaJIT**. Do not use Lua 5.2+ syntax: no bitwise operators (`~ & | << >>`), no integer division `//`, no `goto`/labels, no `table.unpack`/`math.tointeger`-only paths.

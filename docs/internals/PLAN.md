@@ -1,3 +1,10 @@
+> **Archived development record.** This is the original phase plan and
+> verification ledger, kept for historical context only. It is not user
+> documentation: phase codes (`F0`–`F25`), device verification notes and dated
+> ledgers describe how the plugin was built and tested in 2026. For current
+> setup and behavior, see [README.md](../../README.md); for the quality gates,
+> see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
 # Plan de implementación — Kindle Home (plugin KOReader)
 
 > Objetivo: plugin KOReader (`kindlehome.koplugin`) tipo “homepage” para Kindle (KUAL + KOReader) con reloj/fecha, estado del dispositivo, clima (Open-Meteo) y **Hacker News vía `hnmd`** (`https://hnmd.miguehm.com/top`); lectura en Markdown (persistencia `.md` + render HTML en crengine).  
@@ -656,3 +663,12 @@ repo/
 > **Fase 23 (2026-11-21, repo + dispositivo PASS):** release **2.8.0** añade `hn_items_per_page` (1–10, default 4; máximo preferido que degrada al mayor número de filas que cabe) y memoria de página **solo de sesión** para Top Stories. `refresh()` deja de resetear siempre: solo el botón de refresco o la acción explícita del dispatcher/gesto vuelven a la página 1; el refresco automático de apertura y los repintados por ajustes conservan la página. La medición usa fast path (1 construcción si el tamaño preferido cabe) y búsqueda binaria acotada si desborda. 16 smokes y gates PASS; matriz en PW5 PASS (2026-11-21, confirmada por el usuario).
 > **Fase 24 (2026-11-21, repo + dispositivo PASS):** release **2.9.0** deja solo `.md` en la carpeta de contenido: el HTML que necesita `ReaderUI` se genera en `<DataDir>/cache/kindlehome/articles/` y se borra al cerrar el lector o el fallback, y los `.md.html` antiguos se migran en el arranque. La copia canónica nunca se borra por `404`/red. 16 smokes y gates PASS; matriz en PW5 PASS (2026-11-21, confirmada por el usuario).
 > **Fase 25 (2026-11-21, repo + dispositivo PASS):** release **2.10.0** convierte `![alt](url)` en un enlace con el texto alternativo visible, usando el mismo saneamiento de `href` que los enlaces normales. No se emite `<img>` ni se descarga la imagen; las URLs inseguras quedan como texto plano. 16 smokes y gates PASS; matriz en PW5 PASS (2026-11-21, confirmada por el usuario).
+
+## 12) Open-source readiness verification ledger
+
+| Date | Scope | Environment | Check | Result | Evidence | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-11-21 | Baseline before documentation changes | Linux dev, `luac5.1`, `lua5.1` | `./scripts/check_lua51.sh`, `./scripts/check_invariants.sh`, `./scripts/smoke_ui.sh` | PASS | All three OK; 16 smokes | Captured on branch `docs/oss-readiness` before edits |
+| 2026-11-21 | After SPDX headers | Linux dev, `luac5.1`, `lua5.1` | Same three gates | PASS | Same output | 53 source files got SPDX headers |
+| 2026-11-21 | After removing development hooks and sanitizing comments | Linux dev, `luac5.1`, `lua5.1` | Same three gates plus marker scan | PASS | All gates OK; no `test-phase3`, phase codes or device chatter in plugin sources | Smoke expectations updated for the removed test-article row |
+| 2026-11-21 | After public docs, CI and doc restructuring | Linux dev, `luac5.1`, `lua5.1` | Same three gates (with `LUA=lua5.1`), relative-link check, CI YAML parse | PASS | All gates OK; no broken relative links; workflow parses | `docs/internals/PLAN.md` and `REVIEW.md` kept as archived historical records |

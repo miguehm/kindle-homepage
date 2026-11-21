@@ -1,102 +1,162 @@
 # Kindle Home (KOReader plugin)
 
-Kindle Home is a KOReader homepage plugin (`kindlehome.koplugin`) focused on **Kindle (e-ink)**. It provides clock/date, device status, weather (Open-Meteo), and Hacker News via `hnmd`.
+[![CI](https://github.com/miguehm/kindle-homepage/actions/workflows/ci.yml/badge.svg)](https://github.com/miguehm/kindle-homepage/actions/workflows/ci.yml)
+[License: MIT](LICENSE)
 
-- **Version:** 2.10.0
-- **Content scope:** Hacker News via `hnmd` only (`https://hnmd.miguehm.com/v1` by default). Article bodies are downloaded as Markdown files (`/v1/articles/{id}.md`); RSS/Atom and external URL fetch (5.10) are not supported in MVP.
+A KOReader homepage plugin built for Kindle e-ink devices. It shows the time,
+device status and weather on one screen, plus a paginated **Top Stories** list
+of Hacker News items delivered by the hnmd service.
+Articles are saved as Markdown and read offline in KOReader's native reader.
 
-## Status
+![Dashboard mockup](dashboard.png)
 
-Phases 0–13 are implemented in repo; the MVP was formally closed as 1.0.0 after the full matrix PASSed on Kindle PW5 (2026-11-16; see `PLAN.md` §7/§10). **Release 2.0.0** adds the post-MVP mitigations from `REVIEW.md`: the digest feature is gone (breaking release), weather coordinates are now really saved/loaded, the menu crashes are fixed, failed downloads open a persistent link card with the source URLs, and HN/source URLs render as real links inside the document. The dashboard still uses native KOReader widgets with a `ScrollableContainer` (pan/flick/scrollbar) and the article fallback uses a native paginated HTML pager — no `ScrollHtmlWidget` remains. HN articles are streamed to `.md` (never buffered in RAM); the derived HTML opened by KOReader's native reader was originally written beside the Markdown and is kept in the plugin cache from 2.9.0 onward. Returning from `ReaderUI` lands back on the dashboard. Release 2.0.0 was verified on Kindle PW5 (2026-11-16; see `PLAN.md` §10). **Release 2.1.0** fixes the title-area bleed-through (the Shell now paints an opaque full-screen background before the native `TitleBar`) and adds a **custom content folder** for an arbitrary absolute/nested downloads directory, chosen with KOReader's native folder picker (plus a **Reset** entry); existing downloads are not migrated (they are re-downloaded when opened).
+## Features
 
-**Release 2.2.0** refactors the dashboard to the **Paperwhite Monochrome** design (`DESIGN.md`, `dashboard.png`): a single hero/weather card, a paginated **Top Stories** card with an in-card refresh and next-page button, a fixed bottom tab bar (**Dashboard**, **Todo's**, **Store** — the last two are placeholders), a custom header with settings and close, and monochrome SVG glyphs. Typography uses KOReader's bundled Noto Serif/Noto Sans (Literata/Inter are not available on device). Weather now shows wind, humidity and tomorrow's high/low; the hero clock defaults to 12 h with AM/PM (`ui_clock_24h` restores 24 h).
+- Clock (12/24 h), battery/network status and current weather with wind,
+  humidity and tomorrow's high/low (Open-Meteo).
+- Hacker News Top Stories with configurable rows per page, in-card refresh and
+  session page memory.
+- Offline reading: articles stream to `.md` files and open in KOReader's native
+  reader (selection, annotations, progress, dictionary, night mode).
+- Cache-first with stale fallback; timeouts, byte caps and typed errors for
+  unreliable WiFi.
+- Dashboard built from native widgets that fit one screen, with a native
+  scroll container only as a measured last resort.
 
-**Release 2.4.0** opens the dashboard directly from **Tools → Kindle Home**; all settings now live in the dashboard's gear button (a single-tab native `TouchMenu`). Top Stories has a previous-page arrow next to the next one (both wrap, hidden on a single page), inverse icons stay visible, and the hero shows `Updating…` while a refresh runs in the background. **Release 2.4.1** fixes the gear: the `TouchMenu` now receives the settings sections directly as its single tab, so it opens at full width instead of showing a tiny empty frame. **Release 2.5.0** tried a floating modal card (80% screen width, centered, dashboard visible behind), but it was rejected visually on device. **Release 2.6.0** replaces it with KOReader's native full-screen `TouchMenu` (ReaderMenu pattern: full width, top-anchored, no card); tap outside the menu, the native close arrow or Back dismisses it, and submenus paginate natively. **Release 2.7.0** aligns the dashboard header to the card grid (title at the left margin, settings/close at the right margin, vertically centered with matched icon assets) and pins the Top Stories pager to the bottom of a card that fills the available viewport, so the page arrows no longer jump when the last page has fewer stories. **Release 2.8.0** adds **Settings → Hacker News → Items per page** (1–10, default 4; the preferred maximum still degrades to the largest count that fits) and makes Top Stories remember its page for the current KOReader session: closing/reopening the dashboard, returning from an article and automatic refreshes keep the page, while the in-card refresh button (or the Dispatcher/gesture refresh) returns to page 1. Restarting KOReader starts again at page 1. **Release 2.9.0** keeps the content folder Markdown-only: the HTML render needed by `ReaderUI` lives in `<DataDir>/cache/kindlehome/articles/` and is removed when the reader or fallback pager closes; legacy adjacent `.md.html` files are cleaned up on startup. **Release 2.10.0** renders Markdown images as safe alt-text links (`![alt](url)` → `<a href="url">alt</a>`): no image is embedded or downloaded automatically, and unsafe URLs degrade to plain alt text.
+## Quickstart
 
-**Release 2.3.0** makes the dashboard fit one screen: **Top Stories shows 4 rows per page**, the compact refresh time (`2 min ago`) moved into the stories header next to the refresh button, and the old "Last refreshed" footer section is gone. The body is built without a scroll container when the measured content fits; a native `ScrollableContainer` is used **only** as a fallback for extreme font scales or landscape, with the bottom tab bar always fixed. **Release 2.3.1** anchors the content to the top-left (no more vertical centering or missing left margin), suppresses duplicated offline/refresh notices, and degrades the story rows from 4 to 3 (then 2 and 1) when the measured content would otherwise overflow: the scroll bar is now a last resort for extreme scales/landscape only.
+1. Download the latest `kindlehome.koplugin-v*.zip` from
+   [Releases](https://github.com/miguehm/kindle-homepage/releases).
+2. Extract the `kindlehome.koplugin/` directory into
+   `/mnt/us/koreader/plugins/` on your Kindle.
+3. **Restart KOReader** (required on Kindle for new plugins to load).
+4. Open **Tools → Kindle Home**.
 
-## Installation (Kindle — target)
+To install from a checkout instead, copy `kindlehome.koplugin/` to the same
+plugins directory and restart KOReader.
 
-1. Copy or extract `kindlehome.koplugin/` to:
-   - `/mnt/us/koreader/plugins/kindlehome.koplugin/`
-2. **Restart KOReader** (required on Kindle for new plugins to load).
-3. Open **Tools → Kindle Home** (opens the dashboard directly) or assign the **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) to a gesture/Profile. If the entry does not appear, see Troubleshooting.
+## Prerequisites
 
-### Install from release zip
-- Use a release zip that contains the `kindlehome.koplugin/` directory (e.g. `kindlehome.koplugin-v2.10.0.zip`). Extract/copy that folder into `/mnt/us/koreader/plugins/`, then restart KOReader.
-
-## Development (auxiliary only)
-
-KOReader on Linux desktop may be used for quick iteration (not a supported target): copy/symlink to `~/.config/koreader/plugins/kindlehome.koplugin/` and restart KOReader. Final behavior/UX validation is on **Kindle real**.
-
-**Required gates before committing/releasing:** `./scripts/check_lua51.sh` (Lua 5.1/LuaJIT syntax), `./scripts/check_invariants.sh` (measured dashboard scroll fallback, native article pager, top-level repaint target, menu registration, streamed downloads, in-dashboard settings, visible inverse icons, aligned header and bottom-anchored stories pager, configurable Top Stories rows and session page, ephemeral article HTML, safe image links) and `./scripts/smoke_ui.sh` (offline model/widget rendering, fit and fallback paths, action wiring). KOReader on Kindle runs Lua 5.1/LuaJIT; Lua 5.3+ bitwise/integer syntax (e.g. `~`, `//`) crashes plugin loading, while a system `luac` 5.3+ accepts it silently.
+- A Kindle running KOReader (the target platform; Lua 5.1 / LuaJIT).
+- Optional: an hnmd API key if your hnmd server requires one. The default
+  endpoint is `https://hnmd.miguehm.com/v1`; it can be changed in settings.
+- Weather needs either a configured place or latitude/longitude. Open-Meteo
+  does not require an API key.
+- Desktop KOReader is useful for iteration but is **not** a supported target.
 
 ## Configuration
 
-- **Interface:** `ui_font_scale` (S–XL), `ui_clock_24h` (12/24 h), `ui_fullscreen`; the custom header exposes **settings** (opens the in-dashboard plugin settings menu) and **close**.
-- **Settings file:** `<KOReader settings dir>/kindlehome.lua` (`LuaSettings`, i.e. `DataStorage:getSettingsDir()/kindlehome.lua`; defaults/sanitization in `lib/config.lua`). Out-of-range/invalid values fall back to defaults.
-- **In-app menu:** a single **Kindle Home** entry in the main menu (under Tools) opens the dashboard directly. The dashboard's gear button opens the plugin settings as a single-tab `TouchMenu`: Weather, Hacker News (including **Items per page**), Sections, Refresh & network, Paths/storage. You can also edit `settings/kindlehome.lua` manually while KOReader is not running.
+Everything is configurable from the gear button in the dashboard, which opens
+a native full-screen settings menu: Weather, Hacker News, Interface, Refresh
+and network, and Paths and storage. Advanced users can edit the settings file
+KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
 
-### Hacker News (`hnmd`)
-- `hnmd_enabled`, `show_hn`
-- `hnmd_base_url` (default `https://hnmd.miguehm.com/v1`, sanitized to https; a bare host gets `/v1` appended)
-- `hnmd_api_key` (Bearer token) — set via UI or edit `hnmd_api_key = "..."` in `kindlehome.koplugin` settings file
-- `hnmd_max_items` (1–20), `hnmd_ttl_minutes`, `index_max_bytes` (32–256 KiB, default 128 KiB), `article_max_bytes` (16 KiB–1 MiB, default 512 KiB)
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `hnmd_base_url` | `https://hnmd.miguehm.com/v1` | hnmd API base URL (https only) |
+| `hnmd_api_key` | empty | Bearer token; masked in the UI, never logged |
+| `hnmd_max_items` | `10` | Items requested from `/v1/top` (1–20) |
+| `hn_items_per_page` | `4` | Preferred Top Stories rows (1–10, degrades to fit) |
+| `weather_enabled`, `hnmd_enabled` | `true` | Enable each section |
+| `weather_lat`, `weather_lon`, `weather_place_name` | unset | Weather location |
+| `refresh_on_open` | `false` | Refresh in the background when opening |
+| `refresh_budget_s`, `http_timeout_s` | `20`, `6` | Refresh budget and request timeout |
+| `index_max_bytes`, `article_max_bytes` | 128 KiB, 512 KiB | Download byte caps |
+| `ui_font_scale`, `ui_clock_24h`, `ui_fullscreen` | `1.0`, `false`, `true` | Interface |
+| `storage_mode`, `documents_subdir` | `documents`, `KindleHome` | Content root |
+| `custom_content_dir` | empty | Optional absolute content folder override |
 
-Behavior: `GET /v1/top` returns index metadata only (cache-first with stale fallback; `401` actionable and never auto-retried; `503 warming_up`, offline/network/timeout/parse/too_large fall back to cached HN when available). Tapping an item resolves `content_url` (origin-absolute `/v1/articles/{id}.md`), streams the Markdown to `<content root>/articles/hn/<id>-<slug>.md` and renders an ephemeral HTML copy under `<DataDir>/cache/kindlehome/articles/` for `ReaderUI` (deleted when the reader closes). A local copy is only re-downloaded when missing/empty; `404` and network errors never delete it. If the article cannot be downloaded and there is no local copy, the plugin writes and opens `<id>-<slug>-links.md` (plus an ephemeral cache render): a small link card with the HN discussion URL, the source URL (or “Ask HN”), and the failure reason. The card stays in the library even after a later successful download. Ask HN (`url == null`) uses hnmd content only.
+### Storage
 
-### Weather (Open-Meteo)
-- `weather_enabled`, `show_weather`, location search or `weather_lat`/`weather_lon`, `weather_place_name`, `weather_ttl_minutes`. The request also fetches current wind/humidity and a second forecast day (tomorrow); missing fields simply hide their line.
-- Cache-first fetch; offline/TTL handling with stale fallback and WiFi prompt/fallback when refreshing.
-
-### Refresh, limits and paths
-- `refresh_on_open`, `refresh_budget_s`, `http_timeout_s`, `http_max_bytes` (weather/menus), `index_max_bytes`/`article_max_bytes` (downloads; enforced while streaming; sequential per-source, reentry-guarded)
-- `storage_mode` (`documents|datadir`), `documents_subdir` (default `KindleHome`), `custom_content_dir` (default empty = disabled)
-- Cache: `<DataDir>/cache/kindlehome/*.json` (versioned envelope; corrupt/incompatible cache quarantined/regenerated) — never moves with the content root
-- Content root (in precedence order):
-  - `custom_content_dir` (set via **Paths and storage → Choose custom content folder**, which opens KOReader's native folder picker): an absolute, normalized path such as `/mnt/us/My Docs/KindleHome`; nested paths are allowed, but relative paths, `..` segments and KOReader's own install directory (`/mnt/us/koreader`) are rejected. **Reset custom content folder** clears it and restores the options below. On Kindle touch devices, long-press a folder name to select it (or use the first “choose current folder” row); the picker also has a **New folder** action via long-press on its home icon. Existing downloads are **not** migrated: they stay in their old folder and are re-downloaded when opened.
-  - `storage_mode = "documents"` (default): `<documents root>/<documents_subdir>` — on Kindle `/mnt/us/documents/KindleHome` (resolved from `home_dir` + `documents`, so content shows up in the device library)
-  - `storage_mode = "datadir"`: `<DataDir>/news/kindlehome`
-  - HN articles: `<content root>/articles/hn/` (canonical `<id>-<slug>.md` and persistent fallback `<id>-<slug>-links.md` only); ephemeral HTML renders live in `<DataDir>/cache/kindlehome/articles/`
+- Content root: a custom absolute folder if set, otherwise
+  `<documents>/KindleHome` (on Kindle, `/mnt/us/documents/KindleHome`) or
+  `<DataDir>/news/kindlehome` with `storage_mode = "datadir"`.
+- Hacker News articles: `<content root>/articles/hn/<id>-<slug>.md`. Only
+  Markdown is persisted there; the HTML needed by the reader is rendered to
+  `<DataDir>/cache/kindlehome/articles/` and deleted when the reader closes.
+- Cache: `<DataDir>/cache/kindlehome/*.json`, with a versioned envelope.
+  Corrupt or incompatible cache is quarantined and regenerated.
 
 ## Usage
 
-- Dashboard shows a combined date/time + weather card, device status, and a paginated HN **Top Stories** list (toggleable sections).
-- **Dashboard:** the body uses native KOReader widgets laid out to fit the available height; a native `ScrollableContainer` is created only when the measured content cannot fit (e.g. very large `ui_font_scale` or landscape). The bottom tab bar is always fixed. Tap a headline to open it; the compact refresh time sits to the left of the refresh button in the Top Stories header, and the close/settings buttons are in the custom header. Top Stories pages contain `hn_items_per_page` rows (default 4, degraded to the largest count that fits); the page is remembered for the session and only an explicit refresh returns to page 1. The test-article row appears only when `ui_show_test_article = true`.
-- **Refresh:** manual by default (`refresh_on_open = false` in this MVP). When enabled it paints cached state first and refreshes right after, cache-first and conditioned by connectivity/TTL/budget; brief progress/status messages, no stack traces.
-- **Dispatcher:** `kindlehome_show_dashboard` (safe/idempotent) for gestures/Profiles.
-- **Reading:** tapping an HN item ensures `<id>-<slug>.md` exists (downloads it on first tap), renders HTML to the cache when needed, and opens it in KOReader's native reader (`ReaderUI`): text selection, annotations, progress, dictionary and night mode, all offline. HN and source URLs appear as real links in the document metadata; tapping one in `ReaderUI` offers Copy / QR / Open in browser. Markdown images are rendered as alt-text links rather than embedded images, so no network request is made implicitly. Exiting the reader deletes the temporary HTML and returns to the dashboard. If the reader is unavailable or rendering fails, the in-plugin fallback uses a native paginated HTML pager (swipe, tap, pan and PgFwd/PgBack).
+- Tap a headline to download (if needed) and open its Markdown article. If no
+  body is available, a persistent link card opens with the HN discussion and
+  source URLs so they can be copied or opened manually.
+- Top Stories keeps its page for the KOReader session; an explicit refresh
+  returns to page 1. Restarting KOReader also starts at page 1.
+- HN and source URLs are real links in the document; Markdown images become
+  clickable alt-text links and are never fetched implicitly.
+- The **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) can be
+  assigned to a gesture or Profile.
 
-## Security and privacy
+### Troubleshooting
 
-- `hnmd_api_key` and authorization headers are **never logged**; API key is stored locally in plaintext by KOReader settings and masked in UI.
-- HTTP requests go through `lib/http.lua` with timeout/size limits and typed errors.
-- Cache/content persistence uses atomic writes and canonical paths.
+| Symptom | What to do |
+| --- | --- |
+| No menu entry | Folder must be `kindlehome.koplugin` directly under `plugins/`; restart KOReader. Check `crash.log` for a load error. |
+| `401` from hnmd | Check the API key in settings; there is no automatic retry on `401`. |
+| `503`, offline, timeout, `too_large` | Cached content is used when available; retry later. |
+| No article body | hnmd may not have extracted it yet (`no_content`/`warming_up`). A link card is opened; `404` means the server has no body. |
+| Corrupted cache | Removed automatically and regenerated on the next fetch. |
+| Plugin load error mentioning `~`, `//` or `goto` | Lua 5.2+ syntax was introduced; run `./scripts/check_lua51.sh` and reinstall. |
 
-## Troubleshooting
+## Limitations
 
-- **401 (HN):** verify API key in Settings or `settings/kindlehome.lua`; restart refresh. No automatic retry on 401.
-- **503 warming_up / offline / timeout / network / parse / too_large:** plugin keeps/uses cached data when available and shows brief status; retry when network/service is ready.
-- **No location/weather:** configure place or lat/lon in Settings.
-- **No article content (`no_content`/`warming_up`):** hnmd has not extracted that item yet; the plugin opens a persistent link card with the available URLs, and you can retry later. **`http_404`:** the server has no body for that id (a local copy is kept if present; otherwise a link card opens). **`incomplete`:** length mismatch while downloading; retry. Ask HN uses hnmd content only (no external fetch).
-- **Corrupted cache:** removed/quarantined automatically and regenerated on next fetch.
-- **Plugin not visible:** ensure the folder is `kindlehome.koplugin` directly under `/mnt/us/koreader/plugins/` (not nested) and **restart KOReader**. Then check `crash.log` for `WARN Error when loading plugins/kindlehome.koplugin/main.lua`:
-  - `unexpected symbol near '~'` (or `//`, `goto`) ⇒ Lua 5.1 incompatibility; run `./scripts/check_lua51.sh` in the repo and reinstall.
-  - Any load error means `init()` never ran: no `cache/kindlehome`, no menu entry, nothing in **Plugin management → User plugins**. Fix the error and reinstall rather than only restarting.
-- **Entry exists but dashboard/settings missing:** verify the plugin version is 0.4.1+.
-- **KOReader closes right after opening the dashboard:** fixed in 0.1.2; scrolling without repaint fixed in 0.3.1 (`Shell` must be the `dialog`/`show_parent` of the body). Update the plugin; if it reappears, run `./scripts/check_invariants.sh`.
-- **Performance on e-ink:** reduce `hnmd_max_items`, increase TTLs, or adjust `refresh_budget_s`/timeouts within sane limits.
+- Hacker News content comes only from hnmd; RSS/Atom and arbitrary external
+  URL fetch are not supported.
+- The **Todo's** and **Store** tab-bar entries are placeholders.
+- Full internationalization and a screensaver/userpatch integration are not
+  implemented.
+- The API key is stored as local plaintext by KOReader's settings system; it
+  is masked in the UI and never logged.
 
-## Release checklist (8.5)
+## Project layout
 
-- [x] `./scripts/check_lua51.sh`, `./scripts/check_invariants.sh` and `./scripts/smoke_ui.sh` pass (syntax, structural invariants, offline UI rendering)
-- [x] 8.1 matrix executed on **Kindle (KOReader)** and recorded in `PLAN.md` §10 (PASS 2026-11-16; no blocking issues)
-- [x] 8.2 performance observations/defaults reviewed on Kindle; 8.3 runtime security/privacy validation on Kindle (PASS 2026-11-16)
-- [x] `README.md`, `CHANGELOG.md`, `PLAN.md` updated; `_meta.lua` version bumped to 1.0.0 (repo prep, F13)
-- [x] Zip contains only `kindlehome.koplugin/` (no `.git`, no local artifacts, no empty dirs), verified via listing; **clean Kindle install from zip verified on device (PASS 2026-11-16)**
-- [x] Fase 15 (2.1.0): opaque full-screen Shell background + custom content folder; `_meta.lua` bumped to 2.1.0, gates and 15 smokes PASS. **Kindle PW5 matrix PASS for F15.1–F15.3 (confirmed 2026-11-16).** F15.4 (native folder picker + Reset) repo PASS, pending device verification (see `PLAN.md` §10).
+```
+kindlehome.koplugin/   plugin loaded by KOReader
+├── main.lua, _meta.lua               entry point and plugin metadata
+├── lib/                              config, cache, HTTP, refresh, hnmd,
+│                                     weather, paths and Markdown rendering
+├── ui/                               dashboard, article view, menus and
+│                                     native widget components
+└── assets/icons/                     monochrome SVG icons
+scripts/                              Lua 5.1 syntax, invariant and smoke gates
+docs/internals/                       archived development plan and review
+dashboard.png                         design mockup
+```
 
-## Deferred / out of scope (MVP)
+## Development
 
-- Fallback HN alternative, full i18n, screensaver/userpatch (8.6, deferred post-MVP)
-- External URL fetch/open in overlay (5.10)
+The plugin targets Lua 5.1 / LuaJIT. A system `luac` from 5.3+ is **not** a
+valid substitute: it accepts syntax that fails on device. Run all three gates
+before committing:
+
+```bash
+./scripts/check_lua51.sh      # Lua 5.1/LuaJIT syntax
+./scripts/check_invariants.sh # structural invariants
+./scripts/smoke_ui.sh         # offline widget rendering and action wiring
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
+[AGENTS.md](AGENTS.md) for the invariants that must not be broken.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+and the [code of conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party notices are in [NOTICE](NOTICE).
+
+## Acknowledgements
+
+Built on [KOReader](https://github.com/koreader/koreader) (AGPL-3.0; the plugin
+uses its APIs and does not bundle its code). Weather data from
+[Open-Meteo](https://open-meteo.com/), Hacker News content from hnmd, and
+discussion links to [Hacker News](https://news.ycombinator.com/). The dashboard
+uses the Noto fonts shipped with KOReader (SIL Open Font License 1.1).

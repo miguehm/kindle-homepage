@@ -121,6 +121,11 @@ spacing:
   space-xl: 2.25rem
 ---
 
+This is the visual specification behind the dashboard mockup (`dashboard.png`).
+The mockup uses Literata/Inter as typographic references; the plugin ships no
+fonts and renders with the Noto Serif/Noto Sans files bundled with KOReader,
+with a `cfont` fallback.
+
 ## Brand & Style
 
 This design system is engineered specifically for 300 PPI electrophoretic ink (E-Ink) displays, tailored for reflective reading environments and high-ambient-sunlight legibility. The aesthetic is strictly rooted in print editorial minimalism: zero gradients, zero dynamic blur effects, and zero multi-stop drop shadows. 

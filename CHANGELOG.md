@@ -5,9 +5,6 @@
 ### Added
 - **Markdown images become safe links.** `![alt](url)` now renders as `<a href="url">alt</a>` in both `ReaderUI` and the fallback pager, so the image description stays visible and can be opened deliberately. Unsafe URLs (e.g. `javascript:`) degrade to plain alt text. No `<img>` is emitted and no network fetch is triggered automatically.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (no embedded images, sanitized image URLs) and `./scripts/smoke_ui.sh` PASS (16 smokes; alt-text link rendering, escaped query parameters, unsafe URL fallback and generated article HTML). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
-
 ## [2.9.0] - 2026-11-21
 
 ### Added
@@ -16,9 +13,6 @@
 ### Changed
 - **Only Markdown is saved in the content folder.** Derived HTML is now rendered to `<DataDir>/cache/kindlehome/articles/` and deleted when the native reader or the fallback pager closes (and when a new article replaces it). KOReader still opens an HTML file in `ReaderUI`, so the render is regenerated on demand from the canonical `.md`; no `.html` is written next to the `.md` anymore.
 - Existing local copies and link cards keep working: their HTML is recreated in the cache from the persisted Markdown.
-
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (ephemeral HTML paths, close cleanup and legacy migration) and `./scripts/smoke_ui.sh` PASS (16 smokes; cache-only HTML paths, legacy removal, reader-close cleanup and fallback cleanup). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
 
 ## [2.8.0] - 2026-11-21
 
@@ -29,41 +23,26 @@
 - **Top Stories remembers its page for the session.** Closing and reopening the dashboard, returning from an article, and automatic refreshes keep the current page. Only an explicit refresh (the in-card reload button or the Dispatcher/gesture action) returns to page 1. The page is session-only: restarting KOReader or reloading the plugin starts again at page 1.
 - **Page fitting uses a hybrid binary search.** The preferred row count is measured first (one build when it fits); if it overflows, a binary search finds the largest fitting size, bounding the work to `1 + ceil(log2(preferred))` builds instead of rebuilding once per row count.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (configurable rows, session page and reset wiring) and `./scripts/smoke_ui.sh` PASS (16 smokes; config clamping, fast-path/binary-search probe bounds, page memory, explicit reset and menu wiring). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
-
 ## [2.7.0] - 2026-11-18
 
 ### Changed
 - **Dashboard header is aligned to the content grid.** The title now starts at the same left margin as the cards and the settings/close icons end at the matching right margin; both icons are centered vertically in a fixed header band, with the hairline immediately above the body. New normalized `header/settings.svg` and `header/close.svg` assets give both glyphs the same viewBox, stroke weight and optical padding (native KOReader icons remain as fallback).
 - **Top Stories fills the space it occupies, not the number of rows.** The card absorbs the leftover viewport height after the 4→3→2→1 fit decision, and the pager is pinned to its bottom edge. On the last page with fewer stories the arrows stay in exactly the same position; the spare space appears above them instead of pulling the pager upward.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards for symmetric header margins, vertical centering, header assets and card fill) and `./scripts/smoke_ui.sh` PASS (16 smokes; the dashboard smoke asserts header geometry and that a 4-item page and a 2-item page share the same card height and pager offset). Pending: Kindle PW5 visual check.
-
 ## [2.6.0] - 2026-11-18
 
 ### Changed
 - **Settings use KOReader's native full-screen menu again.** The gear now opens a `TouchMenu` at full screen width inside a `CenterContainer` with `covers_header = true` / `ignore = "height"` — the same pattern as KOReader's ReaderMenu. The custom floating card (`ModalPanel`, frame, 80% geometry and gesture re-offsetting) is gone. The native outside-tap handler, close arrow and Back key all dismiss the menu, and setting changes still repaint the dashboard only after it closes.
-
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (guard now requires the native full-screen container and forbids the card) and `./scripts/smoke_ui.sh` PASS (16 smokes; the menus smoke asserts full width, container flags and native close paths). Pending: Kindle PW5 visual check.
 
 ## [2.5.0] - 2026-11-18
 
 ### Changed
 - **Settings open as a floating modal card.** The gear now shows a bordered white panel centered at 80% of the screen width, with the dashboard still visible around it. The panel grows with the current menu level up to a capped height, so submenus paginate inside the card. The native TouchMenu close arrow, the Back key and a tap outside the card all close it; setting changes still repaint the dashboard only after the modal closes.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new floating-card guard) and `./scripts/smoke_ui.sh` PASS (17 smokes, including the new modal-panel smoke and card geometry/close assertions). Pending: Kindle PW5 visual check.
-
 ## [2.4.1] - 2026-11-18
 
 ### Fixed
 - **The gear opens the settings menu at full width.** `TouchMenu` expects each entry of `tab_item_table` to be the item array itself; 2.4.0 wrapped the sections in a nested `item_table`, so the tab had zero items and rendered as a tiny empty frame. The gear now passes the settings array directly as the single tab, carrying `text` and `icon` as extra fields.
-
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guard for the flat tab shape) and `./scripts/smoke_ui.sh` PASS (the menus smoke asserts `#tab == #settings_items` and no nested `item_table`). Pending: Kindle PW5 check of the gear.
 
 ## [2.4.0] - 2026-11-18
 
@@ -76,9 +55,6 @@
 - **Tools → Kindle Home opens the dashboard directly** instead of an intermediate submenu.
 - **Pager and active-tab icons are visible again.** KOReader's `IconWidget` flattens icons onto white by default, which made the white `*-inverse.svg` glyphs disappear against the inverted black button/pressed tab; inverse icons now keep their alpha channel.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: direct Tools callback, in-dashboard `TouchMenu`, alpha on inverse icons, previous-page and refresh wiring) and `./scripts/smoke_ui.sh` PASS (16 smokes, including pager wrap/hidden pager, refresh indicator and deferred settings repaint). Kindle PW5 matrix pending.
-
 ## [2.3.1] - 2026-11-16
 
 ### Fixed
@@ -88,19 +64,13 @@
 ### Changed
 - **Row count degrades before scrolling.** Top Stories still prefers 4 rows, but if the measured content does not fit the available height the dashboard rebuilds its model with 3 rows, then 2, then 1. A native `ScrollableContainer` is created only when even a single row cannot fit (very large `ui_font_scale` or landscape). Pagination and the next-page control use the chosen row count; the bottom tab bar stays fixed outside the scroll area.
 
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: top-left anchoring with symmetric margins, no centering `LeftContainer`, 4→3→2→1 degradation before scroll, notice dedup) and `./scripts/smoke_ui.sh` PASS (dashboard smoke asserts the top-anchored tree, dedup of offline notices, a forced 3-row layout with tall text, and the native scroll fallback). Kindle PW5 matrix pending.
-
 ## [2.3.0] - 2026-11-16
 
 ### Changed
 - **Dashboard fits one screen.** Top Stories now shows **4 rows per page** instead of 5. The "Last refreshed" footer section is gone: a compact relative time (`2 min ago`) now sits to the left of the refresh button in the Top Stories header. The body is built without a scroll container when its measured height fits the available viewport; a native `ScrollableContainer` is created **only** as a fallback when the content cannot fit (very large `ui_font_scale` or landscape), with the bottom tab bar always fixed outside it.
 
 ### Fixed
-- **Unwanted vertical scroll on the dashboard at normal scales.** Removing a whole story row and the footer section, and no longer adding a gap after the last section, brings the PW5 (1236×1648, scale 1.0) content within the available body height.
-
-### Verification
-- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards: measured scroll fallback, 4-row pagination, no body footer) and `./scripts/smoke_ui.sh` PASS (dashboard smoke covers both the fit path and the forced-overflow fallback path; 4 rows/page, compact header label). Kindle PW5 matrix pending.
+- **Unwanted vertical scroll on the dashboard at normal scales.** Removing a whole story row and the footer section, and no longer adding a gap after the last section, brings the content within the available body height on Kindle at normal font scale.
 
 ## [2.2.0] - 2026-11-16
 
@@ -112,134 +82,99 @@
 
 ### Changed
 - **Weather payload extended** with current wind/humidity and a second forecast day (`forecast_days=2`, `wind_speed_unit=kmh`); additive, so older cache entries simply omit the new lines until their TTL expires. WMO codes now map to icon keys.
-- Typography follows DESIGN.md scale with KOReader's bundled **Noto Serif** (display/body) and **Noto Sans** (labels), with fallback to `cfont`; Literata/Inter are not bundled and would break the plugin's self-contained install.
+- Typography follows the design scale with KOReader's bundled **Noto Serif** (display/body) and **Noto Sans** (labels), with fallback to `cfont`; no fonts are bundled, keeping the plugin self-contained.
 - Dashboard no longer uses the native action bar; refresh/close/settings live in the header and card as in the design.
 
 ### Fixed
 - **Dashboard no longer fails to open.** `DashboardHeader` is now a real `InputContainer` widget (`getSize`/`paintTo`); previously it was a plain table and `Shell:init` crashed at `shell.lua:73` (`attempt to call method 'getSize'`). `Shell` also falls back to the native `TitleBar` if a custom header is not a valid widget.
 - **No more KOReader crash on the first touch.** `BatteryGlyph` is now a `Widget` subclass; as a plain table it lacked `handleEvent()` and broke `WidgetContainer:propagateEvent` on any tap. The dashboard smoke now walks the whole widget tree asserting `handleEvent()` on every child (negative test reproduces the old crash).
 
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (new guards for modular widgets, assets and sharp corners), `scripts/smoke_ui.sh` PASS (15 smokes incl. new `weather.lua` and rewritten `dashboard.lua` with pagination, header, nav and crop region; the header is asserted to expose `getSize`/`paintTo`, an invalid header must fall back, and every child in the widget tree must expose `handleEvent`).
-- Real KOReader/Linux modules (LuaJIT, PW5-scaled screen) rendered the full Shell (header + body) to PNG: no paint errors, correct header/body layout. A first Kindle PW5 attempt failed at `shell.lua:73`; the fix was reproduced and re-verified with real modules. **Kindle PW5 re-verification pending** (see `PLAN.md` §10).
-
 ## [2.1.0] - 2026-11-16
 
 ### Added
-- **Custom content folder.** Nueva clave `custom_content_dir` y opción **Choose custom content folder** en Paths and storage: ruta absoluta arbitraria y anidada para los documentos descargados (p. ej. `/mnt/us/My Docs/KindleHome`). Se rechazan rutas relativas, segmentos `..` y el directorio de instalación de KOReader; vacía restaura `storage_mode`/`documents_subdir`. Las rutas se resuelven solo en `lib/paths.lua`; la caché permanece en `<DataDir>`.
-- **Selector nativo de carpetas (F15.4).** La carpeta se elige con el `PathChooser` de KOReader (modo solo directorio, con creación de carpetas y navegación paginada) en lugar de escribir la ruta; la entrada **Reset custom content folder** vuelve a la ubicación por defecto. Ambos comparten la validación/sanitización existente.
+- **Custom content folder.** New `custom_content_dir` setting and **Choose custom content folder** entry under Paths and storage: an arbitrary absolute, nested path for downloaded documents (e.g. `/mnt/us/My Docs/KindleHome`). Relative paths, `..` segments and KOReader's install directory are rejected; an empty value restores `storage_mode`/`documents_subdir`. Paths are resolved only in `lib/paths.lua`; the cache stays in `<DataDir>`.
+- **Native folder picker.** The folder is chosen with KOReader's `PathChooser` (directory-only mode, with folder creation and paginated navigation) instead of typing a path; **Reset custom content folder** restores the default location. Both share the existing validation/sanitization.
 
 ### Fixed
-- **Elementos detrás del título.** El Shell pinta ahora un fondo blanco opaco a pantalla completa antes de dibujar sus hijos (`Shell:paintTo`), porque `TitleBar` es un `OverlapGroup` transparente y `covers_fullscreen` impide que UIManager repinte la pantalla anterior. El `TitleBar` también recibe `show_parent = self` como destino de repintado. Los cierres usan refresco `full`.
-- **Visibilidad de rutas.** "Documents subdir" y "Storage mode" se marcan como *(fallback)* cuando hay una carpeta custom activa, y "Show resolved paths" pasa a "Show active content paths".
+- **Elements bleeding through the title area.** The Shell now paints an opaque white full-screen background before drawing its children (`Shell:paintTo`), because `TitleBar` is a transparent `OverlapGroup` and `covers_fullscreen` prevents UIManager from repainting the previous screen. The `TitleBar` also receives `show_parent = self` as its repaint target. Closes use a `full` refresh.
+- **Path visibility.** "Documents subdir" and "Storage mode" are marked *(fallback)* when a custom folder is active, and "Show resolved paths" became "Show active content paths".
 
 ### Changed
-- **Sin migración de archivos.** Al cambiar de carpeta, los `.md/.md.html` y link cards ya descargados permanecen en su ubicación anterior y se descargan de nuevo al abrirlos; no se copian ni se borran (invariante de AGENTS.md).
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (15 smokes: nuevos `shell_paint.lua` — cobertura opaca del header — y `paths.lua` — carpeta custom, fallback, rutas canónicas y escritura atómica; `config.lua`/`menus.lua` ampliados).
-- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** header sin iconos de la pantalla anterior y carpeta custom absoluta/anidada con persistencia y descarga correctas (F15.1–F15.3; registro en `PLAN.md` §10).
-- **F15.4 (selector nativo + Reset):** gates PASS con 4 pickers simulados en el smoke de menús; pendiente de verificación en Kindle. Se añade a este mismo release 2.1.0 porque aún no se había publicado.
+- **No file migration.** When the folder changes, already downloaded Markdown files, derived HTML and link cards stay in their previous location and are downloaded again when opened; they are neither copied nor deleted.
 
 ## [2.0.0] - 2026-11-16
 
 ### Removed
-- **Digest (breaking change).** Eliminado `lib/digest.lua` y todas sus integraciones: tarjeta y botón del dashboard, acciones `generate_digest`/`open_digest`, ajuste `show_digest`, ruta `digest/`, ramas en `ArticleStore` y referencias en docs/smokes. Los archivos `digest/*.md/.html` ya generados en el dispositivo **no se borran**.
+- **Digest (breaking change).** Removed `lib/digest.lua` and all integrations: dashboard card and button, `generate_digest`/`open_digest` actions, the `show_digest` setting, the `digest/` path, `ArticleStore` branches and documentation/smoke references. Already generated `digest/*.md` files on the device are **not deleted**.
 
 ### Added
-- **Link cards persistentes.** Si falla la descarga y no hay copia local, se escribe/abre `<id>-<slug>-links.md` (y su `.md.html`) con la URL de HN, la URL de origen (o “Ask HN”) y el motivo del error. La tarjeta permanece en la biblioteca incluso si luego la descarga tiene éxito.
-- **Enlaces reales en el documento.** La meta del `.md.html` incluye `<a href>` para la conversación de HN y la URL de origen; al tocarlos en `ReaderUI`, KOReader ofrece Copiar / QR / Abrir en navegador. Los `.md.html` antiguos se regeneran mediante una marca de esquema de render.
+- **Persistent link cards.** If a download fails and there is no local copy, `<id>-<slug>-links.md` (and its derived HTML) is written and opened with the HN URL, the source URL (or "Ask HN") and the failure reason. The card stays in the library even if a later download succeeds.
+- **Real links in the document.** The document metadata includes `<a href>` links for the HN discussion and the source URL; tapping them in `ReaderUI` offers Copy / QR / Open in browser. Older renders are regenerated using a render schema marker.
 
 ### Fixed
-- **Crash de menús.** `prompt_text` ya no inserta un botón `nil` en la fila de `InputDialog` (causa de los crashes al abrir clima o “Documents subdir”). El botón Clear del API key cierra correctamente su diálogo.
-- **Clima sin ubicación.** `weather_lat`/`weather_lon` (defaults `nil`) ahora se pueden guardar y recargar desde `settings/kindlehome.lua`; antes `Config:set` los rechazaba y el clima nunca consultaba la API.
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (12 smokes: nuevos `config.lua`, `menus.lua` y `link_card.lua`; dashboard/action bar sin digest; renderer con enlaces y marca de migración).
-- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** matriz F14 completa — menús Weather/Documents subdir sin crash, coordenadas persistentes tras reinicio, digest ausente, link cards con URLs, enlaces en el documento, lectura sin regresión, instalación limpia desde `kindlehome.koplugin-v2.0.0.zip` y `crash.log` limpio. Registrada en `PLAN.md` §10.
+- **Menu crash.** `prompt_text` no longer inserts a `nil` button into the `InputDialog` row (the cause of crashes when opening weather or "Documents subdir"). The API key Clear button now closes its dialog correctly.
+- **Weather without a location.** `weather_lat`/`weather_lon` (default `nil`) can now be saved and reloaded from `settings/kindlehome.lua`; previously `Config:set` rejected them and weather never queried the API.
 
 ## [1.0.0] - 2026-11-16
 
 ### Changed
-- **MVP release candidate.** Versión final del artefacto de release; repositorio, gates y documentación listos para el cierre con evidencia en Kindle (`PLAN.md` F13).
-- **Retorno desde el lector nativo al dashboard.** `Dashboard` mantiene su shell vivo debajo de `ReaderUI` cuando el artículo se abre en el lector; al cerrar el lector se vuelve al dashboard en lugar del explorador de archivos. El fallback paginado cierra el dashboard como antes; si `ReaderUI` falla al abrir, se cierra y se muestra el pager (`on_fallback`). Aplica también a artículos de prueba y digests.
+- **Release candidate.** Final release artifact; repository, gates and documentation ready for closeout.
+- **Return from the native reader to the dashboard.** `Dashboard` keeps its shell alive beneath `ReaderUI` when an article opens in the reader; closing the reader returns to the dashboard instead of the file browser. The paginated fallback closes the dashboard as before; if `ReaderUI` fails to open, it is closed and the pager is shown (`on_fallback`).
 
 ### Fixed
-- `ArticleView:show` ahora comprueba el valor devuelto por `openInReader`: un `ReaderUI:showReader` que falla silenciosamente (`false`) ya no impide el fallback al pager.
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (9 smokes; dashboard comprueba que el shell permanece bajo `ReaderUI` y que el fallback lo cierra; article_view comprueba `will_open_in_reader`, apertura correcta y fallback tras fallo del lector).
-- **Verificación en Kindle PW5 PASS (2026-11-16, confirmada por el usuario):** matriz F13 completa — pager de artículos, retorno desde `ReaderUI` al dashboard, UI/e-ink (retrato/apaisado, S–XL), descargas reales y estados de error, clima, digest, menús/Dispatcher, rendimiento/seguridad e instalación limpia desde zip. Registrada en `PLAN.md` §10; MVP cerrado.
+- `ArticleView:show` now checks the return value of `openInReader`: a `ReaderUI:showReader` that silently fails (`false`) no longer prevents the pager fallback.
 
 ## [0.4.1] - 2026-11-16
 
 ### Changed
-- **Fallback de artículos con paginación nativa.** `ui/article_html_pager.lua` sustituye a `ScrollHtmlWidget`: usa `HtmlBoxWidget` a tamaño viewport, `VerticalScrollBar` e input nativo (swipe, tap en mitades, **pan/release** y teclas PgFwd/PgBack). Arrastrar lentamente avanza de página (antes no respondía). El lector nativo `ReaderUI` sigue siendo la vía principal.
-- Retirado `ScrollHtmlWidget` de todo el plugin; la selección de texto del fallback se retira (disponible en `ReaderUI`).
-- La tarjeta/visor de error nunca usa `kh:*` en el HTML; la navegación Back/Close sigue en la barra nativa.
+- **Native paginated article fallback.** `ui/article_html_pager.lua` replaces `ScrollHtmlWidget`: it uses a viewport-sized `HtmlBoxWidget`, `VerticalScrollBar` and native input (swipe, tap halves, **pan/release** and PgFwd/PgBack keys). Slow dragging now advances a page (it previously did nothing). The native `ReaderUI` remains the primary path.
+- Removed `ScrollHtmlWidget` from the whole plugin; text selection in the fallback was dropped (it is available in `ReaderUI`).
+- The error card/view never uses `kh:*` links in HTML; Back/Close navigation stays in the native bar.
 
-### Added
-- Config dev-only `ui_force_article_fallback` (default `false`) para forzar el pager y poder validarlo en Kindle sin depender de que `ReaderUI` falle. No se expone en menús.
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (prohíbe `ScrollHtmlWidget` en todo el plugin; exige `HtmlBoxWidget` + `VerticalScrollBar` en el pager), `scripts/smoke_ui.sh` PASS (9 smokes: dashboard, article_view, pager, shell, action_bar, md_render, article_download, hnmd_url, http_stream).
-- Pager smoke: 3 páginas, swipe/tap/pan-release/teclas/ratio, repintado hacia el `Shell` y caso de una sola página. Instanciación con módulos reales v2026.07.1: 41 páginas, cambio de página OK.
 
 ## [0.4.0] - 2026-11-16
 
 ### Changed
-- **Dashboard con interfaz nativa.** El cuerpo HTML (`ScrollHtmlWidget` + CSS) se sustituye por un árbol de widgets de KOReader (`TextBoxWidget`/`TextWidget`/`FrameContainer`/`LineWidget`) dentro de un `ScrollableContainer`: scroll continuo por pan y paginado por flick, con scrollbar nativa. El reloj/fecha, estado, clima, HN y digest se construyen como widgets; el tap en un titular usa la misma ruta `kh:hn:<id>` de siempre.
-- La tarjeta DIGEST ya no contiene el enlace “Open latest digest”: solo informa del estado; el botón Digest de la barra nativa genera/abre el resumen.
-- Eliminados `lib/render/dashboard_html.lua` y `Theme.dashboard_css` (código muerto).
+- **Native dashboard UI.** The HTML body (`ScrollHtmlWidget` + CSS) was replaced by a KOReader widget tree (`TextBoxWidget`/`TextWidget`/`FrameContainer`/`LineWidget`) inside a `ScrollableContainer`: continuous pan scrolling and flick pagination with a native scrollbar. Clock/date, status, weather, HN and digest are built as widgets; tapping a headline uses the same `kh:hn:<id>` route.
+- The digest card no longer contains an "Open latest digest" link: it only reports status; the Digest button in the native bar generates/opens the summary.
+- Removed `lib/render/dashboard_html.lua` and `Theme.dashboard_css` (dead code).
 
 ### Added
-- `lib/dashboard_model.lua`: modelo de vista puro (sin dependencias de KOReader) que normaliza `state` a secciones/filas; permite verificar el dashboard en Lua 5.1 sin stubs de widgets.
-- `ui/dashboard_body.lua`: constructor del cuerpo nativo con anchos calculados para evitar scroll horizontal y `LeftContainer` como hijo único del contenedor de scroll.
-- `Shell` registra `cropping_widget` cuando el cuerpo sabe recortar (`ScrollableContainer`).
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (nuevos guards: dashboard sin HTML/`ScrollHtmlWidget`, cuerpo nativo con `ScrollableContainer`, sin `dashboard_html.lua`), `scripts/smoke_ui.sh` PASS (modelo con 10 filas, viewport 1200×1400, hijo único ancho 1170, 11 taps → `open_hn:*`, `cropping_widget`).
-- Instanciado con módulos reales de KOReader v2026.07.1 (LuaJIT): cuerpo 1236×1400, contenido 1200×2380 → scrollable sin desbordamiento horizontal. Verificación en Kindle PW5 pendiente.
+- `lib/dashboard_model.lua`: pure view model (no KOReader dependencies) that normalizes `state` into sections/rows; allows verifying the dashboard in Lua 5.1 without widget stubs.
+- `ui/dashboard_body.lua`: native body builder with computed widths to avoid horizontal scrolling and `LeftContainer` as the scroll container's only child.
+- `Shell` registers `cropping_widget` when the body can crop (`ScrollableContainer`).
 
 ## [0.3.1] - 2026-11-16
 
 ### Fixed
-- **El dashboard y el fallback de artículos no desplazaban (parpadeaban sin cambiar el contenido).** `ScrollHtmlWidget` llama `UIManager:setDirty(self.dialog, ...)` al desplazar, pero `UIManager` solo marca como *dirty* los widgets presentes en `_window_stack`. `dialog` apuntaba al propio cuerpo (anidado en el `Shell`), así que se encolaba el refresh de e-ink pero nunca se pintaba la página siguiente. `Shell:init` cablea ahora `body.dialog`, `body.show_parent` y `body.htmlbox_widget.dialog` al `Shell`, que sí es el widget mostrado. Se eliminaron las auto-asignaciones `dialog = body/widget` en `ui/dashboard.lua` y `ui/article_view.lua`.
+- **Dashboard and article fallback did not scroll (they flashed without changing content).** `ScrollHtmlWidget` calls `UIManager:setDirty(self.dialog, ...)` when scrolling, but `UIManager` only marks widgets in `_window_stack` as dirty. `dialog` pointed at the nested body, so the e-ink refresh was queued but the next page was never painted. `Shell:init` now wires `body.dialog`, `body.show_parent` and `body.htmlbox_widget.dialog` to the `Shell`, which is the displayed widget. Self-assignments of `dialog = body/widget` were removed from `ui/dashboard.lua` and `ui/article_view.lua`.
 
 ### Added
-- `Logger.info("shell", "layout", …)` con `screen_w/h`, `header`, `footer`, `body_h` y `fullscreen` (estructurado, sin secretos) para confirmar el layout en dispositivo.
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (invariante 1 reescrito: el destino de repintado debe ser el widget de nivel superior; prohibida la auto-asignación de `dialog`), `scripts/smoke_ui.sh` PASS (8 smokes; dashboard/article/shell comprueban `dialog == shell` y `show_parent == shell`).
-- Diagnóstico en Kindle PW5 / KOReader v2026.07: pantalla 1236×1648, cuerpo ≈1400 → `getPages() = 4` (paginación correcta); swipe/tap producían flash sin repintado; sin tracebacks; artículos se abren en `ReaderUI`. Tras instalar 0.3.1 el dashboard vuelve a desplazarse (validado en dispositivo, navegación por flick/tap OK).
+- `Logger.info("shell", "layout", …)` with `screen_w/h`, `header`, `footer`, `body_h` and `fullscreen` (structured, no secrets) to confirm layout on device.
 
 ## [0.3.0] - 2026-11-16
 
 ### Changed
-- **Artículos HN como archivos Markdown descargados (contrato `hnmd` real).** `GET /v1/top` se usa solo como índice de metadatos (`schema_version`, `content_status`, `content_url`, `content_length`); al pulsar un ítem se descarga `GET /v1/articles/{id}.md` en `<content root>/articles/hn/<id>-<slug>.md` y se genera `<id>-<slug>.md.html` para abrirlo con `ReaderUI`.
-- `hnmd_base_url` por defecto pasa a `https://hnmd.miguehm.com/v1`; un host sin path recibe `/v1`. `content_url` se resuelve contra el origen (evita `/v1/v1/...`) y se rechazan URLs de otro origen.
-- Descarga **streaming a archivo** (`Http.get_to_file`): nunca se acumula el cuerpo en RAM (PW5 con ~15 MB libres), con límites `index_max_bytes` (128 KiB) y `article_max_bytes` (512 KiB), validación de `Content-Length` y `os.rename` atómico.
-- `Cache.SCHEMA_VERSION` a 2: cachés con payload completo anterior se ponen en cuarentena y se regeneran.
-- Re-descarga solo si el `.md` local falta/vacío; `404`, `503` o fallos de red **no** borran la copia local. No se usan `etag`/`last-modified`.
-- Renderizador extendido: `h4`–`h6`, `blockquote`, `hr`, imágenes reducidas a su texto alternativo (sin cargas remotas), `<!DOCTYPE html>` y `<title>` en documentos persistidos.
-- Eliminado `open_in_reader_enabled`: el lector nativo es el flujo por defecto; el overlay queda como fallback (Markdown crudo si el render falla).
+- **HN articles as downloaded Markdown files (hnmd contract).** `GET /v1/top` is used only as a metadata index (`schema_version`, `content_status`, `content_url`, `content_length`); tapping an item downloads `GET /v1/articles/{id}.md` to `<content root>/articles/hn/<id>-<slug>.md` and generates `<id>-<slug>.md.html` for `ReaderUI`.
+- `hnmd_base_url` now defaults to `https://hnmd.miguehm.com/v1`; a host without a path gets `/v1` appended. `content_url` is resolved against the origin (avoiding `/v1/v1/...`) and cross-origin URLs are rejected.
+- **Streaming download to file** (`Http.get_to_file`): the body is never accumulated in RAM (e-ink devices have very little free memory), with `index_max_bytes` (128 KiB) and `article_max_bytes` (512 KiB) limits, `Content-Length` validation and atomic `os.rename`.
+- `Cache.SCHEMA_VERSION` bumped to 2: caches with the old full-payload format are quarantined and regenerated.
+- Re-download only when the local `.md` is missing/empty; `404`, `503` or network failures **never** delete the local copy. No `etag`/`last-modified` used.
+- Extended renderer: `h4`–`h6`, `blockquote`, `hr`, images reduced to alt text (no remote loads), plus `<!DOCTYPE html>` and `<title>` in persisted documents.
+- Removed `open_in_reader_enabled`: the native reader is the default flow; the overlay remains as a fallback (raw Markdown if rendering fails).
 
 ### Added
-- `lib/hnmd.lua`: `fetch_index` + `download_article` + `resolve_content_url` (validación de esquema/id/estados).
-- `lib/article_store.lua`: `ensure_local`, `is_local`, `render_derived` (regenera HTML si el `.md` es más reciente) y detección de frontmatter propio.
+- `lib/hnmd.lua`: `fetch_index` + `download_article` + `resolve_content_url` (schema/id/status validation).
+- `lib/article_store.lua`: `ensure_local`, `is_local`, `render_derived` (regenerates HTML when the `.md` is newer) and own-frontmatter detection.
 - `lib/paths.lua`: `article_md_path` / `article_html_path`.
-- Errores tipados `http_404` e `incomplete`; mensajes `no_content`, `warming_up`, `offline_no_local`, `downloading`.
-- Smokes nuevos: `article_download.lua` (promoción/atomicidad/404 conserva copia/`.tmp` limpio), `md_render.lua` (extensiones y escape), `hnmd_url.lua` (resolución `/v1`, cross-origin, índice/límites), `http_stream.lua` (sink por chunks, `Content-Length`, `too_large`, 404/503 sin retry, timeout con 1 retry).
-
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS (nuevos guards: descarga vía `get_to_file`, `ui/` sin HTTP/borrado, `os.remove/rename` solo sobre `.tmp`), `scripts/smoke_ui.sh` PASS (8 smokes).
-- Backend validado con datos reales (`/v1/top`, `HEAD`/`GET` de `50517488` 7938 B y `50516473` 72644 B, 401 con `WWW-Authenticate`). Verificación en Kindle PW5 pendiente.
+- Typed errors `http_404` and `incomplete`; messages `no_content`, `warming_up`, `offline_no_local`, `downloading`.
+- New smokes: `article_download.lua` (promotion/atomicity/404 keeps copy/clean `.tmp`), `md_render.lua` (extensions and escaping), `hnmd_url.lua` (`/v1` resolution, cross-origin, index/limits), `http_stream.lua` (chunked sink, `Content-Length`, `too_large`, no retry on 404/503, one retry on timeout).
 
 ## [0.2.1] - 2026-11-15
 
 ### Changed
-- **Apertura de artículos por defecto en el lector nativo de KOReader.** Los artículos y digests con documento `.html` persistido localmente se abren ahora con `ReaderUI:showReader(path)` en lugar del overlay `ScrollHtmlWidget`, lo que habilita selección de texto, anotaciones, subrayados, diccionario, progreso y modo nocturno, todo offline y sin red.
-- El overlay `ScrollHtmlWidget` se mantiene solo como fallback cuando no existe `.html` local o el lector no está disponible; en ese fallback se activó `highlight_text_selection = true` para permitir selección de texto.
+- **Articles open in KOReader's native reader by default.** Articles and digests with a persisted local `.html` now open with `ReaderUI:showReader(path)` instead of the `ScrollHtmlWidget` overlay, enabling text selection, annotations, highlights, dictionary, progress and night mode, all offline.
+- The `ScrollHtmlWidget` overlay remains only as a fallback when no local `.html` exists or the reader is unavailable; `highlight_text_selection = true` is enabled there.
 
 ## [0.2.0] - 2026-11-15
 
@@ -260,10 +195,6 @@
 - `ui/widget/action_bar.lua`: native icon+label action bar.
 - `scripts/smoke/shell.lua`, `scripts/smoke/action_bar.lua`: offline Lua 5.1 smoke tests.
 
-### Verification
-- `scripts/check_lua51.sh` PASS, `scripts/check_invariants.sh` PASS, `scripts/smoke_ui.sh` PASS (dashboard/article/shell/action_bar).
-- Device runtime verification (legibility, targets, rotation, ghosting) pending Kindle PW5 testing.
-
 ## [0.1.2] - 2026-11-15
 
 ### Fixed
@@ -274,16 +205,12 @@
 - Refresh failures are logged with the actual error instead of a bare `refresh_failed`.
 
 ### Changed
-- `refresh_on_open` now defaults to **false** (MVP): opening always paints cached state and never blocks on HTTP; when enabled, the refresh is deferred with `UIManager:scheduleIn` after the first paint.
-- `http_timeout_s` default 10 → 6 s and `http_max_bytes` 512 → 256 KiB (device had ~15 MB free RAM).
+- `refresh_on_open` now defaults to **false**: opening always paints cached state and never blocks on HTTP; when enabled, the refresh is deferred with `UIManager:scheduleIn` after the first paint.
+- `http_timeout_s` default 10 → 6 s and `http_max_bytes` 512 → 256 KiB (e-ink devices have very little free RAM).
 - Content is written to the Kindle library (`/mnt/us/documents/KindleHome`) instead of inside the KOReader install dir (`getFullDataDir()` returns `/mnt/us/koreader` on Kindle).
 
 ### Added
 - `scripts/check_invariants.sh`: static guards (ScrollHtmlWidget requires `dialog`; no nonexistent `ui/elements/menu_items`).
-
-### Verification
-- Device: KOReader v2026.07 / LuaJIT 2.1.1783773675, Kindle PaperWhite 5. Evidence in `PLAN.md` §9/§10 (3 tracebacks at `scrollhtmlwidget.lua:182` after `[KindleHome] event=shown`).
-- Repo: `check_lua51.sh` PASS (22 files), `check_invariants.sh` PASS (and negative test fails as expected). **Interactive re-test on device (scroll/tap in all directions, HN article, digest) pending.**
 
 ## [0.1.1] - 2026-11-15
 
@@ -293,13 +220,9 @@
 - Removed `pcall` around menu registration and dead code in `main.lua`; removed deprecated `name` field from `_meta.lua`; release zip no longer contains empty `lib/rss/` directories.
 
 ### Added
-- `scripts/check_lua51.sh`: mandatory Lua 5.1/LuaJIT syntax gate (`luac5.1`/`lua5.1`/`luajit`) for all plugin files, documented in `AGENTS.md` and `README.md`. A system `luac` 5.3+ is not a valid substitute.
+- `scripts/check_lua51.sh`: mandatory Lua 5.1/LuaJIT syntax gate (`luac5.1`/`lua5.1`/`luajit`) for all plugin files, documented in `README.md` and `CONTRIBUTING.md`. A system `luac` 5.3+ is not a valid substitute.
 
-### Verification
-- Repo (2026-11-15, Linux dev): `luac5.1 -p` PASS for all 22 `kindlehome.koplugin/**/*.lua`; before the fix it reproduced the device error at `lib/paths.lua:55`. Negative test confirmed the gate fails on synthetic Lua 5.3 bitwise syntax.
-- Device evidence (v0.1.0 failure) and the gate run are recorded in `PLAN.md` §9/§10. **Reinstall 0.1.1 on Kindle and confirm the plugin loads (no `WARN Error when loading` in `crash.log`) remains pending.**
-
-## [0.1.0] - 2026-11-15 (MVP)
+## [0.1.0] - 2026-11-15
 
 ### Added
 - Kindle Home KOReader plugin scaffold for Kindle (e-ink): dashboard, Dispatcher action `kindlehome_show_dashboard`, menus, and local device/time/battery/network status.
@@ -315,10 +238,6 @@
 - `hnmd_api_key` treated as local plaintext KOReader setting; masked in UI, never logged. HTTP/auth/payload details not logged.
 - Cache/content writes are atomic; corrupted/incompatible cache is quarantined/regenerated.
 
-### Verification
-- Repo/static (2026-11-15, Linux dev): `luac -p` passed for all `kindlehome.koplugin/**/*.lua` (**superseded**: the system `luac` was 5.5, not Lua 5.1/LuaJIT — see 0.1.1); logger/HTTP/UI audit showed no API key, Authorization header, or payload logging.
-- **Kindle (KOReader) runtime/device validation:** required for MVP closure (F1–F8 matrix: offline/unstable WiFi, 401/503/parse/too_large, geocoding/TTL, cache corruption, digest/reading, Dispatcher/Profiles/gestures, performance). Not executed in this environment; record results in `PLAN.md` §10.
-
-### Deferred (post-MVP)
-- 8.6: alternative HN fallback, full i18n, screensaver/userpatch.
-- 5.10: external URL fetch/open in overlay.
+### Deferred
+- Alternative HN fallback, full i18n, screensaver/userpatch integration.
+- External URL fetch/open in an overlay.
