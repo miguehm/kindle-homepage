@@ -88,6 +88,12 @@ function ArticleView:handle_link(uri)
     return false
 end
 
+local function cleanup_doc(doc)
+    if doc and type(doc.on_cleanup) == "function" then
+        pcall(doc.on_cleanup)
+    end
+end
+
 local function build_actions(doc, view)
     local specs = {}
     if type(doc.on_back) == "function" then
@@ -101,7 +107,10 @@ local function build_actions(doc, view)
         table.insert(specs, {
             icon = "book.opened",
             label = "Reader",
-            callback = function() view:openInReader(doc.html_path) end,
+            callback = function()
+                local opened = view:openInReader(doc.html_path, function() cleanup_doc(doc) end)
+                if not opened then cleanup_doc(doc) end
+            end,
         })
     end
     table.insert(specs, {
@@ -121,6 +130,10 @@ end
 
 function ArticleView:show(doc)
     doc = doc or {}
+    local previous = self.current
+    if previous and previous ~= doc and previous.html_path ~= doc.html_path then
+        cleanup_doc(previous)
+    end
     local body = self:_resolve_body(doc)
     self.current = doc
     self:_teardown()
@@ -134,7 +147,7 @@ function ArticleView:show(doc)
     -- anotaciones, progreso, diccionario y modo nocturno, todo offline.
     if self:will_open_in_reader(doc) then
         local ok, opened = pcall(function()
-            return self:openInReader(doc.html_path)
+            return self:openInReader(doc.html_path, function() cleanup_doc(doc) end)
         end)
         if ok and opened ~= false then
             Logger.info("article_view", "opened_in_reader", { path = doc.html_path })
@@ -144,6 +157,7 @@ function ArticleView:show(doc)
             path = doc.html_path,
             err = ok and "reader_returned_false" or tostring(opened),
         })
+        cleanup_doc(doc)
         if type(doc.on_fallback) == "function" then
             doc.on_fallback()
         end
@@ -176,6 +190,7 @@ end
 
 function ArticleView:_back()
     local doc = self.current or {}
+    cleanup_doc(doc)
     self:_teardown()
     if type(doc.on_back) == "function" then
         doc.on_back()
@@ -187,6 +202,7 @@ function ArticleView:_back()
 end
 
 function ArticleView:_closed_by_user()
+    cleanup_doc(self.current)
     self.widget = nil
     if self.on_close then
         pcall(self.on_close)
@@ -203,14 +219,30 @@ function ArticleView:_teardown()
     pcall(function() UIManager:close(widget) end)
 end
 
-function ArticleView:openInReader(path)
+function ArticleView:openInReader(path, on_close)
     if not path or not can_open_in_reader() then
         Logger.warn("article_view", "open_reader_unavailable", { path = path })
         return false
     end
+    local function hook_close(reader)
+        if type(reader) ~= "table" or reader._kindlehome_html_hook then return end
+        reader._kindlehome_html_hook = true
+        local original = reader.onCloseWidget
+        reader.onCloseWidget = function(self, ...)
+            if self._kindlehome_html_hook then
+                self._kindlehome_html_hook = nil
+                if type(on_close) == "function" then pcall(on_close) end
+            end
+            if type(original) == "function" then
+                return original(self, ...)
+            end
+        end
+    end
     -- Optional, isolated flow: ReaderUI manages its own lifecycle/return behavior.
+    -- The after-open callback receives the reader instance; hooking its close
+    -- removes the ephemeral HTML as soon as the reader goes away.
     local ok, err = pcall(function()
-        ReaderUI:showReader(path)
+        ReaderUI:showReader(path, nil, nil, nil, hook_close)
     end)
     if not ok then
         Logger.err("article_view", "open_reader_failed", { err = tostring(err) })
@@ -221,6 +253,7 @@ function ArticleView:openInReader(path)
 end
 
 function ArticleView:close()
+    cleanup_doc(self.current)
     self:_teardown()
     if self.on_close then
         pcall(self.on_close)

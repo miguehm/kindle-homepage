@@ -21,7 +21,7 @@ package.preload["libs/libkoreader-lfs"] = function()
 end
 
 local downloads = 0
-local fake_md = "# Fake title\n\n> by tester\n> HN: https://news.ycombinator.com/item?id=9\n\n#### Section\n\nBody.\n"
+local fake_md = "# Fake title\n\n> by tester\n> HN: https://news.ycombinator.com/item?id=9\n\n![chart](https://example.com/chart.png)\n\n#### Section\n\nBody.\n"
 local fail_next = nil
 local fail_should_write_partial = false
 
@@ -53,12 +53,18 @@ assert(os.execute("mkdir -p '" .. dir .. "'") == 0 or true)
 
 local P = {}
 function P:articles_hn_dir() return dir end
-function P:article_html_path(p) return p .. ".html" end
+function P:cache_dir() return dir .. "/cache" end
+function P:ephemeral_articles_dir() return self:cache_dir() .. "/articles" end
+function P:article_html_path(p)
+    return self:ephemeral_articles_dir() .. "/" .. tostring(p:match("([^/]+)$")) .. ".html"
+end
 function P:article_md_path(item)
     local slug = tostring(item.title or "article"):lower():gsub("%s+", "-"):gsub("[^%w%-]", "")
     return dir .. "/" .. tostring(item.id) .. "-" .. slug .. ".md"
 end
 function P:atomic_write(path, content)
+    local parent = path:match("^(.*)/[^/]+$")
+    if parent then os.execute("mkdir -p '" .. parent .. "'") end
     local tmp = path .. ".atomic"
     local f = assert(io.open(tmp, "wb"))
     f:write(content)
@@ -86,9 +92,22 @@ local size, md = file_size(res.md_path or md_path)
 assert(size and size > 0, ".md should be written")
 assert(md:sub(1, 12) == "# Fake title", ".md should hold raw markdown without frontmatter")
 local hsize, html = file_size(res.html_path)
-assert(hsize and hsize > 0, ".md.html should be written")
+assert(hsize and hsize > 0, "ephemeral html should be written")
 assert(html:find("<blockquote>", 1, true), "derived html should render blockquote")
 assert(html:find("<h4>Section</h4>", 1, true), "derived html should render h4")
+assert(html:find('<a href="https://example.com/chart.png">chart</a>', 1, true),
+    "derived html should render image markdown as an alt-text link")
+assert(res.html_path:sub(1, #P:ephemeral_articles_dir() + 1) == P:ephemeral_articles_dir() .. "/",
+    "derived html must live under the cache, not the content folder")
+assert(file_size(md_path .. ".html") == nil, "no .html may be written next to the canonical .md")
+
+local legacy = md_path .. ".html"
+local legacy_f = assert(io.open(legacy, "wb"))
+legacy_f:write("<!--kh-meta-v2--><html><body>legacy</body></html>")
+legacy_f:close()
+local regenerated = assert(store:render_derived(md_path, item, true))
+assert(regenerated == res.html_path, "render_derived must use the ephemeral path")
+assert(file_size(legacy) == nil, "render_derived must remove the legacy adjacent .html")
 
 local again = store:ensure_local(nil, item)
 assert(again.ok, "second call should succeed")

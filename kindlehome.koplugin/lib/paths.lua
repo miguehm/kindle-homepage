@@ -159,11 +159,20 @@ function Paths:article_link_path(item)
     return (md:gsub("%.md$", "-links.md"))
 end
 
--- Derived render opened by KOReader's native reader; KOReader's own file
--- converter uses the same "<file>.html" convention.
+-- Derived HTML is ephemeral: it lives under the plugin cache (never next to
+-- the canonical .md in the user's library) and is removed when the reader or
+-- the fallback pager closes. The name is deterministic for a given .md path
+-- so the cached render can be reused within a session.
+function Paths:ephemeral_articles_dir()
+    return join(self:cache_dir(), "articles")
+end
+
 function Paths:article_html_path(md_path)
     if type(md_path) ~= "string" or md_path == "" then return nil end
-    return md_path .. ".html"
+    local name = md_path:match("([^/]+)$") or "article"
+    name = name:gsub("%.md$", "")
+    return join(self:ephemeral_articles_dir(),
+        short_hash(md_path) .. "-" .. slugify(name, "article") .. ".html")
 end
 
 function Paths:ensure_dir(path)

@@ -58,11 +58,12 @@ end
 function ArticleStore:paths_for(kind, meta)
     local dir = self:_dir_for(kind)
     local base = self:_base_name(kind, meta)
+    local md = dir .. "/" .. base .. ".md"
     return {
         dir = dir,
         base = base,
-        md = dir .. "/" .. base .. ".md",
-        html = dir .. "/" .. base .. ".html",
+        md = md,
+        html = self.paths:article_html_path(md),
     }
 end
 
@@ -91,6 +92,7 @@ function ArticleStore:save(opts)
         Logger.err("article_store", "save_md_failed", { path = md_target, reason = err1 })
         return nil, err1
     end
+    self:_remove_legacy_html(md_target, html_target)
     local ok2, err2 = self.paths:atomic_write(html_target, html_content)
     if not ok2 then
         Logger.err("article_store", "save_html_failed", { path = html_target, reason = err2 })
@@ -212,6 +214,66 @@ local function has_render_marker(path)
     return head ~= nil and head:find(MdToHtml.render_marker(), 1, true) ~= nil
 end
 
+-- Removes the old derived "<file>.md.html" that lived next to the canonical
+-- Markdown. Only plugin-generated files (with the render marker) are touched.
+function ArticleStore:_remove_legacy_html(md_path, html_path)
+    if type(md_path) ~= "string" or md_path == "" then return end
+    local legacy = md_path .. ".html"
+    if legacy == html_path then return end
+    if file_exists(legacy) and has_render_marker(legacy) then
+        if os.remove(legacy) then -- ephemeral cleanup: derived HTML only
+            Logger.info("article_store", "legacy_html_removed", { path = legacy })
+        end
+    end
+end
+
+-- Deletes the ephemeral HTML rendered for ReaderUI/the fallback pager.
+function ArticleStore:remove_ephemeral(html_path)
+    if type(html_path) ~= "string" or html_path == "" then return false end
+    local ok = os.remove(html_path) -- ephemeral cleanup: derived HTML only
+    if ok then
+        Logger.info("article_store", "ephemeral_html_removed", { path = html_path })
+    end
+    return ok and true or false
+end
+
+local function cleanup_html_dir(dir, pattern)
+    if type(dir) ~= "string" or dir == "" then return 0 end
+    local ok_dir, iter, state = pcall(lfs.dir, dir)
+    if not ok_dir or type(iter) ~= "function" then return 0 end
+    local removed = 0
+    for name in iter, state do
+        if type(name) == "string" and name:match(pattern) then
+            local path = dir .. "/" .. name
+            if pattern == "%.md%.html$" and not has_render_marker(path) then
+                -- Keep user files that merely share the extension.
+            elseif os.remove(path) then -- ephemeral cleanup: derived HTML only
+                removed = removed + 1
+            end
+        end
+    end
+    return removed
+end
+
+-- One-time migration: drop legacy .md.html files from the content folder.
+function ArticleStore:cleanup_legacy_html()
+    local removed = cleanup_html_dir(self.paths:articles_hn_dir(), "%.md%.html$")
+    if removed > 0 then
+        Logger.info("article_store", "legacy_html_cleanup", { removed = removed })
+    end
+    return removed
+end
+
+-- Startup cleanup: no ephemeral HTML should survive a plugin reload.
+function ArticleStore:cleanup_ephemeral_html()
+    local dir = self.paths.ephemeral_articles_dir and self.paths:ephemeral_articles_dir() or nil
+    local removed = cleanup_html_dir(dir, "%.html$")
+    if removed > 0 then
+        Logger.info("article_store", "ephemeral_html_cleanup", { removed = removed })
+    end
+    return removed
+end
+
 -- Old generated .md files carry our YAML frontmatter; downloaded ones are raw
 -- Markdown. Strip only a frontmatter-looking block so a leading "---" (hr) in
 -- real content is preserved.
@@ -228,8 +290,9 @@ function ArticleStore:is_local(md_path)
     return file_non_empty(md_path)
 end
 
--- Builds "<file>.md.html" (or refreshes it when the .md changed). Returns the
--- HTML path so callers can hand it to KOReader's native reader.
+-- Builds the ephemeral HTML under the cache (or reuses it when the .md has not
+-- changed). Returns the HTML path so callers can hand it to KOReader's native
+-- reader; the caller is responsible for deleting it when done.
 function ArticleStore:render_derived(md_path, meta, force)
     if not file_non_empty(md_path) then
         return nil, "not_found"
@@ -238,6 +301,7 @@ function ArticleStore:render_derived(md_path, meta, force)
     if not html_path then
         return nil, "missing_path"
     end
+    self:_remove_legacy_html(md_path, html_path)
     if not force and file_non_empty(html_path) and mtime(html_path) >= mtime(md_path)
             and has_render_marker(html_path) then
         return html_path

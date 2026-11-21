@@ -257,7 +257,9 @@ assert(messages[#messages].text == "Custom content folder cleared. Using the def
 
 local dashboard = { widget = {}, last_test_doc = { md_path = "/old/doc.md" } }
 local refresh_calls = 0
+local reset_page_calls = 0
 function dashboard:refresh() refresh_calls = refresh_calls + 1 end
+function dashboard:reset_hn_page() reset_page_calls = reset_page_calls + 1 end
 local opened_dashboard = 0
 local main_instance = {
     config = cfg,
@@ -321,6 +323,27 @@ assert(weather_menu and type(weather_menu[1].callback) == "function", "weather s
 weather_menu[1].callback()
 assert(refresh_calls == 1 and main_instance.dashboard_refresh_pending == true,
     "setting changes must defer the dashboard repaint while the menu is open")
+
+local hn_menu
+for _, item in ipairs(tab) do
+    if item.text == "Hacker News" then hn_menu = item.sub_item_table end
+end
+assert(hn_menu, "Hacker News settings missing")
+local page_entry
+for _, item in ipairs(hn_menu) do
+    if type(item.text_func) == "function" and item.text_func():match("^Items per page:") then
+        page_entry = item
+    end
+end
+assert(page_entry and page_entry.keep_menu_open, "items-per-page entry missing")
+page_entry.callback()
+local page_dialog = last_dialog()
+page_dialog.input = "6"
+click(page_dialog, 2)
+assert(values.hn_items_per_page == 6, "items-per-page setting not saved")
+assert(reset_page_calls == 1, "changing the page size must reset the session page")
+assert(refresh_calls == 1 and main_instance.dashboard_refresh_pending == true,
+    "page-size changes must defer the dashboard repaint while the menu is open")
 local closed_before = #closed
 settings_menu.close_callback()
 assert(#closed == closed_before + 1 and closed[#closed] == modal,

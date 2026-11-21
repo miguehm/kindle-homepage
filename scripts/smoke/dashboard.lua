@@ -429,9 +429,10 @@ local cfg = {
     ui_font_scale = 1.0, ui_fullscreen = true, ui_show_test_article = true,
     ui_clock_24h = false,
 }
+local cfg_sets = 0
 local cfg_instance = {
     get = function(_, key) return cfg[key] end,
-    set = function() end,
+    set = function(_, key, value) cfg_sets = cfg_sets + 1; cfg[key] = value end,
     flush = function() end,
 }
 local actions = {
@@ -540,6 +541,8 @@ local body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
 assert(body.fits == true and body.scroll == nil, "dashboard must fit 1200x1400 without scrolling")
 assert(body.content_width > 0 and body.viewport:getSize().h > 0, "fit viewport wrong")
 assert(body.page_size == 4 and body.model == d.model, "fit body must keep four rows and the chosen model")
+assert(body.page_size_preferred == 4, "default preferred page size must be four")
+assert(body.probes == 1, "default preferred size that fits must use the fast path")
 assert(body.nav and body.nav ~= body.viewport, "bottom nav must be outside the content")
 assert(body.nav.show_parent == shell_instance, "nav repaint target wrong")
 assert(shell_instance.cropping_widget == body, "cropping_widget must be the body wrapper")
@@ -660,23 +663,47 @@ d:open_hn_item("1002")
 assert(d.widget == nil, "fallback must close the dashboard shell")
 
 d:show({ allow_network = false })
+d:set_hn_page(2)
+assert(d.hn_page == 2, "page change must update session memory")
+d:show({ allow_network = false })
+assert(d.hn_page == 2 and d.model.hn.page == 2,
+    "re-show must keep the session page without refetching")
 d:refresh({ allow_network = false })
-assert(d.hn_page == 1, "refresh must reset pagination")
+assert(d.hn_page == 2, "normal refresh must keep the session page")
+d:refresh({ allow_network = false, reset_page = true })
+assert(d.hn_page == 1, "explicit refresh must reset pagination")
+d.hn_page = 99
+d:show({ allow_network = false })
+assert(d.hn_page == 3 and d.model.hn.page == 3,
+    "out-of-range session page must clamp to the last page")
+assert(cfg_sets == 0, "session page memory must not write to config")
 captured_shell.on_close()
 assert(dispatched[#dispatched].id == "close", "shell close should exit dashboard")
 
+d:set_hn_page(1)
 TEXT_H = 54
 local tight = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
 assert(tight.fits == true and tight.page_size == 3,
     "tall text must degrade from 4 to 3 rows without scrolling")
 assert(tight.model.hn.page_size == 3 and #tight.model.hn.items == 3,
     "degraded model must render three rows")
+
+cfg.hn_items_per_page = 10
+local wide_pref = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(wide_pref.page_size == 3 and wide_pref.page_size_preferred == 10,
+    "configured preferred size must degrade to the largest fitting size")
+assert(wide_pref.probes <= 5, "binary search must bound the number of builds")
+assert(wide_pref.model.hn.page_size == 3 and #wide_pref.model.hn.items == 3,
+    "degraded configured model must render three rows")
+cfg.hn_items_per_page = nil
 TEXT_H = 14
 
 -- Forced-overflow path: a short viewport must use the native scroll fallback,
 -- reserve the scrollbar width and keep the bottom nav outside the scroll area.
 local small = captured_shell.body_factory(SCREEN_W, 500, shell_instance)
 assert(small.fits == false and small.scroll == captured, "overflow must use native scroll fallback")
+assert(small.page_size == 1 and small.probes <= 5,
+    "fallback must settle on one row without unbounded builds")
 assert(small.scroll.dimen.w == SCREEN_W and small.scroll.dimen.h > 0, "fallback viewport wrong")
 assert(small.content_width < body.content_width, "fallback must reserve scrollbar width")
 assert(small.scroll.show_parent == shell_instance and small.scroll.dialog == shell_instance,
@@ -722,6 +749,16 @@ local y_long, last_long = pager_position(card_long)
 local y_short, last_short = pager_position(card_short)
 assert(y_long == y_short, "pager must not jump when the last page has fewer items")
 assert(last_long and last_short, "pager must be the last block of the stories card")
+
+cfg.hn_items_per_page = 2
+d:show({ allow_network = false })
+local two_rows = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(two_rows.page_size == 2 and two_rows.page_size_preferred == 2,
+    "configured page size must be honored when it fits")
+assert(two_rows.probes == 1, "configured size that fits must use the fast path")
+assert(#two_rows.model.hn.items == 2 and two_rows.model.hn.pages == 6,
+    "configured page size must repaginate the model")
+cfg.hn_items_per_page = nil
 
 print("OK dashboard smoke: pages=" .. model.hn.pages .. " rows=" .. tostring(#rows)
     .. " nav=3 fit=1200x" .. tostring(body.viewport:getSize().h)

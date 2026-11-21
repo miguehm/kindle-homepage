@@ -5,6 +5,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 
+local ArticleStore = require("lib/article_store")
 local Config = require("lib/config")
 local Logger = require("lib/logger")
 local Paths = require("lib/paths")
@@ -24,6 +25,16 @@ function KindleHome:init()
     self.paths:ensure_base_dirs()
     self.actions = Actions:new{ config = self.config }
     self:registerActions()
+
+    -- Keep the library Markdown-only: drop legacy adjacent .md.html renders
+    -- and any ephemeral HTML left by a previous session.
+    UIManager:scheduleIn(1, function()
+        pcall(function()
+            local store = ArticleStore:new(self.paths)
+            store:cleanup_legacy_html()
+            store:cleanup_ephemeral_html()
+        end)
+    end)
 
     Logger.info("main", "init", { settings = self.config.settings_path })
 
@@ -75,7 +86,7 @@ function KindleHome:request_dashboard_refresh(opts)
             pcall(function() UIManager:forceRePaint() end)
         end
         local ok, err = pcall(function()
-            dashboard:refresh({ allow_network = net_allowed })
+            dashboard:refresh({ allow_network = net_allowed, reset_page = opts.reset_page })
         end)
         if notice then
             pcall(function() UIManager:close(notice) end)
@@ -126,7 +137,7 @@ function KindleHome:registerActions()
     end)
     self.actions:register("refresh", function(ctx)
         local user_initiated = ctx and (ctx.source == "dashboard" or ctx.source == "dispatcher" or ctx.user_initiated)
-        self:request_dashboard_refresh({ user_initiated = user_initiated })
+        self:request_dashboard_refresh({ user_initiated = user_initiated, reset_page = user_initiated })
     end)
     self.actions:register("close", function(ctx)
         local src = ctx and ctx.source

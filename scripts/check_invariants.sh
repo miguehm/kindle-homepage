@@ -34,11 +34,11 @@ if grep -n 'ScrollHtmlWidget\|dashboard_html\|DashboardHtml' kindlehome.koplugin
     echo "FAIL: dashboard must use the native body, not HTML/ScrollHtmlWidget"
     fail=1
 fi
-if ! grep -q 'if root:getSize().h <= viewport_h then' kindlehome.koplugin/ui/dashboard_body.lua; then
+if ! grep -q 'fits = measured_root:getSize().h <= viewport_h' kindlehome.koplugin/ui/dashboard_body.lua; then
     echo "FAIL: dashboard_body must measure content before deciding to scroll"
     fail=1
 fi
-if ! grep -q 'if root:getSize().h > viewport_h then' kindlehome.koplugin/ui/dashboard_body.lua; then
+if ! grep -q 'if not chosen then' kindlehome.koplugin/ui/dashboard_body.lua; then
     echo "FAIL: dashboard_body must keep native scroll as a last-resort fallback"
     fail=1
 fi
@@ -50,9 +50,12 @@ if ! grep -q 'body.fits = scroll == nil' kindlehome.koplugin/ui/dashboard_body.l
     echo "FAIL: dashboard_body must expose the fit/no-scroll state"
     fail=1
 fi
-if ! grep -q 'local PAGE_SIZE_CHOICES = { 4, 3, 2, 1 }' kindlehome.koplugin/ui/dashboard_body.lua \
-        || ! grep -q 'body.page_size = chosen_size' kindlehome.koplugin/ui/dashboard_body.lua; then
-    echo "FAIL: dashboard_body must degrade rows before showing the scroll bar"
+if ! grep -q 'local DEFAULT_PAGE_SIZE = 4' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'local function measure(page_size)' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'while lo <= hi do' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'body.page_size = chosen_size' kindlehome.koplugin/ui/dashboard_body.lua \
+        || ! grep -q 'body.probes = probes' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard_body must measure a configurable preferred size and degrade to fit before scrolling"
     fail=1
 fi
 if ! grep -q 'HorizontalGroup:new{ align = "top" }' kindlehome.koplugin/ui/dashboard_body.lua \
@@ -90,6 +93,14 @@ if ! grep -q 'HtmlBoxWidget' kindlehome.koplugin/ui/article_html_pager.lua \
     echo "FAIL: article pager must use HtmlBoxWidget + VerticalScrollBar"
     fail=1
 fi
+if grep -q '<img' kindlehome.koplugin/lib/render/md_to_html.lua; then
+    echo "FAIL: Markdown images must not be embedded as <img>"
+    fail=1
+fi
+if ! grep -q 'sanitize_href(url)' kindlehome.koplugin/lib/render/md_to_html.lua; then
+    echo "FAIL: Markdown image URLs must pass through the href sanitizer"
+    fail=1
+fi
 
 # 2) KOReader has no ui/elements/menu_items module; menus must be registered
 #    from addToMainMenu(menu_items).
@@ -115,8 +126,9 @@ if grep -rn 'os\.remove\|os\.rename' --include='*.lua' kindlehome.koplugin/ui >/
     fail=1
 fi
 
-# 5) Inside article_store, cleanup only touches ".tmp" paths.
-bad_fs=$(grep -n 'os\.remove\|os\.rename' kindlehome.koplugin/lib/article_store.lua | grep -v 'tmp' || true)
+# 5) Inside article_store, cleanup only touches ".tmp" paths and marked derived HTML.
+bad_fs=$(grep -n 'os\.remove\|os\.rename' kindlehome.koplugin/lib/article_store.lua \
+    | grep -v 'tmp' | grep -v 'ephemeral cleanup: derived HTML only' || true)
 if [ -n "$bad_fs" ]; then
     echo "FAIL: article_store may only remove/rename .tmp paths:"
     echo "$bad_fs"
@@ -263,7 +275,30 @@ if ! grep -q 'on_prev_page' kindlehome.koplugin/ui/widget/stories_card.lua \
     fail=1
 fi
 
+# 8) Top Stories rows are configurable (1-10, default 4) and only explicit
+#    user refreshes reset the session page; automatic/settings repaints keep it.
+if ! grep -q 'hn_items_per_page' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'hn_items_per_page' kindlehome.koplugin/ui/menus.lua \
+        || ! grep -q 'reset_hn_page' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'reset_page' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'reset_page' kindlehome.koplugin/main.lua; then
+    echo "FAIL: Top Stories rows must be configurable and explicit refreshes must reset the session page"
+    fail=1
+fi
+
+# 9) Derived article HTML is ephemeral: cached outside the content folder,
+#    removed on reader/fallback close, and legacy adjacent .html is migrated.
+if ! grep -q 'ephemeral_articles_dir' kindlehome.koplugin/lib/paths.lua \
+        || ! grep -q 'cache_dir' kindlehome.koplugin/lib/paths.lua \
+        || ! grep -q 'remove_ephemeral' kindlehome.koplugin/lib/article_store.lua \
+        || ! grep -q 'cleanup_legacy_html' kindlehome.koplugin/lib/article_store.lua \
+        || ! grep -q 'on_cleanup' kindlehome.koplugin/ui/article_view.lua \
+        || ! grep -q 'on_cleanup' kindlehome.koplugin/ui/dashboard.lua; then
+    echo "FAIL: derived article HTML must be ephemeral (cache render, close cleanup, legacy migration)"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and session page, ephemeral article HTML, safe image links)"
 fi
 exit "$fail"

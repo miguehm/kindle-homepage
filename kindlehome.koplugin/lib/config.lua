@@ -31,6 +31,7 @@ local DEFAULTS = {
     hnmd_base_url = "https://hnmd.miguehm.com/v1",
     hnmd_api_key = "",
     hnmd_max_items = 10,
+    hn_items_per_page = 4, -- preferred rows per Top Stories page (degrades to fit)
     hnmd_ttl_minutes = 30,
     index_max_bytes = 131072,   -- 128 KiB: /top metadatos (sin cuerpos)
     article_max_bytes = 524288, -- 512 KiB por artículo .md descargado
@@ -155,6 +156,8 @@ local function sanitize(key, value, default)
         return sanitize_base_url(value, default)
     elseif key == "hnmd_max_items" then
         return clamp_int(value, 1, 20, default)
+    elseif key == "hn_items_per_page" then
+        return clamp_int(value, 1, 10, default)
     elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" then
         return clamp_int(value, 1, 10080, default) -- up to 7 days
     elseif key == "http_timeout_s" then

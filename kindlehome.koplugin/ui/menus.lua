@@ -340,6 +340,17 @@ function Menus:settings_items(main_instance)
                         callback = function() Menus:edit_int(config, "hnmd_max_items", _("HN max items (1-20)"), "10", 1, 20, _("HN max items"), function() refresh_dashboard(main_instance) end) end,
                     },
                     {
+                        text_func = function() return _("Items per page: ") .. tostring(config:get("hn_items_per_page")) end,
+                        keep_menu_open = true,
+                        callback = function()
+                            Menus:edit_int(config, "hn_items_per_page", _("HN items per page (1-10)"), "4", 1, 10, _("HN items per page"), function()
+                                local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
+                                if d and d.reset_hn_page then d:reset_hn_page() end
+                                refresh_dashboard(main_instance)
+                            end)
+                        end,
+                    },
+                    {
                         text_func = function() return _("HN TTL (minutes): ") .. tostring(config:get("hnmd_ttl_minutes")) end,
                         keep_menu_open = true,
                         callback = function() Menus:edit_int(config, "hnmd_ttl_minutes", _("HN TTL (minutes)"), "30", 1, 10080, _("HN TTL"), function() refresh_dashboard(main_instance) end) end,

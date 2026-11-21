@@ -48,8 +48,14 @@ assert(paths:documents_root() == legacy, "legacy documents root must be unchange
 assert(paths:articles_hn_dir() == legacy .. "/articles/hn", "legacy articles dir must be unchanged")
 
 local item = { id = "50517488", title = "Outages reported at Bank of America" }
-assert(paths:article_md_path(item) == legacy .. "/articles/hn/50517488-outages-reported-at-bank-of-america.md", "canonical md path changed")
-assert(paths:article_html_path(paths:article_md_path(item)) == legacy .. "/articles/hn/50517488-outages-reported-at-bank-of-america.md.html", "derived html path changed")
+local md_path = paths:article_md_path(item)
+local html_path = paths:article_html_path(md_path)
+assert(md_path == legacy .. "/articles/hn/50517488-outages-reported-at-bank-of-america.md", "canonical md path changed")
+assert(html_path ~= md_path .. ".html", "derived html must not live next to the canonical md")
+assert(html_path:sub(1, #paths:ephemeral_articles_dir() + 1) == paths:ephemeral_articles_dir() .. "/",
+    "derived html must live under the plugin cache")
+assert(html_path:match("%.html$") ~= nil, "derived html extension changed")
+assert(paths:article_html_path(md_path) == html_path, "derived html path must be deterministic")
 assert(paths:article_link_path(item) == legacy .. "/articles/hn/50517488-outages-reported-at-bank-of-america-links.md", "link card path changed")
 assert(paths:cache_dir() == root .. "/data/cache/kindlehome", "cache must stay in DataDir")
 

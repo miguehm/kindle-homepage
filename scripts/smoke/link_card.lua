@@ -35,7 +35,11 @@ os.execute("mkdir -p '" .. dir .. "'")
 local P = {}
 function P:articles_hn_dir() return dir end
 function P:ensure_dir() return true end
-function P:article_html_path(md) return md .. ".html" end
+function P:cache_dir() return dir .. "/cache" end
+function P:ephemeral_articles_dir() return self:cache_dir() .. "/articles" end
+function P:article_html_path(md)
+    return self:ephemeral_articles_dir() .. "/" .. tostring(md:match("([^/]+)$")) .. ".html"
+end
 function P:article_md_path(item)
     local slug = tostring(item.title or "article"):lower():gsub("%s+", "-"):gsub("[^%w%-]", "")
     return dir .. "/" .. tostring(item.id) .. "-" .. slug .. ".md"
@@ -47,6 +51,8 @@ function P:safe_filename(name, _, disambiguator)
     return tostring(name):lower():gsub("%s+", "-") .. "-" .. tostring(disambiguator)
 end
 function P:atomic_write(path, content)
+    local parent = path:match("^(.*)/[^/]+$")
+    if parent then os.execute("mkdir -p '" .. parent .. "'") end
     local f = assert(io.open(path, "wb"))
     f:write(content)
     f:close()
@@ -68,7 +74,10 @@ local meta = { id = "123", title = "Card test", hn_url = "", url = nil, content_
 local saved, err = store:save_link_card(item, meta, "no_content")
 assert(saved, "link card must be written: " .. tostring(err))
 assert(saved.md_path == P:article_link_path(item), "link card must use its own path")
-assert(saved.html_path == saved.md_path .. ".html", "link card html must be derived from its md")
+assert(saved.html_path ~= saved.md_path .. ".html", "link card html must be ephemeral, not adjacent")
+assert(saved.html_path:sub(1, #P:ephemeral_articles_dir() + 1) == P:ephemeral_articles_dir() .. "/",
+    "link card html must live under the cache")
+assert(read(saved.md_path .. ".html") == nil, "link card must not leave html next to its md")
 local md = read(saved.md_path)
 assert(md and md:find("HN discussion: https://news.ycombinator.com/item?id=123", 1, true),
     "missing fallback HN URL")
@@ -94,11 +103,12 @@ assert(html2:find('<a href="https://example.com/story">', 1, true), "source link
 
 local canonical = P:article_md_path(item)
 P:atomic_write(canonical, "# Real article\n\nBody.\n")
-P:atomic_write(canonical .. ".html", "<html><body>old without marker</body></html>")
+P:atomic_write(canonical .. ".html", "<!--kh-meta-v2--><html><body>old render</body></html>")
 local regenerated = store:render_derived(canonical, meta, false)
 assert(regenerated, "old derived html must be regenerated")
 local migrated = read(regenerated)
 assert(migrated:find("<!--kh-meta-v2-->", 1, true), "render marker missing after migration")
+assert(read(canonical .. ".html") == nil, "render_derived must remove the legacy adjacent html")
 
 os.execute("rm -rf '" .. dir .. "'")
 print("OK link card smoke: card=" .. #md .. "B migrated=" .. #migrated .. "B")

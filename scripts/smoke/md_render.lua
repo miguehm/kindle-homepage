@@ -22,6 +22,8 @@ local md = table.concat({
     "###### Sixth",
     "",
     "![diagram alt](https://example.com/remote.png) and [link](https://example.com)",
+    "![query alt](https://example.com/i.png?a=1&b=2)",
+    "![unsafe alt](javascript:alert(1))",
     "",
     "---",
     "",
@@ -44,9 +46,13 @@ assert(html:find("<h6>Sixth</h6>", 1, true), "h6 missing")
 assert(html:find("<blockquote>", 1, true), "blockquote open missing")
 assert(html:find("<div>by someone</div>", 1, true), "blockquote line missing")
 assert(html:find("</blockquote>", 1, true), "blockquote close missing")
-assert(html:find("diagram alt", 1, true), "image alt text missing")
-assert(not html:find("<img", 1, true), "remote images must not be emitted")
-assert(not html:find("remote.png", 1, true), "remote image URL must be dropped")
+assert(html:find('<a href="https://example.com/remote.png">diagram alt</a>', 1, true),
+    "image must become a safe alt-text link")
+assert(html:find('<a href="https://example.com/i.png?a=1&amp;b=2">query alt</a>', 1, true),
+    "image URL must keep escaped query parameters")
+assert(not html:find("<img", 1, true), "images must never be embedded")
+assert(html:find("unsafe alt", 1, true), "unsafe image alt text must remain visible")
+assert(not html:find("href=\"javascript", 1, true), "unsafe image URL must not become a link")
 assert(html:find('href="https://example.com"', 1, true), "safe link missing")
 assert(html:find("<hr/>", 1, true), "hr missing")
 assert(not html:find("<script", 1, true), "raw HTML must be escaped")

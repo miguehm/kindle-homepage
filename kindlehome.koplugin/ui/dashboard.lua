@@ -266,6 +266,12 @@ function Dashboard:_open_document(doc)
     end
 end
 
+function Dashboard:_cleanup_html(html_path)
+    if html_path and self.article_store and type(self.article_store.remove_ephemeral) == "function" then
+        self.article_store:remove_ephemeral(html_path)
+    end
+end
+
 function Dashboard:_open_article(meta, md_path, html_path, status)
     local doc = {
         kind = "hn",
@@ -277,6 +283,7 @@ function Dashboard:_open_article(meta, md_path, html_path, status)
         html_path = html_path,
         on_back = function() self:show({ allow_network = false }) end,
         on_fallback = function() self:_teardown() end,
+        on_cleanup = function() self:_cleanup_html(html_path) end,
     }
     if not doc.html_path then
         local md = self.article_store:load_md(md_path)
@@ -302,6 +309,7 @@ function Dashboard:_open_link_card(item, meta, reason)
         html_path = saved.html_path,
         on_back = function() self:show({ allow_network = false }) end,
         on_fallback = function() self:_teardown() end,
+        on_cleanup = function() self:_cleanup_html(saved.html_path) end,
     }
     if not saved.html_path then
         local md = self.article_store:load_md(saved.md_path)
@@ -362,6 +370,9 @@ end
 
 function Dashboard:ensure_test_article()
     if self.last_test_doc and self.last_test_doc.md_path then
+        local html_path = self.article_store and self.article_store:render_derived(
+            self.last_test_doc.md_path, self.last_test_doc.meta, false)
+        self.last_test_doc.html_path = html_path
         return self.last_test_doc
     end
     if not (self.paths and self.paths.ensure_base_dirs and self.paths.ensure_dir) then
@@ -418,6 +429,7 @@ function Dashboard:ensure_test_article()
         md_path = saved.md_path,
         on_back = function() self:show() end,
         on_fallback = function() self:_teardown() end,
+        on_cleanup = function() self:_cleanup_html(saved.html_path) end,
     }
     Logger.info("dashboard", "test_article_saved", { md = saved.md_path, html = saved.html_path })
     return self.last_test_doc
@@ -448,7 +460,7 @@ function Dashboard:handle_link(uri)
         if self.actions then
             self.actions:dispatch("refresh", { source = "dashboard", dashboard = self, user_initiated = true })
         else
-            self:refresh({ allow_network = false })
+            self:refresh({ allow_network = false, reset_page = true })
         end
         return true
     elseif uri == "kh:close" then
@@ -511,6 +523,12 @@ function Dashboard:set_hn_page(page)
     if self.last_state then
         self:show({ state = self.last_state, allow_network = false })
     end
+end
+
+-- Session-only page reset (no disk persistence): used when the user changes
+-- the page size, where the old page number no longer describes the same grid.
+function Dashboard:reset_hn_page()
+    self.hn_page = 1
 end
 
 function Dashboard:set_refreshing(refreshing)
@@ -603,6 +621,11 @@ function Dashboard:show(opts)
     }
     self.widget = shell
     shell:show()
+    -- Keep the session page number valid when the feed or page size changed
+    -- (the model clamps out-of-range pages).
+    if current_model and current_model.hn and current_model.hn.page then
+        self.hn_page = current_model.hn.page
+    end
     Logger.info("dashboard", "shown", {
         weather = state.weather and state.weather.status,
         hn_items = current_model.hn and #current_model.hn.items or 0,
@@ -613,8 +636,12 @@ function Dashboard:show(opts)
 end
 
 function Dashboard:refresh(opts)
-    Logger.info("dashboard", "refresh", { allow_network = opts and opts.allow_network })
-    self.hn_page = 1
+    opts = opts or {}
+    if opts.reset_page then self:reset_hn_page() end
+    Logger.info("dashboard", "refresh", {
+        allow_network = opts.allow_network,
+        reset_page = opts.reset_page == true,
+    })
     self:show(opts)
 end
 

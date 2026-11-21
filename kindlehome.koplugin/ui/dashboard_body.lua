@@ -23,7 +23,8 @@ local TapRow = require("ui/widget/tap_row")
 local DashboardBody = {}
 
 local SECTION_GAP = 8
-local PAGE_SIZE_CHOICES = { 4, 3, 2, 1 }
+local DEFAULT_PAGE_SIZE = 4
+local MAX_PAGE_SIZE = 10
 
 local BodyWrapper = InputContainer:extend{}
 
@@ -117,24 +118,62 @@ function DashboardBody.build(model, config, width, height, callbacks)
     local margin = Theme.margin(config)
     local content_w = math.max(1, width - 2 * margin)
 
-    local chosen_model, chosen_size, page, root, row, card
-    for _, page_size in ipairs(PAGE_SIZE_CHOICES) do
-        chosen_model = model_for_page(callbacks, model, page_size)
-        page, root, row, card = build_page(chosen_model, config, content_w, callbacks)
-        chosen_size = page_size
-        if root:getSize().h <= viewport_h then
-            break
-        end
+    local preferred = DEFAULT_PAGE_SIZE
+    if config and type(config.get) == "function" then
+        preferred = tonumber(config:get("hn_items_per_page")) or DEFAULT_PAGE_SIZE
+    end
+    preferred = math.floor(preferred)
+    if preferred < 1 then preferred = 1 end
+    if preferred > MAX_PAGE_SIZE then preferred = MAX_PAGE_SIZE end
+
+    local probes = 0
+    local function measure(page_size)
+        probes = probes + 1
+        local measured_model = model_for_page(callbacks, model, page_size)
+        local measured_page, measured_root, measured_row, measured_card =
+            build_page(measured_model, config, content_w, callbacks)
+        return {
+            size = page_size,
+            model = measured_model,
+            page = measured_page,
+            root = measured_root,
+            row = measured_row,
+            card = measured_card,
+            fits = measured_root:getSize().h <= viewport_h,
+        }
     end
 
+    -- Fast path: the preferred size is the common case and costs one build.
+    -- If it overflows, the page height is monotonic in the row count, so a
+    -- binary search finds the largest size that still fits (bounded to
+    -- 1 + ceil(log2(preferred)) builds instead of preferred builds).
+    local chosen = measure(preferred)
+    if not chosen.fits then
+        local best_fit = nil
+        local lo, hi = 1, preferred - 1
+        while lo <= hi do
+            local mid = math.floor((lo + hi) / 2)
+            local probe = measure(mid)
+            if probe.fits then
+                best_fit = probe
+                lo = mid + 1
+            else
+                hi = mid - 1
+            end
+        end
+        chosen = best_fit
+    end
+
+    local chosen_model, chosen_size, page, root, row, card
     local scroll = nil
     local filler = nil
     local viewport
-    if root:getSize().h > viewport_h then
+    if not chosen then
         content_w = math.max(1, width - bar - 2 * margin)
-        chosen_model = model_for_page(callbacks, model, PAGE_SIZE_CHOICES[#PAGE_SIZE_CHOICES])
-        page, root, row, card = build_page(chosen_model, config, content_w, callbacks)
-        chosen_size = PAGE_SIZE_CHOICES[#PAGE_SIZE_CHOICES]
+        chosen = measure(1)
+        chosen_model = chosen.model
+        chosen_size = chosen.size
+        page, root, row, card = chosen.page, chosen.root, chosen.row, chosen.card
         scroll = ScrollableContainer:new{
             dimen = Geom:new{ w = width, h = viewport_h },
             row,
@@ -143,6 +182,9 @@ function DashboardBody.build(model, config, width, height, callbacks)
         scroll.show_parent = callbacks.show_parent
         viewport = scroll
     else
+        chosen_model = chosen.model
+        chosen_size = chosen.size
+        page, root, row, card = chosen.page, chosen.root, chosen.row, chosen.card
         if card then
             local extra = viewport_h - root:getSize().h
             if extra > 0 then
@@ -173,6 +215,8 @@ function DashboardBody.build(model, config, width, height, callbacks)
     body.page = page
     body.model = chosen_model
     body.page_size = chosen_size
+    body.page_size_preferred = preferred
+    body.probes = probes
     body.content_width = content_w
     body.fits = scroll == nil
     return body

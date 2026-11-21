@@ -1,5 +1,6 @@
 -- Top Stories card: inverted Y/HN badge, in-card refresh, numbered rows and
--- a binary-inverted next-page control. Four rows per page by default.
+-- a binary-inverted pager. Rows per page are configured by the caller
+-- (four by default, degraded to fit).
 local Geom = require("ui/geometry")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local HorizontalGroup = require("ui/widget/horizontalgroup")

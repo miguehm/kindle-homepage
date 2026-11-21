@@ -54,10 +54,13 @@ end
 
 local function render_inline(text)
     text = escape_html(text)
-    -- Remote images are out of scope on Kindle (they would trigger network
-    -- fetches from crengine). Keep the alt text, drop the image/link.
-    text = text:gsub("!%[([^%]]*)%]%([^%)]*%)", function(alt)
-        return (alt:match("^%s*(.-)%s*$") or "")
+    -- Images become plain links: the alt text stays visible and the escaped
+    -- URL is emitted only through the same href sanitizer used by links.
+    text = text:gsub("!%[([^%]]*)%]%(([^%)]*)%)", function(alt, url)
+        local label = alt:match("^%s*(.-)%s*$") or ""
+        local safe = sanitize_href(url)
+        if not safe then return label end
+        return '<a href="' .. safe .. '">' .. label .. "</a>"
     end)
     -- code spans first, keep simple (no nesting)
     text = text:gsub("`([^`]+)`", "<code>%1</code>")

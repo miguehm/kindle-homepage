@@ -45,6 +45,12 @@ assert(reloaded:set("unknown_key", 1) == false, "unknown keys must still be reje
 assert(reloaded:set("hnmd_max_items", 99) == true, "clamped key must be settable")
 assert(reloaded:get("hnmd_max_items") == 20, "hnmd_max_items must clamp to 20")
 
+assert(reloaded:get("hn_items_per_page") == 4, "hn_items_per_page must default to 4")
+assert(reloaded:set("hn_items_per_page", 99) == true, "hn_items_per_page must be settable")
+assert(reloaded:get("hn_items_per_page") == 10, "hn_items_per_page must clamp to 10")
+assert(reloaded:set("hn_items_per_page", 0) == true, "hn_items_per_page must accept out-of-range input")
+assert(reloaded:get("hn_items_per_page") == 1, "hn_items_per_page must clamp to 1")
+
 assert(c:get("custom_content_dir") == "", "custom content folder must default to disabled")
 assert(c:validate_custom_dir("/mnt/us/My Docs/Kindle//HN/") == true, "absolute nested path must validate")
 assert(c:validate_custom_dir("relative/path") == false, "relative path must be rejected")

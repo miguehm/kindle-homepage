@@ -3,6 +3,7 @@ local PLUGIN = (arg and arg[1] or ".") .. "/"
 
 local captured, captured_shell, shell_instance, shown = nil, nil, nil, 0
 local READER_THROW = false
+local READER_CALLBACK = nil
 
 package.preload["device"] = function()
     return {
@@ -50,7 +51,8 @@ package.preload["ui/shell"] = function()
 end
 package.preload["apps/reader/readerui"] = function()
     return {
-        showReader = function()
+        showReader = function(_, path, provider, seamless, forced, after_open)
+            READER_CALLBACK = after_open
             if READER_THROW then error("reader failed") end
         end,
     }
@@ -126,27 +128,56 @@ captured_shell = nil
 forced:show({ html_path = "/tmp/article.md.html", meta = { title = "Forced" } })
 assert(captured_shell, "ui_force_article_fallback must bypass ReaderUI")
 
+local function touch(path)
+    local f = assert(io.open(path, "wb"))
+    f:write("html")
+    f:close()
+    return path
+end
+local function exists(path)
+    local f = io.open(path, "rb")
+    if not f then return false end
+    f:close()
+    return true
+end
+
 local fallback_called = false
 local reader_view = ArticleView:new{ config = config, actions = actions }
 assert(reader_view:will_open_in_reader({ html_path = "/tmp/a.html" }) == true)
 assert(reader_view:will_open_in_reader({}) == false)
 captured_shell = nil
-reader_view:show({
-    html_path = "/tmp/a.html",
+local reader_html = touch(os.tmpname())
+local cleaned = 0
+local reader_doc = {
+    html_path = reader_html,
     meta = { title = "Reader" },
     on_fallback = function() fallback_called = true end,
-})
+    on_cleanup = function() cleaned = cleaned + 1; os.remove(reader_html) end,
+}
+reader_view:show(reader_doc)
 assert(captured_shell == nil, "ReaderUI path must not show the fallback shell")
 assert(fallback_called == false, "successful ReaderUI must not call on_fallback")
+assert(type(READER_CALLBACK) == "function", "ReaderUI must receive an after-open callback")
+local reader_closed = 0
+local fake_reader = { onCloseWidget = function() reader_closed = reader_closed + 1 end }
+READER_CALLBACK(fake_reader)
+fake_reader:onCloseWidget()
+assert(cleaned == 1 and not exists(reader_html), "closing ReaderUI must delete the ephemeral HTML")
+assert(reader_closed == 1, "reader close hook must preserve the original onCloseWidget")
 
 READER_THROW = true
 captured_shell = nil
+local failed_html = touch(os.tmpname())
+local failed_cleaned = 0
 reader_view:show({
-    html_path = "/tmp/b.html",
+    html_path = failed_html,
     meta = { title = "Reader" },
     on_fallback = function() fallback_called = true end,
+    on_cleanup = function() failed_cleaned = failed_cleaned + 1; os.remove(failed_html) end,
 })
 assert(fallback_called == true, "failed ReaderUI must call on_fallback")
 assert(captured_shell, "failed ReaderUI must show the fallback shell")
+assert(failed_cleaned == 1 and not exists(failed_html),
+    "failed ReaderUI must delete the unused ephemeral HTML")
 
-print("OK article_view smoke: pager body=" .. #w.body .. "B reader return OK")
+print("OK article_view smoke: pager body=" .. #w.body .. "B reader cleanup OK")
