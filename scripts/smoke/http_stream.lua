@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: Http.get_to_file streaming sink (Lua 5.1) with socket.http stubbed.
 -- Covers chunked writes, Content-Length validation, max_bytes and typed statuses.
 local PLUGIN = (arg and arg[1] or ".") .. "/"

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Sharp rectangular battery indicator: 1px outline, solid fill by capacity.
 -- Drawn with paintRect only, so no arcs/grays are introduced on e-ink.
 --

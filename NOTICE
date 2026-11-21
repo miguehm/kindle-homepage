@@ -1,0 +1,36 @@
+Third-party notices
+===================
+
+This plugin is released under the MIT License (see LICENSE). It is a separate
+work from the applications and services listed below; it does not redistribute
+their code.
+
+Runtime host
+------------
+KOReader (https://github.com/koreader/koreader) is licensed under AGPL-3.0.
+Kindle Home is a plugin loaded by KOReader and uses its public Lua APIs; no
+KOReader source code is bundled in this repository.
+
+Fonts
+-----
+The dashboard renders with the Noto Serif and Noto Sans font files shipped
+with KOReader. Noto fonts are distributed under the SIL Open Font License 1.1.
+No font files are bundled in this repository (a `cfont` fallback is used when
+the fonts are unavailable).
+
+Data services
+-------------
+- Hacker News content is provided by the hnmd service (default endpoint
+  https://hnmd.miguehm.com/v1). An API key may be required by that service.
+- Weather and geocoding data are provided by Open-Meteo
+  (https://open-meteo.com/). No API key is required for the endpoints used.
+- Discussion links point to https://news.ycombinator.com/.
+
+No code from these services is vendored here; the plugin only makes HTTP
+requests to their public APIs.
+
+Icons
+-----
+The SVG icons under `kindlehome.koplugin/assets/icons/` were created for this
+project and are covered by the MIT License above. Native KOReader icon names
+are used only as runtime fallbacks.

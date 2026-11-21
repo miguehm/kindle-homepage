@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Device = require("device")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")

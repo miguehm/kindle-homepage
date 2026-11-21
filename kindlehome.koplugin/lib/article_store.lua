@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local lfs = require("libs/libkoreader-lfs")
 local MdToHtml = require("lib/render/md_to_html")
 local Hnmd = require("lib/hnmd")

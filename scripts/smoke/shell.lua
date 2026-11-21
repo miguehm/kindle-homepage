@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: ui/shell.lua layout, fullscreen hint and exit paths on Lua 5.1.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

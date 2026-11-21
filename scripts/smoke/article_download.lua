@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: ArticleStore:ensure_local download/promote/fallback logic with
 -- the network client stubbed. Uses a real temp directory for the files.
 local PLUGIN = (arg and arg[1] or ".") .. "/"

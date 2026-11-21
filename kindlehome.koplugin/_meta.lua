@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local _ = require("gettext")
 
 return {

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke: Open-Meteo normalization for the redesigned weather panel (Lua 5.1).
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

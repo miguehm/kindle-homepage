@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke: lib/paths.lua must resolve the custom content folder, keep the
 -- legacy modes as fallback, and keep writes canonical/atomic (Lua 5.1).
 local PLUGIN = (arg and arg[1] or ".") .. "/"

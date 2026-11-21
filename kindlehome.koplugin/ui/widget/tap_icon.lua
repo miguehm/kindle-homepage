@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Sharp, monochrome icon tap target shared by the dashboard header, the
 -- bottom navigation and the in-card actions. No ripples, no rounded corners.
 local Geom = require("ui/geometry")

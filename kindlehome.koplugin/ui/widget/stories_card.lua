@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Top Stories card: inverted Y/HN badge, in-card refresh, numbered rows and
 -- a binary-inverted pager. Rows per page are configured by the caller
 -- (four by default, degraded to fit).

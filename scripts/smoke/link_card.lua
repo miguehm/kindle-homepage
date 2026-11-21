@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: fallback link cards and derived-HTML migration for link meta.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Logger = require("lib/logger")
 
 local Actions = {}

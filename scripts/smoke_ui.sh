@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Offline UI smoke test (Lua 5.1): builds the native dashboard/article widget
 # trees with stubbed KOReader modules and asserts model, layout and action wiring.
 set -u

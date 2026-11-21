@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Fullscreen shell: native title bar + native scroll body + native action bar.
 --
 -- Why a shell instead of a bare scroll widget:

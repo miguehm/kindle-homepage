@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: Config defaults/sanitization and optional (nil-default) keys.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

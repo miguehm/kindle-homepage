@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: Markdown -> HTML renderer (Lua 5.1, no KOReader deps).
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

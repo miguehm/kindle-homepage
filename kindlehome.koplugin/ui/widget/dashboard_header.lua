@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Dashboard header: literary title on the left, settings and close on the
 -- right, separated from the body by a single hairline. It replaces TitleBar
 -- only for the dashboard; the article shell keeps the native TitleBar.

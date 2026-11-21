@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: hnmd URL resolution (origin-absolute content URLs, /v1 prefix).
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

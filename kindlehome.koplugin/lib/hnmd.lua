@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Http = require("lib/http")
 local Logger = require("lib/logger")
 

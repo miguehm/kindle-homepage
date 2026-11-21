@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Native action bar: icon + short label per button.
 --
 -- Links inside HTML bodies are tiny, scroll away with the content,

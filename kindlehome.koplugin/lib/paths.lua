@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
 local util = require("util")

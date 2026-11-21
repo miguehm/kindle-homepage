@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Cache = require("lib/cache")
 local Logger = require("lib/logger")
 local Refresh = require("lib/refresh")

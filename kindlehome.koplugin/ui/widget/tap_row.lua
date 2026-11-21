@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Full-width native tap row with bottom hairline handled by the caller.
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")

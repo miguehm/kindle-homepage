@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Fixed three-tab bottom navigation. TODO'S and STORE are visual placeholders:
 -- they report "Coming soon" and never change the active tab.
 local Device = require("device")

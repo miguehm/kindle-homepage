@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Syntax gate for the runtime KOReader actually uses on Kindle: Lua 5.1 / LuaJIT.
 # `luac` from recent distros (5.3/5.4/5.5) accepts syntax that fails on device
 # (e.g. bitwise operators such as `~`), so it must not be used as the only check.

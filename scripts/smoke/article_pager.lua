@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: ui/article_html_pager.lua input and page navigation on Lua 5.1.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

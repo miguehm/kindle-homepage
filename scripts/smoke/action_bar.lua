@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: ui/widget/action_bar.lua sizing and tap wiring on Lua 5.1.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 

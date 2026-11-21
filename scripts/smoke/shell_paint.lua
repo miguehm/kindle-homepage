@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke: the Shell must paint an opaque full-screen background so that stale
 -- pixels from the previous screen cannot bleed through the native title bar.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
