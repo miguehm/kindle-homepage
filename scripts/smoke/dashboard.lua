@@ -478,6 +478,7 @@ local function assert_event_tree(widget, label)
     end
 end
 
+local StoriesCard = require("ui/widget/stories_card")
 local Dashboard = dofile(PLUGIN .. "ui/dashboard.lua")
 local last_shown_doc
 local article_view_stub = {
@@ -506,6 +507,23 @@ assert(captured_shell.header_factory and captured_header, "custom header missing
 assert(type(captured_header.getSize) == "function" and type(captured_header.paintTo) == "function",
     "header must be a real widget (getSize/paintTo)")
 assert(captured_header:getSize().h > 0, "header must report a positive height")
+local header_center = captured_header[1][1]
+local header_row = header_center[1]
+assert(header_center.dimen and header_center.dimen.h == 104,
+    "header row must be vertically centered in a fixed band")
+assert(header_row[1].width == 40 and header_row[#header_row].width == 40,
+    "header margins must be symmetric and match the body margin")
+local header_x, close_right = 0, nil
+for _, widget in ipairs(header_row) do
+    if widget == captured_header.close_button then close_right = header_x + size_of(widget).w end
+    header_x = header_x + size_of(widget).w
+end
+assert(header_x == SCREEN_W, "header row must span the full screen width")
+assert(close_right == SCREEN_W - 40, "settings and close must end at the right body margin")
+assert(captured_header.settings_button.file and captured_header.settings_button.file:find("/header/settings.svg", 1, true),
+    "header settings must use the normalized asset")
+assert(captured_header.close_button.file and captured_header.close_button.file:find("/header/close.svg", 1, true),
+    "header close must use the normalized asset")
 assert(captured_shell.actions == nil, "dashboard must not use the native action bar")
 assert(type(captured_shell.body_factory) == "function", "body factory missing")
 
@@ -532,6 +550,7 @@ assert(body[1][1] == body.viewport and body[1][2] == body.filler and body[1][3] 
 assert(body.viewport[1] and body.viewport[1].width > 0
     and body.viewport[1].width * 2 + body.content_width == SCREEN_W,
     "left margin is missing from the content row")
+assert(size_of(body.filler).h == 0, "stories card must absorb the remaining viewport height")
 assert(d.model.hn.refreshed and has_text(body, d.model.hn.refreshed),
     "compact refreshed label must be in the stories header")
 assert(not has_text(body, "Last refreshed:"), "obsolete footer label must be gone")
@@ -665,6 +684,44 @@ assert(small.scroll.show_parent == shell_instance and small.scroll.dialog == she
 assert(small:getCropRegion() == small.scroll:getCropRegion(), "fallback crop region wrong")
 assert(small[1][1] == small.scroll and small[1][2] == small.nav, "nav must be fixed below the scroll")
 assert_event_tree(small, "dashboard-body-fallback")
+
+local function has_next_icon(widget)
+    if type(widget) ~= "table" then return false end
+    if widget.file and widget.file:find("next-inverse", 1, true) then return true end
+    for _, child in ipairs(widget) do
+        if has_next_icon(child) then return true end
+    end
+    return false
+end
+local function pager_position(card)
+    local content = card[1]
+    local index, y = nil, 0
+    for i, child in ipairs(content) do
+        if has_next_icon(child) then index = i; break end
+    end
+    assert(index, "pager missing from stories card")
+    for i = 1, index - 1 do y = y + size_of(content[i]).h end
+    return y, index == #content
+end
+local card_callbacks = {
+    show_parent = shell_instance,
+    on_refresh = function() end,
+    on_open_hn = function() end,
+    on_prev_page = function() end,
+    on_next_page = function() end,
+}
+local short_state = fixture_state()
+while #short_state.hn.items > 10 do table.remove(short_state.hn.items) end
+local short_model = DashboardModel.build(short_state, { now = NOW, page = 3 })
+assert(#short_model.hn.items == 2 and short_model.hn.pages == 3, "short page fixture wrong")
+local card_long = StoriesCard.build(d.model.hn, cfg_instance, body.content_width, card_callbacks, d.plugin_dir, 900)
+local card_short = StoriesCard.build(short_model.hn, cfg_instance, body.content_width, card_callbacks, d.plugin_dir, 900)
+assert(size_of(card_long).h == 900 and size_of(card_short).h == 900,
+    "stories card must fill the allocated height")
+local y_long, last_long = pager_position(card_long)
+local y_short, last_short = pager_position(card_short)
+assert(y_long == y_short, "pager must not jump when the last page has fewer items")
+assert(last_long and last_short, "pager must be the last block of the stories card")
 
 print("OK dashboard smoke: pages=" .. model.hn.pages .. " rows=" .. tostring(#rows)
     .. " nav=3 fit=1200x" .. tostring(body.viewport:getSize().h)

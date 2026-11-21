@@ -180,6 +180,36 @@ if ! grep -q 'Widget:extend' kindlehome.koplugin/ui/widget/battery_glyph.lua; th
     echo "FAIL: battery glyph must be a real Widget (it receives touch events)"
     fail=1
 fi
+if ! grep -q 'CenterContainer:new{' kindlehome.koplugin/ui/widget/dashboard_header.lua \
+    || ! grep -q 'max_width = title_limit' kindlehome.koplugin/ui/widget/dashboard_header.lua; then
+    echo "FAIL: dashboard header must center its row vertically and bound the title"
+    fail=1
+fi
+header_margins=$(grep -c 'HorizontalSpan:new{ width = margin }' kindlehome.koplugin/ui/widget/dashboard_header.lua || true)
+if [ "${header_margins:-0}" -lt 2 ]; then
+    echo "FAIL: dashboard header must use symmetric leading and trailing margins"
+    fail=1
+fi
+if ! grep -q 'Theme.icon_file(self.plugin_dir, "header", "settings"' kindlehome.koplugin/ui/widget/dashboard_header.lua \
+    || ! grep -q 'Theme.icon_file(self.plugin_dir, "header", "close"' kindlehome.koplugin/ui/widget/dashboard_header.lua; then
+    echo "FAIL: dashboard header icons must use the normalized header assets"
+    fail=1
+fi
+for icon in settings.svg close.svg; do
+    if [ ! -f "kindlehome.koplugin/assets/icons/header/$icon" ]; then
+        echo "FAIL: missing header icon asset header/$icon"
+        fail=1
+    fi
+done
+if ! grep -q 'function StoriesCard.apply_fill' kindlehome.koplugin/ui/widget/stories_card.lua \
+    || ! grep -q 'fill_height' kindlehome.koplugin/ui/widget/stories_card.lua; then
+    echo "FAIL: stories card must support a fixed fill height with a bottom-anchored pager"
+    fail=1
+fi
+if ! grep -q 'StoriesCard.apply_fill(card' kindlehome.koplugin/ui/dashboard_body.lua; then
+    echo "FAIL: dashboard body must give the leftover viewport height to the stories card"
+    fail=1
+fi
 
 if ! grep -q 'callback = function() main_instance:onKindlehomeShowDashboard() end' \
         kindlehome.koplugin/ui/menus.lua \

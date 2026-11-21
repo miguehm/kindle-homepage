@@ -45,7 +45,7 @@ local function assemble(sections, config)
     return root
 end
 
-local function build_sections(model, config, content_w, callbacks)
+local function build_sections(model, config, content_w, callbacks, fill_height)
     local sections = {}
     table.insert(sections, HeroWeather.build(
         model.hero, config, content_w, model.weather, callbacks.plugin_dir))
@@ -54,9 +54,11 @@ local function build_sections(model, config, content_w, callbacks)
         table.insert(sections, DesignText.box(
             model.hint, content_w, config, "body_sm", false, Theme.color.muted))
     end
+    local card = nil
     if model.hn then
-        table.insert(sections, StoriesCard.build(
-            model.hn, config, content_w, callbacks, callbacks.plugin_dir))
+        card = StoriesCard.build(
+            model.hn, config, content_w, callbacks, callbacks.plugin_dir, fill_height)
+        table.insert(sections, card)
     end
     if model.test_article then
         local dev = VerticalGroup:new{ align = "left" }
@@ -76,7 +78,7 @@ local function build_sections(model, config, content_w, callbacks)
             dev,
         })
     end
-    return sections
+    return sections, card
 end
 
 local function model_for_page(callbacks, model, page_size)
@@ -86,8 +88,9 @@ local function model_for_page(callbacks, model, page_size)
     return model
 end
 
-local function build_page(model_for_build, config, content_w, callbacks)
-    local root = assemble(build_sections(model_for_build, config, content_w, callbacks), config)
+local function build_page(model_for_build, config, content_w, callbacks, fill_height)
+    local sections, card = build_sections(model_for_build, config, content_w, callbacks, fill_height)
+    local root = assemble(sections, config)
     local page = LeftContainer:new{
         dimen = Geom:new{ w = content_w, h = root:getSize().h },
         root,
@@ -95,7 +98,7 @@ local function build_page(model_for_build, config, content_w, callbacks)
     local row = HorizontalGroup:new{ align = "top" }
     table.insert(row, HorizontalSpan:new{ width = Theme.margin(config) })
     table.insert(row, page)
-    return page, root, row
+    return page, root, row, card
 end
 
 function DashboardBody.build(model, config, width, height, callbacks)
@@ -114,10 +117,10 @@ function DashboardBody.build(model, config, width, height, callbacks)
     local margin = Theme.margin(config)
     local content_w = math.max(1, width - 2 * margin)
 
-    local chosen_model, chosen_size, page, root, row
+    local chosen_model, chosen_size, page, root, row, card
     for _, page_size in ipairs(PAGE_SIZE_CHOICES) do
         chosen_model = model_for_page(callbacks, model, page_size)
-        page, root, row = build_page(chosen_model, config, content_w, callbacks)
+        page, root, row, card = build_page(chosen_model, config, content_w, callbacks)
         chosen_size = page_size
         if root:getSize().h <= viewport_h then
             break
@@ -130,7 +133,7 @@ function DashboardBody.build(model, config, width, height, callbacks)
     if root:getSize().h > viewport_h then
         content_w = math.max(1, width - bar - 2 * margin)
         chosen_model = model_for_page(callbacks, model, PAGE_SIZE_CHOICES[#PAGE_SIZE_CHOICES])
-        page, root, row = build_page(chosen_model, config, content_w, callbacks)
+        page, root, row, card = build_page(chosen_model, config, content_w, callbacks)
         chosen_size = PAGE_SIZE_CHOICES[#PAGE_SIZE_CHOICES]
         scroll = ScrollableContainer:new{
             dimen = Geom:new{ w = width, h = viewport_h },
@@ -140,6 +143,15 @@ function DashboardBody.build(model, config, width, height, callbacks)
         scroll.show_parent = callbacks.show_parent
         viewport = scroll
     else
+        if card then
+            local extra = viewport_h - root:getSize().h
+            if extra > 0 then
+                StoriesCard.apply_fill(card, card:getSize().h + extra)
+                if root.resetLayout then root:resetLayout() end
+                page.dimen = Geom:new{ w = content_w, h = root:getSize().h }
+                if row.resetLayout then row:resetLayout() end
+            end
+        end
         filler = VerticalSpan:new{ width = math.max(0, viewport_h - row:getSize().h) }
         viewport = row
     end

@@ -7,6 +7,7 @@ local HorizontalSpan = require("ui/widget/horizontalspan")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local TextWidget = require("ui/widget/textwidget")
 local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 
 local Theme = require("lib/render/theme")
 local DesignText = require("ui/widget/design_text")
@@ -125,7 +126,22 @@ local function build_pager(hn, config, content_w, callbacks, plugin_dir)
     return row
 end
 
-function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir)
+function StoriesCard.apply_fill(card, fill_height)
+    local info = card.fill_info
+    if not info or not fill_height then return end
+    local content = card[1]
+    local gap = fill_height - 2 * (info.border + info.padding) - content:getSize().h
+    if gap <= 0 then return end
+    if info.has_pager then
+        table.insert(content, #content, VerticalSpan:new{ width = gap })
+    else
+        table.insert(content, VerticalSpan:new{ width = gap })
+    end
+    if content.resetLayout then content:resetLayout() end
+    card.fill_info = nil
+end
+
+function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir, fill_height)
     local border = Theme.hairline(config)
     local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
@@ -149,18 +165,20 @@ function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir)
         end
     end
 
-    if hn.pages > 1 then
-        table.insert(content, DesignText.span(config, Theme.space.sm))
-        table.insert(content, DesignText.divider(config, content_w))
-        table.insert(content, DesignText.span(config, Theme.space.sm))
-        table.insert(content, build_pager(hn, config, content_w, callbacks, plugin_dir))
-    end
     if hn.message then
         table.insert(content, DesignText.span(config, Theme.space.sm))
         table.insert(content, DesignText.box(hn.message, content_w, config, "body_sm", false, Theme.color.muted))
     end
 
-    return FrameContainer:new{
+    local has_pager = hn.pages > 1
+    if has_pager then
+        table.insert(content, DesignText.span(config, Theme.space.sm))
+        table.insert(content, DesignText.divider(config, content_w))
+        table.insert(content, DesignText.span(config, Theme.space.sm))
+        table.insert(content, build_pager(hn, config, content_w, callbacks, plugin_dir))
+    end
+
+    local frame = FrameContainer:new{
         margin = 0,
         padding = padding,
         bordersize = border,
@@ -168,6 +186,9 @@ function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir)
         background = Theme.color.canvas,
         content,
     }
+    frame.fill_info = { border = border, padding = padding, has_pager = has_pager }
+    StoriesCard.apply_fill(frame, fill_height)
+    return frame
 end
 
 return StoriesCard

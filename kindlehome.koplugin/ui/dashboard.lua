@@ -572,6 +572,7 @@ function Dashboard:show(opts)
             return DashboardHeader:new{
                 title = "Kindle Home",
                 config = self.config,
+                plugin_dir = self.plugin_dir,
                 show_parent = parent,
                 on_settings = function() self:handle_link("kh:settings") end,
                 on_close = function() self:handle_link("kh:close") end,
