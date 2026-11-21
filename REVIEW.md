@@ -25,5 +25,15 @@ Corregido en release 2.4.1: en 2.4.0 el engranaje abría un recuadro diminuto po
 
 Implementado en release 2.7.0 (Fase 22 de `PLAN.md`), pendiente de verificación visual en Kindle PW5: la cabecera usa márgenes simétricos con el cuerpo, centra verticalmente los iconos y emplea assets propios normalizados (`header/settings.svg`, `header/close.svg`). Top Stories absorbe el alto restante del viewport y ancla el paginador al fondo, de modo que las flechas conservan su posición aunque la última página tenga menos historias. Gates y smokes PASS en repo.
 
-- que al volver a entrar a kh, recuerde en que numero de pagina me quedé en el widget de HN, regrese a la primera pagina cuando se haga refresh del contenido con el boton
-- Poder definir la cantidad de items por pagina del widget de HN
+- [x] que al volver a entrar a kh, recuerde en que numero de pagina me quedé en el widget de HN, regrese a la primera pagina cuando se haga refresh del contenido con el boton
+- [x] Poder definir la cantidad de items por pagina del widget de HN
+
+Implementado en release 2.8.0 (Fase 23 de `PLAN.md`), verificado en Kindle PW5 (2026-11-21, confirmado por el usuario): Top Stories recuerda la página durante la sesión (cerrar/reabrir el dashboard y volver de un artículo la conservan) y solo el refresco explícito del botón/dispatcher vuelve a la página 1; nueva opción **Items per page** en Hacker News (1–10, default 4), con el valor configurado como máximo que degrada al mayor número de filas que cabe antes del scroll y reset a página 1 al cambiarlo. Gates y 16 smokes PASS en repo; reiniciar KOReader vuelve a página 1 (alcance aceptado: memoria solo de sesión).
+
+- [x] Se descarga el html y el md, me gustaria que solo se guarde el md
+
+Implementado en release 2.9.0 (Fase 24 de `PLAN.md`), verificado en Kindle PW5 (2026-11-21, confirmado por el usuario): la carpeta de contenido queda solo con `.md` (y link cards `.md`); el HTML para `ReaderUI` se renderiza en `<DataDir>/cache/kindlehome/articles/` y se elimina al cerrar el lector o el pager de fallback, y los `.md.html` heredados se migran en el arranque. Gates y 16 smokes PASS en repo; la copia canónica nunca se borra por `404`/red.
+
+- [x] Se pueden desplegar imagenes en md? usando link?
+
+Implementado en release 2.10.0 (Fase 25 de `PLAN.md`), verificado en Kindle PW5 (2026-11-21, confirmado por el usuario): las imágenes Markdown se muestran como texto alternativo enlazable (`![alt](url)` → `<a href="url">alt</a>`) en el lector nativo y en el pager de fallback; no se incrustan ni descargan imágenes automáticamente y las URLs inseguras quedan como texto plano. Gates y 16 smokes PASS en repo.

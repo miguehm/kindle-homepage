@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.10.0] - 2026-11-21
+
+### Added
+- **Markdown images become safe links.** `![alt](url)` now renders as `<a href="url">alt</a>` in both `ReaderUI` and the fallback pager, so the image description stays visible and can be opened deliberately. Unsafe URLs (e.g. `javascript:`) degrade to plain alt text. No `<img>` is emitted and no network fetch is triggered automatically.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (no embedded images, sanitized image URLs) and `./scripts/smoke_ui.sh` PASS (16 smokes; alt-text link rendering, escaped query parameters, unsafe URL fallback and generated article HTML). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
+
+## [2.9.0] - 2026-11-21
+
+### Added
+- **Legacy `.md.html` migration.** On startup the plugin removes its old derived HTML files from the content folder (only files carrying the render marker are touched); the canonical `.md` is never deleted.
+
+### Changed
+- **Only Markdown is saved in the content folder.** Derived HTML is now rendered to `<DataDir>/cache/kindlehome/articles/` and deleted when the native reader or the fallback pager closes (and when a new article replaces it). KOReader still opens an HTML file in `ReaderUI`, so the render is regenerated on demand from the canonical `.md`; no `.html` is written next to the `.md` anymore.
+- Existing local copies and link cards keep working: their HTML is recreated in the cache from the persisted Markdown.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (ephemeral HTML paths, close cleanup and legacy migration) and `./scripts/smoke_ui.sh` PASS (16 smokes; cache-only HTML paths, legacy removal, reader-close cleanup and fallback cleanup). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
+
+## [2.8.0] - 2026-11-21
+
+### Added
+- **Configurable Top Stories rows per page.** New `hn_items_per_page` setting (1–10, default 4) under **Settings → Hacker News → Items per page**. The configured value is the preferred maximum; the dashboard still degrades rows to the largest count that fits before falling back to the native scroll container. Changing the setting resets Top Stories to page 1.
+
+### Changed
+- **Top Stories remembers its page for the session.** Closing and reopening the dashboard, returning from an article, and automatic refreshes keep the current page. Only an explicit refresh (the in-card reload button or the Dispatcher/gesture action) returns to page 1. The page is session-only: restarting KOReader or reloading the plugin starts again at page 1.
+- **Page fitting uses a hybrid binary search.** The preferred row count is measured first (one build when it fits); if it overflows, a binary search finds the largest fitting size, bounding the work to `1 + ceil(log2(preferred))` builds instead of rebuilding once per row count.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (configurable rows, session page and reset wiring) and `./scripts/smoke_ui.sh` PASS (16 smokes; config clamping, fast-path/binary-search probe bounds, page memory, explicit reset and menu wiring). Kindle PW5 verification PASS (2026-11-21, confirmed by the user).
+
 ## [2.7.0] - 2026-11-18
 
 ### Changed
