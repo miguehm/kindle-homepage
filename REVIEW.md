@@ -19,3 +19,11 @@ Resuelto en release 2.1.0 (Fase 15 de `PLAN.md`): el Shell pinta ahora un fondo 
 Implementado en release 2.4.0 (Fase 19 de `PLAN.md`), pendiente de verificación en Kindle PW5: Tools abre el dashboard sin submenú; los ajustes del plugin viven en un `TouchMenu` abierto desde el engranaje del dashboard; el hero muestra «Updating…» antes del refresco bloqueante; los iconos invertidos conservan su canal alpha (visibles en el pager y en la pestaña activa) y el pager de HN tiene flecha anterior con wrap simétrico (oculto con una sola página). Gates y smokes PASS en repo.
 
 Corregido en release 2.4.1: en 2.4.0 el engranaje abría un recuadro diminuto porque `TouchMenu` interpreta cada entrada de `tab_item_table` como la lista de ítems misma, no como un descriptor con `item_table` anidado. El engranaje pasa ahora el array de secciones directamente como pestaña única; queda pendiente comprobar en PW5 que se despliega a lo ancho con las seis secciones.
+
+- Mejorar la apariencia de la barra del título y los iconos de ajustes y salir: deben estar más a la derecha y mejor alineados.
+- Evitar que los iconos de cambiar página del widget de Hacker News salten de posición cuando la última página tiene menos elementos.
+
+Implementado en release 2.7.0 (Fase 22 de `PLAN.md`), pendiente de verificación visual en Kindle PW5: la cabecera usa márgenes simétricos con el cuerpo, centra verticalmente los iconos y emplea assets propios normalizados (`header/settings.svg`, `header/close.svg`). Top Stories absorbe el alto restante del viewport y ancla el paginador al fondo, de modo que las flechas conservan su posición aunque la última página tenga menos historias. Gates y smokes PASS en repo.
+
+- que al volver a entrar a kh, recuerde en que numero de pagina me quedé en el widget de HN, regrese a la primera pagina cuando se haga refresh del contenido con el boton
+- Poder definir la cantidad de items por pagina del widget de HN

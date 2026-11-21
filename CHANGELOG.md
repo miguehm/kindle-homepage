@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.7.0] - 2026-11-18
+
+### Changed
+- **Dashboard header is aligned to the content grid.** The title now starts at the same left margin as the cards and the settings/close icons end at the matching right margin; both icons are centered vertically in a fixed header band, with the hairline immediately above the body. New normalized `header/settings.svg` and `header/close.svg` assets give both glyphs the same viewBox, stroke weight and optical padding (native KOReader icons remain as fallback).
+- **Top Stories fills the space it occupies, not the number of rows.** The card absorbs the leftover viewport height after the 4→3→2→1 fit decision, and the pager is pinned to its bottom edge. On the last page with fewer stories the arrows stay in exactly the same position; the spare space appears above them instead of pulling the pager upward.
+
+### Verification
+- `./scripts/check_lua51.sh` PASS, `./scripts/check_invariants.sh` PASS (new guards for symmetric header margins, vertical centering, header assets and card fill) and `./scripts/smoke_ui.sh` PASS (16 smokes; the dashboard smoke asserts header geometry and that a 4-item page and a 2-item page share the same card height and pager offset). Pending: Kindle PW5 visual check.
+
 ## [2.6.0] - 2026-11-18
 
 ### Changed

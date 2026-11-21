@@ -153,6 +153,10 @@ Designed for the 6.8-inch display of the Paperwhite 5 (1236 x 1648 physical pixe
 
 Horizontal layouts utilize 4-column structures for library and store views, collapsing to single-column streams with full horizontal bleed for active book reading surfaces. All layout pacing is calculated on a 4px baseline sub-grid (`0.25rem` intervals) to ensure pixel-perfect 1:1 hardware pixel snaps, preventing anti-aliased subpixel blurring during page turns.
 
+The dashboard header follows the same grid as the content: the title starts at the shared outer margin, system icons end at the opposite margin, and both sit vertically centered in a fixed band closed by a hairline. Header glyphs share one viewBox, stroke weight and optical padding so the settings and close controls read as a matched pair.
+
+Top Stories is sized by the space it occupies, not by its current row count. Rows start at the top of the card and the pager is anchored to its bottom edge, so a short final page leaves white space above the controls instead of moving them upward. This keeps repeated taps on the same physical area across page turns — critical on an e-ink panel where layout shifts force full refreshes.
+
 ## Elevation & Depth
 
 This design system avoids all raster shadows, layered blurs, and pseudo-3D lighting models. Depth is achieved exclusively through **structural containment** and **binary inversion**:
