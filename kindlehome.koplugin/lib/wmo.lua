@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Wmo = {}
 
 local MAP = {
@@ -42,7 +43,7 @@ function Wmo.to_text(code)
     return MAP[n] or ("Unknown conditions (code " .. tostring(n) .. ")")
 end
 
--- Monochrome glyph key for DESIGN.md icon assets. Codes are grouped into the
+-- Key for the bundled monochrome weather icon assets. Codes are grouped into the
 -- stable e-ink states; unknown codes get a neutral glyph instead of a blank.
 function Wmo.to_icon(code)
     local n = tonumber(code)

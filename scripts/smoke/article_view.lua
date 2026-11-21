@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: ui/article_view.lua fallback wiring to the native HTML pager.
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 
@@ -119,14 +120,6 @@ for _, spec in ipairs(captured_shell.actions or {}) do
     if spec.label == "Close" then spec.callback() end
 end
 assert(closed, "close action should call on_close")
-
-local forced = ArticleView:new{
-    config = { get = function(_, key) return key == "ui_force_article_fallback" end },
-    actions = actions,
-}
-captured_shell = nil
-forced:show({ html_path = "/tmp/article.md.html", meta = { title = "Forced" } })
-assert(captured_shell, "ui_force_article_fallback must bypass ReaderUI")
 
 local function touch(path)
     local f = assert(io.open(path, "wb"))

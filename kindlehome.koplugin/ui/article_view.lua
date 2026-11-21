@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local UIManager = require("ui/uimanager")
 local ArticleHtmlPager = require("ui/article_html_pager")
 local ReaderUI = require("apps/reader/readerui")
@@ -123,9 +124,7 @@ end
 
 function ArticleView:will_open_in_reader(doc)
     doc = doc or {}
-    local force_fallback = self.config and type(self.config.get) == "function"
-        and self.config:get("ui_force_article_fallback") == true
-    return not not (doc.html_path and can_open_in_reader() and not force_fallback)
+    return not not (doc.html_path and can_open_in_reader())
 end
 
 function ArticleView:show(doc)
@@ -142,9 +141,9 @@ function ArticleView:show(doc)
     local font_size = Theme.font_size(self.config, Theme.ARTICLE_BASE)
     local title = doc.title or (doc.meta and doc.meta.title) or "Article"
 
-    -- Flujo por defecto: abrir el documento local persistido en el lector
-    -- nativo de KOReader (ReaderUI), que ofrece selección de texto,
-    -- anotaciones, progreso, diccionario y modo nocturno, todo offline.
+    -- By default, open the persisted local document in KOReader's native
+    -- reader (ReaderUI), which offers text selection, annotations, progress,
+    -- dictionary and night mode, all offline.
     if self:will_open_in_reader(doc) then
         local ok, opened = pcall(function()
             return self:openInReader(doc.html_path, function() cleanup_doc(doc) end)

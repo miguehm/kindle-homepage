@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local MdToHtml = {}
 
 -- Persisted HTML carries a marker so old derived files can be regenerated when
@@ -6,7 +7,7 @@ local RENDER_MARKER = "<!--kh-meta-v2-->"
 
 -- Relative units only: KOReader's HTML layout passes a DPI-scaled
 -- `default_font_size`, while absolute CSS px would be interpreted as device
--- pixels (tiny on a 300 ppi PaperWhite 5). The same stylesheet is reused for
+-- pixels (tiny on high-DPI e-ink screens). The same stylesheet is reused for
 -- persisted .html opened in crengine, where the reader font size governs em.
 local EINK_CSS = table.concat({
     "@page{margin:0;}",

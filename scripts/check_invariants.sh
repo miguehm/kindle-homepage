@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Structural invariants for kindlehome.koplugin (cheap regression guards).
 set -euo pipefail
 
@@ -109,8 +110,8 @@ if grep -rn 'ui/elements/menu_items' --include='*.lua' kindlehome.koplugin >/dev
     fail=1
 fi
 
-# 3) Article bodies are streamed to disk (PW5 has ~15 MB free RAM): the hnmd
-#    client must use the file sink, not the in-memory getter.
+# 3) Article bodies are streamed to disk (e-ink devices have very little free
+#    RAM): the hnmd client must use the file sink, not the in-memory getter.
 if ! grep -q 'Http\.get_to_file' kindlehome.koplugin/lib/hnmd.lua; then
     echo "FAIL: lib/hnmd.lua must download article bodies via Http.get_to_file"
     fail=1

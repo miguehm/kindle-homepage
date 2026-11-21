@@ -1,4 +1,5 @@
--- Combined clock/status + weather card (DESIGN.md hero). Two columns on the
+-- SPDX-License-Identifier: MIT
+-- Combined clock/status + weather card. Two columns on the
 -- 6.8" portrait canvas, separated by a single vertical hairline.
 local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")

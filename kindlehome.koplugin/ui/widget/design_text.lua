@@ -1,4 +1,5 @@
--- Shared native text/layout helpers for the DESIGN.md dashboard widgets.
+-- SPDX-License-Identifier: MIT
+-- Shared native text/layout helpers for the dashboard widgets.
 local Geom = require("ui/geometry")
 local LineWidget = require("ui/widget/linewidget")
 local TextBoxWidget = require("ui/widget/textboxwidget")

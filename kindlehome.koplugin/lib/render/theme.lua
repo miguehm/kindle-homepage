@@ -1,9 +1,10 @@
+-- SPDX-License-Identifier: MIT
 -- UI theme tokens for Kindle Home.
 --
 -- Rules:
 -- - HTML/CSS uses relative units only (em/%) for type, so MuPDF's
 --   `default_font_size` (already DPI-scaled) governs text size. Absolute px
---   font sizes are physically tiny on a 300 ppi PaperWhite 5 and are
+--   font sizes are physically tiny on high-DPI e-ink screens and are
 --   forbidden.
 -- - Native widget sizes are expressed in design dp and scaled through
 --   Screen:scaleBySize(), which accounts for the device screen size.
@@ -24,8 +25,8 @@ local DEFAULT_SCALE = 1.0
 Theme.UI_BASE = 26
 Theme.ARTICLE_BASE = 25
 
--- DESIGN.md "Paperwhite Monochrome" tokens, translated to the discrete 8-bit
--- grays available on electrophoretic displays. No alpha/dithering/tints.
+-- Monochrome design tokens, translated to the discrete 8-bit grays available
+-- on electrophoretic displays. No alpha/dithering/tints.
 Theme.color = {
     canvas = Blitbuffer.COLOR_WHITE,
     fg = Blitbuffer.COLOR_BLACK,
@@ -36,7 +37,7 @@ Theme.color = {
 }
 
 -- Type scale in design dp (multiplied by ui_font_scale). Serif for display and
--- body, sans for labels/system chrome, as specified by DESIGN.md.
+-- body, sans for labels/system chrome.
 Theme.type = {
     display = 32,
     headline_lg = 26,
@@ -59,8 +60,8 @@ Theme.space = {
     xl = 36,
 }
 
--- Noto Serif/Noto Sans ship with KOReader and match the Literata/Inter roles
--- of DESIGN.md without adding weight to the plugin or requiring user fonts.
+-- Noto Serif/Noto Sans ship with KOReader and provide serif/sans faces without
+-- adding weight to the plugin or requiring user fonts.
 Theme.faces = {
     serif = "NotoSerif-Regular.ttf",
     serif_bold = "NotoSerif-Bold.ttf",

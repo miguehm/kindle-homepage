@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke: native dashboard model + widget tree on plain Lua 5.1.
 -- Covers the Paperwhite redesign: combined hero/weather, paged stories,
 -- fixed bottom nav, custom header and icon assets.
@@ -426,7 +427,7 @@ end
 local cfg = {
     show_battery = true, show_network = true, show_weather = true,
     show_hn = true, refresh_budget_s = 20, hnmd_max_items = 20,
-    ui_font_scale = 1.0, ui_fullscreen = true, ui_show_test_article = true,
+    ui_font_scale = 1.0, ui_fullscreen = true,
     ui_clock_24h = false,
 }
 local cfg_sets = 0
@@ -445,7 +446,7 @@ local actions = {
 
 
 -- KOReader propagates touch events to every child of a container; any widget
--- without handleEvent() crashes the whole app on the first tap (F16.10).
+-- without handleEvent() crashes the whole app on the first tap.
 local event_stubs = {
     "ui/widget/textwidget", "ui/widget/textboxwidget", "ui/widget/linewidget",
     "ui/widget/verticalspan", "ui/widget/horizontalspan", "ui/widget/verticalgroup",
@@ -501,7 +502,6 @@ d.article_store = {
     load_md = function() return "md" end,
 }
 
-d.last_test_doc = { md_path = "test.md" }
 d:show({ allow_network = false })
 assert(captured_shell, "no shell captured")
 assert(captured_shell.header_factory and captured_header, "custom header missing")
@@ -564,7 +564,7 @@ for _, input in ipairs(inputs) do
     if input.is_row then rows[#rows + 1] = input end
     if input.name then nav_cells[#nav_cells + 1] = input end
 end
-assert(#rows == 5, "expected 4 stories + dev row, got " .. tostring(#rows))
+assert(#rows == 4, "expected 4 stories, got " .. tostring(#rows))
 assert(#nav_cells == 3, "expected 3 nav tabs, got " .. tostring(#nav_cells))
 for _, cell in ipairs(nav_cells) do
     assert(type(cell.on_tap) == "function" and cell.show_parent == shell_instance, "nav cell wiring wrong")
@@ -599,7 +599,7 @@ for _, row in ipairs(rows) do
         opened = opened + 1
     end
 end
-assert(opened == 5, "all visible rows must be tappable")
+assert(opened == 4, "all visible rows must be tappable")
 local hn_dispatched = 0
 for _, entry in ipairs(dispatched) do
     if entry.id:match("^open_hn:%d+$") then hn_dispatched = hn_dispatched + 1 end
@@ -682,14 +682,14 @@ assert(dispatched[#dispatched].id == "close", "shell close should exit dashboard
 
 d:set_hn_page(1)
 TEXT_H = 54
-local tight = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+local tight = captured_shell.body_factory(SCREEN_W, 1250, shell_instance)
 assert(tight.fits == true and tight.page_size == 3,
     "tall text must degrade from 4 to 3 rows without scrolling")
 assert(tight.model.hn.page_size == 3 and #tight.model.hn.items == 3,
     "degraded model must render three rows")
 
 cfg.hn_items_per_page = 10
-local wide_pref = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+local wide_pref = captured_shell.body_factory(SCREEN_W, 1250, shell_instance)
 assert(wide_pref.page_size == 3 and wide_pref.page_size_preferred == 10,
     "configured preferred size must degrade to the largest fitting size")
 assert(wide_pref.probes <= 5, "binary search must bound the number of builds")

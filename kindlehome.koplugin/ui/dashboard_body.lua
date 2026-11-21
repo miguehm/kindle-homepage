@@ -1,10 +1,10 @@
+-- SPDX-License-Identifier: MIT
 -- Native dashboard body: a content column that fits the available height when
 -- it can, with a native ScrollableContainer only as an extreme fallback
 -- (large ui_font_scale or landscape). The bottom tab bar stays fixed outside
 -- the content. The wrapper reports the content area as its crop region so
--- KOReader repaints the right framebuffer slice (F9/F15 invariant).
+-- KOReader repaints the right framebuffer slice.
 local Geom = require("ui/geometry")
-local FrameContainer = require("ui/widget/container/framecontainer")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
@@ -18,7 +18,6 @@ local DesignText = require("ui/widget/design_text")
 local HeroWeather = require("ui/widget/hero_weather")
 local StoriesCard = require("ui/widget/stories_card")
 local BottomNav = require("ui/widget/bottom_nav")
-local TapRow = require("ui/widget/tap_row")
 
 local DashboardBody = {}
 
@@ -60,24 +59,6 @@ local function build_sections(model, config, content_w, callbacks, fill_height)
         card = StoriesCard.build(
             model.hn, config, content_w, callbacks, callbacks.plugin_dir, fill_height)
         table.insert(sections, card)
-    end
-    if model.test_article then
-        local dev = VerticalGroup:new{ align = "left" }
-        table.insert(dev, DesignText.line("DEVELOPMENT", config, "label_md", true, Theme.color.muted))
-        table.insert(dev, DesignText.span(config, 4))
-        table.insert(dev, TapRow:new{
-            content_group = DesignText.box("Open test article", content_w, config, "body_md"),
-            show_parent = callbacks.show_parent,
-            on_tap = callbacks.on_test,
-        })
-        table.insert(sections, FrameContainer:new{
-            margin = 0,
-            padding = Theme.native_size(config, 8),
-            bordersize = Theme.hairline(config),
-            color = Theme.color.hairline,
-            background = Theme.color.canvas,
-            dev,
-        })
     end
     return sections, card
 end

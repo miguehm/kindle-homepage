@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 -- Smoke test: text-input menus must never build a ButtonTable row with a nil
 -- hole, the API-key Clear button must close its own dialog, and the custom
 -- content folder is chosen with KOReader's native PathChooser.
@@ -255,7 +256,7 @@ assert(values.custom_content_dir == "", "reset must clear the custom folder")
 assert(done == 8, "on_done not called after reset")
 assert(messages[#messages].text == "Custom content folder cleared. Using the default location.", "path_reset message missing")
 
-local dashboard = { widget = {}, last_test_doc = { md_path = "/old/doc.md" } }
+local dashboard = { widget = {} }
 local refresh_calls = 0
 local reset_page_calls = 0
 function dashboard:refresh() refresh_calls = refresh_calls + 1 end
@@ -291,7 +292,6 @@ assert(picker_entry and picker_entry.keep_menu_open, "picker menu entry missing"
 picker_entry.callback()
 choose("/mnt/us/From Menu")
 assert(values.custom_content_dir == "/mnt/us/From Menu", "menu callback did not apply the picked path")
-assert(dashboard.last_test_doc == nil, "menu callback must clear last_test_doc")
 assert(refresh_calls == 1, "menu callback must refresh the open dashboard")
 
 Menus:show_settings(main_instance)

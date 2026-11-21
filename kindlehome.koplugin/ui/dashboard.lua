@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Device = require("device")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -26,7 +27,6 @@ function Dashboard:new(opts)
         widget = nil,
         hn_page = 1,
         article_store = opts.paths and ArticleStore:new(opts.paths) or nil,
-        last_test_doc = nil,
         hn_state = nil,
         hn_items = {},
         hn_item_index = {},
@@ -320,10 +320,6 @@ function Dashboard:_open_link_card(item, meta, reason)
 end
 
 function Dashboard:open_hn_item(id)
-    if id == "test-phase3" then
-        self:open_test_article()
-        return
-    end
     local item = self:get_hn_item(id)
     if not item then
         self:show_notice(Messages.reading("not_found"))
@@ -368,92 +364,6 @@ function Dashboard:open_hn_item(id)
     self:_open_article(meta, res.md_path, res.html_path, "ok")
 end
 
-function Dashboard:ensure_test_article()
-    if self.last_test_doc and self.last_test_doc.md_path then
-        local html_path = self.article_store and self.article_store:render_derived(
-            self.last_test_doc.md_path, self.last_test_doc.meta, false)
-        self.last_test_doc.html_path = html_path
-        return self.last_test_doc
-    end
-    if not (self.paths and self.paths.ensure_base_dirs and self.paths.ensure_dir) then
-        Logger.warn("dashboard", "test_article_no_paths")
-        return nil, "paths_unavailable"
-    end
-    self.paths:ensure_base_dirs()
-    self.paths:ensure_dir(self.paths:articles_hn_dir())
-    if not self.article_store then
-        self.article_store = ArticleStore:new(self.paths)
-    end
-    local meta = {
-        id = "test-phase3",
-        title = "KindleHome Phase 3 Test Article",
-        source = "kindlehome:test",
-        date = os.date("%Y-%m-%d"),
-        status = "ok",
-    }
-    local md = table.concat({
-        "# Phase 3 Reading Test",
-        "",
-        "This article verifies MD to HTML rendering, persistence (.md/.html), and overlay navigation.",
-        "",
-        "## Formatting",
-        "",
-        "- Bullet item",
-        "- **Bold** and *italic* and `inline code`",
-        "1. Ordered item",
-        "",
-        "A [safe link](https://example.com) and an unsafe javascript: link should be rendered safely.",
-        "",
-        "```",
-        "preformatted code block",
-        "line 2",
-        "```",
-        "",
-        "---",
-        "",
-        "Escaping check: <script>alert('x')</script> & <b>tag</b>.",
-    }, "\n")
-    local saved, err = self.article_store:save({ kind = "hn", meta = meta, md = md })
-    if not saved then
-        Logger.err("dashboard", "test_article_save_failed", { err = err })
-        return nil, err
-    end
-    self.last_test_doc = {
-        kind = "hn",
-        id = meta.id,
-        title = meta.title,
-        meta = meta,
-        md = md,
-        html = saved.html,
-        html_path = saved.html_path,
-        md_path = saved.md_path,
-        on_back = function() self:show() end,
-        on_fallback = function() self:_teardown() end,
-        on_cleanup = function() self:_cleanup_html(saved.html_path) end,
-    }
-    Logger.info("dashboard", "test_article_saved", { md = saved.md_path, html = saved.html_path })
-    return self.last_test_doc
-end
-
-function Dashboard:open_test_article()
-    local doc, err = self:ensure_test_article()
-    if not doc then
-        if self.article_view then
-            self.article_view:show({ status = "content_unavailable", title = "Reading", meta = { status = tostring(err or "unavailable") } })
-        end
-        return
-    end
-    local keep_dashboard = self.article_view
-        and type(self.article_view.will_open_in_reader) == "function"
-        and self.article_view:will_open_in_reader(doc)
-    if not keep_dashboard then self:_teardown() end
-    if self.article_view then
-        self.article_view:show(doc)
-    else
-        Logger.warn("dashboard", "no_article_view")
-    end
-end
-
 function Dashboard:handle_link(uri)
     uri = tostring(uri or "")
     if uri == "kh:refresh" then
@@ -468,13 +378,6 @@ function Dashboard:handle_link(uri)
             self.actions:dispatch("close", { source = "dashboard", dashboard = self })
         else
             self:close()
-        end
-        return true
-    elseif uri == "kh:test" then
-        if self.actions then
-            self.actions:dispatch("open_hn:test-phase3", { source = "dashboard", dashboard = self })
-        else
-            self:open_test_article()
         end
         return true
     elseif uri == "kh:settings" then
@@ -560,16 +463,13 @@ function Dashboard:show(opts)
     end
     if opts.refreshing ~= nil then state.refreshing = opts.refreshing == true end
     self.refreshing = state.refreshing == true
-    state.test_article_ready = self.last_test_doc ~= nil
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
 
-    local show_test = not self.config or self.config:get("ui_show_test_article") == true
     local clock_24h = self.config and self.config:get("ui_clock_24h") == true
     local now = os.time()
     local function build_model(page_size)
         return DashboardModel.build(state, {
             now = now,
-            test_article_ready = show_test and state.test_article_ready,
             page = self.hn_page,
             clock_24h = clock_24h,
             page_size = page_size,
@@ -602,7 +502,6 @@ function Dashboard:show(opts)
                 plugin_dir = self.plugin_dir,
                 model_for = build_model,
                 on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
-                on_test = function() self:handle_link("kh:test") end,
                 on_refresh = function() self:handle_link("kh:refresh") end,
                 on_next_page = function()
                     local pages = current_model.hn and current_model.hn.pages or 0

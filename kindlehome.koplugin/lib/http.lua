@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 local socket = require("socket")
@@ -161,8 +162,8 @@ function Http.get(url, opts)
     return res
 end
 
--- Streaming GET to a file. The body is never accumulated in RAM (Kindle PW5
--- has ~15 MB free), max_bytes is enforced while receiving, Content-Length is
+-- Streaming GET to a file. The body is never accumulated in RAM (e-ink devices
+-- have very little free memory), max_bytes is enforced while receiving, Content-Length is
 -- validated, and the destination is removed on any failure. Callers pass a
 -- temporary path and promote it with rename once ok.
 local function do_get_to_file(url, opts)

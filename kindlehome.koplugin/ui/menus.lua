@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Device = require("device")
 local UIManager = require("ui/uimanager")
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -436,14 +437,6 @@ function Menus:settings_items(main_instance)
                             config:set("ui_clock_24h", not config:get("ui_clock_24h")); config:flush(); refresh_dashboard(main_instance)
                         end,
                     },
-                    {
-                        text_func = function() return _("Show test article link: ") .. bool_text(config:get("ui_show_test_article")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("ui_show_test_article") and true or false end,
-                        callback = function()
-                            config:set("ui_show_test_article", not config:get("ui_show_test_article")); config:flush(); refresh_dashboard(main_instance)
-                        end,
-                    },
                 },
             },
             {
@@ -505,8 +498,6 @@ function Menus:settings_items(main_instance)
                         keep_menu_open = true,
                         callback = function()
                             Menus:edit_custom_content_dir(config, paths, function()
-                                local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
-                                if d then d.last_test_doc = nil end
                                 refresh_dashboard(main_instance)
                             end)
                         end,
@@ -516,8 +507,6 @@ function Menus:settings_items(main_instance)
                         keep_menu_open = true,
                         callback = function()
                             Menus:reset_custom_content_dir(config, paths, function()
-                                local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
-                                if d then d.last_test_doc = nil end
                                 refresh_dashboard(main_instance)
                             end)
                         end,

@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local DashboardModel = {}
 
 local PAGE_SIZE = 4
@@ -230,7 +231,6 @@ function DashboardModel.build(state, opts)
         weather = weather,
         hn = hn,
         nav = { active = "dashboard", tabs = { "dashboard", "todos", "store" } },
-        test_article = opts.test_article_ready == true,
     }
 end
 

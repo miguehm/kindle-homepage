@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: MIT
 local Dispatcher = require("dispatcher")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -149,17 +150,10 @@ function KindleHome:registerActions()
         self:getDashboard():close()
     end)
     self.actions:register("open_hn", function(ctx, _, arg)
+        if arg == nil or arg == "" then return end
         local d = (ctx and ctx.dashboard) or self:getDashboard()
-        if arg == nil or arg == "" then
-            d:open_test_article()
-            return
-        end
         if type(d.open_hn_item) == "function" then
             d:open_hn_item(arg)
-            return
-        end
-        if arg == "test-phase3" then
-            d:open_test_article()
             return
         end
         if self.article_view then
