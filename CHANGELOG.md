@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.12.1] - 2026-11-22
+
+### Fixed
+- **Refresh is back in TODO'S.** The `cre.render.reload` button now sits in the TASKS card header next to `+` and dispatches the existing `kh:refresh` flow. It had disappeared when the TASK LISTS card (which used to host it) was removed in 2.12.0.
+- **Details can be created and edited.** Adding and editing a task now use a single `MultiInputDialog` with two fields (text/hashtags and a multiline details field), so notes can be supplied at creation time too. The **`notice-info`** and **`edit`** icons are shown on every row, including tasks without details; `notice-info` opens the full note in a text viewer.
+- Replaced the unicode `✎`, `↗` and `i` glyphs (missing from the bundled Noto fonts) with KOReader's native SVG icons; the per-tag Markdown opener now uses `book.opened`.
+
+## [2.12.0] - 2026-11-22
+
+### Added
+- **Tag filter chips in TODO'S.** The task list now has **Todas / #tag (n) / Sin etiqueta** chips that filter tasks locally over the cached index, with no extra requests. Each tag chip includes a **`↗`** glyph that opens the tag's Markdown (`/v1/todos/tags/<tag>.md`) in KOReader's native reader, re-downloaded on open because the Markdown is mutable.
+- **Task `details`.** A new optional note (up to 1000 bytes, line breaks preserved) created and edited via `POST`/`PATCH`, shown as a two-line preview in the task row with an **`i`** glyph for the full text and a **`✎`** glyph to edit it. Indented details lines in Markdown are rendered inside their task item.
+
+### Changed
+- The Markdown **TASK LISTS** card and the `/todos/top` index are gone from the plugin; the same JSON index now drives the list, the filter and the CRUD. The backend endpoints remain available to other clients.
+- **Show tag filters** replaces "Include tag lists" in TODO'S settings. Requires backend OpenAPI 1.2.0 for `details`; tasks without the field keep working.
+
+## [2.11.0] - 2026-11-22
+
+### Added
+- **TODO'S is now a working tab.** Tapping it opens its own full-screen view with the same header and bottom navigation as the dashboard. It reads task lists from hnmd's `/todos/top?tags=true` (opened in KOReader's native reader, re-downloaded on every refresh because the Markdown is mutable) and tasks from `/todos?status=all`.
+- **Task management.** Add a task with `#tags`, toggle done/undone, rename it, and delete it with confirmation. Writes use the existing `hnmd_api_key` through new `Http.post_json` / `Http.patch_json` / `Http.delete` helpers, with typed errors, a 64 KiB request cap and no automatic retry for `POST` or on `401`. Caches are invalidated after every write.
+- Markdown task lists (`- [ ]` / `- [x]`) now render with a visible checkbox marker instead of literal brackets.
+
+### Changed
+- New settings under **TODO'S**: enable/disable, include per-tag lists and TTL (default 5 minutes). Writes require the server to allow them (`API_KEYS` or `TODO_ALLOW_INSECURE_WRITES`).
+- Fixed a latent cache-first bug in `lib/refresh.lua`: a fresh cache entry was always treated as expired.
+
 ## [2.10.0] - 2026-11-21
 
 ### Added
