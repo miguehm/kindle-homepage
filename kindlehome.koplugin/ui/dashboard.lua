@@ -390,7 +390,11 @@ function Dashboard:handle_link(uri)
     local tab = uri:match("^kh:nav:(.+)$")
     if tab then
         if tab == "dashboard" then return true end
-        self:show_notice(Messages.for_kind("coming_soon", "Coming soon."))
+        if self.actions then
+            self.actions:dispatch("nav", { from = "dashboard", tab = tab })
+        else
+            self:show_notice(Messages.for_kind("coming_soon", "Coming soon."))
+        end
         return true
     end
 

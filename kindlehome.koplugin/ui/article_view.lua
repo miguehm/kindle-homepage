@@ -78,7 +78,10 @@ function ArticleView:handle_link(uri)
         return true
     elseif uri == "kh:dashboard" then
         if self.actions then
-            self.actions:dispatch("close", { source = "article_view", view = self })
+            local current = self.current or {}
+            self.actions:dispatch("close", {
+                source = "article_view", view = self, origin = current.origin,
+            })
             return true
         end
     elseif uri == "kh:close" then
@@ -95,6 +98,20 @@ local function cleanup_doc(doc)
     end
 end
 
+function ArticleView:_notify_close(doc)
+    doc = doc or self.current
+    if doc and type(doc.on_close) == "function" then
+        doc.on_close()
+        return
+    end
+    if self.on_close then pcall(self.on_close) end
+end
+
+function ArticleView:_reader_close(doc)
+    cleanup_doc(doc)
+    self:_notify_close(doc)
+end
+
 local function build_actions(doc, view)
     local specs = {}
     if type(doc.on_back) == "function" then
@@ -109,7 +126,7 @@ local function build_actions(doc, view)
             icon = "book.opened",
             label = "Reader",
             callback = function()
-                local opened = view:openInReader(doc.html_path, function() cleanup_doc(doc) end)
+                local opened = view:openInReader(doc.html_path, function() view:_reader_close(doc) end)
                 if not opened then cleanup_doc(doc) end
             end,
         })
@@ -146,7 +163,7 @@ function ArticleView:show(doc)
     -- dictionary and night mode, all offline.
     if self:will_open_in_reader(doc) then
         local ok, opened = pcall(function()
-            return self:openInReader(doc.html_path, function() cleanup_doc(doc) end)
+            return self:openInReader(doc.html_path, function() self:_reader_close(doc) end)
         end)
         if ok and opened ~= false then
             Logger.info("article_view", "opened_in_reader", { path = doc.html_path })
@@ -201,11 +218,10 @@ function ArticleView:_back()
 end
 
 function ArticleView:_closed_by_user()
-    cleanup_doc(self.current)
+    local doc = self.current
+    cleanup_doc(doc)
     self.widget = nil
-    if self.on_close then
-        pcall(self.on_close)
-    end
+    self:_notify_close(doc)
 end
 
 function ArticleView:_teardown()
@@ -252,11 +268,10 @@ function ArticleView:openInReader(path, on_close)
 end
 
 function ArticleView:close()
-    cleanup_doc(self.current)
+    local doc = self.current
+    cleanup_doc(doc)
     self:_teardown()
-    if self.on_close then
-        pcall(self.on_close)
-    end
+    self:_notify_close(doc)
     Logger.info("article_view", "closed")
 end
 

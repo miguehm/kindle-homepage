@@ -28,20 +28,23 @@ local function custom_folder_active(config)
     return type(value) == "string" and value ~= ""
 end
 
-local function refresh_dashboard(main_instance)
-    if not (main_instance and main_instance.getDashboard) then return end
-    local d = main_instance:getDashboard()
-    -- Only repaint when the dashboard is already open; changing a setting must
-    -- not pop it up on top of the menu.
-    if not (d and d.widget) then return end
+local function refresh_open_view(main_instance, getter, name)
+    if not (main_instance and getter) then return end
+    local ok, view = pcall(getter, main_instance)
+    if not ok or not (view and view.widget) then return end
     if main_instance.settings_menu then
         main_instance.dashboard_refresh_pending = true
         return
     end
-    local ok, err = pcall(function() d:refresh({ allow_network = false }) end)
-    if not ok then
-        Logger.err("menus", "dashboard_refresh_failed", { err = tostring(err) })
+    local refreshed, err = pcall(function() view:refresh({ allow_network = false }) end)
+    if not refreshed then
+        Logger.err("menus", "view_refresh_failed", { view = name, err = tostring(err) })
     end
+end
+
+local function refresh_dashboard(main_instance)
+    refresh_open_view(main_instance, main_instance and main_instance.getDashboard, "dashboard")
+    refresh_open_view(main_instance, main_instance and main_instance.getTodos, "todos")
 end
 
 local function mask_key(key)
@@ -361,6 +364,39 @@ function Menus:settings_items(main_instance)
                         keep_menu_open = true,
                         callback = function()
                             show_info(_("API key/base URL can also be edited in settings/kindlehome.lua."), 5)
+                        end,
+                    },
+                },
+            },
+            {
+                text = _("TODO'S"),
+                sub_item_table = {
+                    {
+                        text_func = function() return _("TODO'S enabled: ") .. bool_text(config:get("todos_enabled")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("todos_enabled") and true or false end,
+                        callback = function()
+                            config:set("todos_enabled", not config:get("todos_enabled")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("Show tag filters: ") .. bool_text(config:get("todos_include_tags")) end,
+                        keep_menu_open = true,
+                        checked_func = function() return config:get("todos_include_tags") and true or false end,
+                        callback = function()
+                            config:set("todos_include_tags", not config:get("todos_include_tags")); config:flush(); refresh_dashboard(main_instance)
+                        end,
+                    },
+                    {
+                        text_func = function() return _("TODO'S TTL (minutes): ") .. tostring(config:get("todos_ttl_minutes")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "todos_ttl_minutes", _("TODO'S TTL (minutes)"), "5", 1, 10080, _("TODO'S TTL"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Write permissions"),
+                        keep_menu_open = true,
+                        callback = function()
+                            show_info(_("Adding and updating tasks uses the HN API key. The server must allow writes (API_KEYS or TODO_ALLOW_INSECURE_WRITES)."), 7)
                         end,
                     },
                 },

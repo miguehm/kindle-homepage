@@ -45,6 +45,12 @@ function KindleHome:init()
         title = _("Kindle Home"),
         general = true,
     })
+    Dispatcher:registerAction("kindlehome_show_todos", {
+        category = "none",
+        event = "KindlehomeShowTodos",
+        title = _("Kindle Home: TODO'S"),
+        general = true,
+    })
     self.ui.menu:registerToMainMenu(self)
 end
 
@@ -59,7 +65,7 @@ end
 
 function KindleHome:request_dashboard_refresh(opts)
     opts = opts or {}
-    local dashboard = self:getDashboard()
+    local view = opts.view or self:getDashboard()
 
     if Refresh.is_in_progress() then
         UIManager:show(InfoMessage:new{ text = _("Refresh already in progress."), timeout = 2 })
@@ -78,8 +84,8 @@ function KindleHome:request_dashboard_refresh(opts)
             return
         end
         local notice = nil
-        if dashboard.widget then
-            dashboard:set_refreshing(true)
+        if view.widget then
+            view:set_refreshing(true)
             pcall(function() UIManager:forceRePaint() end)
         elseif opts.user_initiated then
             notice = InfoMessage:new{ text = _("Refreshing…"), timeout = 8 }
@@ -87,7 +93,7 @@ function KindleHome:request_dashboard_refresh(opts)
             pcall(function() UIManager:forceRePaint() end)
         end
         local ok, err = pcall(function()
-            dashboard:refresh({ allow_network = net_allowed, reset_page = opts.reset_page })
+            view:refresh({ allow_network = net_allowed, reset_page = opts.reset_page })
         end)
         if notice then
             pcall(function() UIManager:close(notice) end)
@@ -96,7 +102,7 @@ function KindleHome:request_dashboard_refresh(opts)
         if not ok then
             Logger.err("main", "refresh_failed", { err = tostring(err) })
             UIManager:show(InfoMessage:new{ text = Messages.refresh_result("exception"), timeout = 4 })
-            pcall(function() dashboard:show({ allow_network = false, refresh_hint = Messages.refresh_result("exception") }) end)
+            pcall(function() view:show({ allow_network = false, refresh_hint = Messages.refresh_result("exception") }) end)
         end
     end
 
@@ -116,7 +122,7 @@ function KindleHome:request_dashboard_refresh(opts)
             end
         end)
         if ok_prompt and prompted then
-            pcall(function() dashboard:show({ allow_network = false, refresh_hint = Messages.for_kind("offline") }) end)
+            pcall(function() view:show({ allow_network = false, refresh_hint = Messages.for_kind("offline") }) end)
             return
         end
         UIManager:show(InfoMessage:new{ text = Messages.for_kind("offline"), timeout = 3 })
@@ -137,17 +143,42 @@ function KindleHome:registerActions()
         })
     end)
     self.actions:register("refresh", function(ctx)
-        local user_initiated = ctx and (ctx.source == "dashboard" or ctx.source == "dispatcher" or ctx.user_initiated)
-        self:request_dashboard_refresh({ user_initiated = user_initiated, reset_page = user_initiated })
+        local src = ctx and ctx.source
+        local user_initiated = ctx and (src == "dashboard" or src == "todos"
+            or src == "dispatcher" or ctx.user_initiated)
+        local view = src == "todos" and self:getTodos() or nil
+        self:request_dashboard_refresh({ view = view, user_initiated = user_initiated, reset_page = user_initiated })
     end)
     self.actions:register("close", function(ctx)
         local src = ctx and ctx.source
         if src == "article_view" and self.article_view then
+            local origin = ctx and ctx.origin
             self.article_view:close()
+            if origin == "todos" then
+                self:getTodos():close()
+            end
             self:getDashboard():show({ allow_network = false })
             return
         end
+        if src == "todos" then
+            self:getTodos():close()
+            return
+        end
         self:getDashboard():close()
+    end)
+    self.actions:register("nav", function(ctx, _, arg)
+        local tab = arg or (ctx and ctx.tab)
+        if tab == "todos" then
+            if self.dashboard and self.dashboard.widget then self.dashboard:close() end
+            self:getTodos():show({ allow_network = false })
+        elseif tab == "dashboard" then
+            if self.todos_view and self.todos_view.widget then self.todos_view:close() end
+            self:getDashboard():show({ allow_network = false })
+        else
+            UIManager:show(InfoMessage:new{
+                text = Messages.for_kind("coming_soon", "Coming soon."), timeout = 4,
+            })
+        end
     end)
     self.actions:register("open_hn", function(ctx, _, arg)
         if arg == nil or arg == "" then return end
@@ -195,10 +226,40 @@ function KindleHome:getDashboard()
     return self.dashboard
 end
 
+function KindleHome:getTodos()
+    if not self.todos_view then
+        local TodosView = dofile(self.path .. "/ui/todos.lua")
+        self.todos_view = TodosView:new{
+            config = self.config,
+            paths = self.paths,
+            actions = self.actions,
+            article_view = self:getArticleView(),
+            plugin_dir = self.path,
+        }
+        Logger.info("main", "todos_view_created")
+    end
+    return self.todos_view
+end
+
+function KindleHome:onKindlehomeShowTodos()
+    if self.dashboard and self.dashboard.widget then self.dashboard:close() end
+    self:getTodos():show({ allow_network = false })
+    if self.config:get("refresh_on_open") then
+        UIManager:scheduleIn(0.5, function()
+            if Refresh.is_in_progress() then return end
+            self:request_dashboard_refresh({
+                view = self:getTodos(), user_initiated = true, allow_network = is_online(),
+            })
+        end)
+    end
+    return true
+end
+
 function KindleHome:onKindlehomeShowDashboard()
     -- Safe/idempotent open: Dispatcher/gesture/profile calls reuse the dashboard flow.
     -- Always paint cached state first so opening never blocks on network; the
     -- optional refresh runs afterwards, outside this paint.
+    if self.todos_view and self.todos_view.widget then self.todos_view:close() end
     self:getDashboard():show({ allow_network = false })
     if self.config:get("refresh_on_open") then
         UIManager:scheduleIn(0.5, function()

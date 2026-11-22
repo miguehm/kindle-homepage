@@ -52,6 +52,10 @@ local function origin_of(base)
     return base:match("^(https://[^/]+)")
 end
 
+function Hnmd.base_url(config)
+    return normalize_base_url(config and config:get("hnmd_base_url"))
+end
+
 function Hnmd.resolve_content_url(base, content_url)
     base = normalize_base_url(base)
     if not base then
@@ -128,14 +132,8 @@ local function clamp_items(n)
     return math.floor(n)
 end
 
-function Hnmd.fetch_index(config, opts)
+local function fetch_index_at(config, url, opts, max_items)
     opts = opts or {}
-    local base = normalize_base_url(config and config:get("hnmd_base_url"))
-    if not base then
-        return { ok = false, error_kind = "parse", error = "bad_base_url" }
-    end
-    local max_items = clamp_items(config and config:get("hnmd_max_items"))
-    local url = base .. "/top?limit=" .. tostring(max_items)
     local timeout_s = opts.timeout_s or (config and config:get("http_timeout_s")) or 10
     local max_bytes = opts.max_bytes or (config and config:get("index_max_bytes")) or 131072
     local api_key = config and config:get("hnmd_api_key") or ""
@@ -192,6 +190,16 @@ function Hnmd.fetch_index(config, opts)
         payload = payload,
         fetched_at = os.time(),
     }
+end
+
+function Hnmd.fetch_index(config, opts)
+    opts = opts or {}
+    local base = normalize_base_url(config and config:get("hnmd_base_url"))
+    if not base then
+        return { ok = false, error_kind = "parse", error = "bad_base_url" }
+    end
+    local max_items = clamp_items(config and config:get("hnmd_max_items"))
+    return fetch_index_at(config, base .. "/top?limit=" .. tostring(max_items), opts, max_items)
 end
 
 -- Downloads the Markdown body to `tmp_path`. The caller owns the tmp file and

@@ -121,12 +121,7 @@ local function clock_with_meridiem(clock, use_24h)
     return string.format("%d:%s", display, minute), suffix
 end
 
-function DashboardModel.build(state, opts)
-    state = state or {}
-    opts = opts or {}
-    local now = opts.now or os.time()
-    local page_size = tonumber(opts.page_size) or PAGE_SIZE
-
+local function build_shared(state, now, opts)
     local clock, meridiem = clock_with_meridiem(state.time, opts.clock_24h == true)
     local updated_clock = nil
     if type(state.refreshed_at) == "number" then
@@ -151,8 +146,16 @@ function DashboardModel.build(state, opts)
         show_battery = state.show_battery ~= false,
         show_network = state.show_network ~= false,
     }
+    return hero, non_empty(state.refresh_hint)
+end
 
-    local hint = non_empty(state.refresh_hint)
+function DashboardModel.build(state, opts)
+    state = state or {}
+    opts = opts or {}
+    local now = opts.now or os.time()
+    local page_size = tonumber(opts.page_size) or PAGE_SIZE
+
+    local hero, hint = build_shared(state, now, opts)
 
     local weather = nil
     if state.show_weather ~= false then
@@ -231,6 +234,141 @@ function DashboardModel.build(state, opts)
         weather = weather,
         hn = hn,
         nav = { active = "dashboard", tabs = { "dashboard", "todos", "store" } },
+    }
+end
+
+local function clamp_page(page, pages)
+    page = math.floor(tonumber(page) or 1)
+    if page < 1 then page = 1 end
+    if pages > 0 and page > pages then page = pages end
+    return page
+end
+
+local UNTAGGED_FILTER = "__untagged__"
+
+local function detail_preview(details)
+    details = tostring(details or "")
+    if details == "" then return nil end
+    details = details:gsub("%s+", " ")
+    if #details > 120 then
+        return details:sub(1, 119) .. "…"
+    end
+    return details
+end
+
+local function matches_tag(task, filter)
+    if not filter or filter == "" then return true end
+    local tags = task.tags or {}
+    if filter == UNTAGGED_FILTER then return #tags == 0 end
+    for _, tag in ipairs(tags) do
+        if tostring(tag) == filter then return true end
+    end
+    return false
+end
+
+function DashboardModel.build_todos(state, opts)
+    state = state or {}
+    opts = opts or {}
+    local now = opts.now or os.time()
+    local hero, hint = build_shared(state, now, opts)
+
+    local todos_state = state.todos or {}
+    local payload = todos_state.payload or {}
+    local counts = payload.counts or {}
+    local filter = opts.tag_filter or ""
+    if filter == "all" then filter = "" end
+
+    local tasks, untagged_open = {}, 0
+    for _, task in ipairs(payload.items or {}) do
+        if matches_tag(task, filter) then
+            local tag_parts = {}
+            for _, tag in ipairs(task.tags or {}) do
+                table.insert(tag_parts, "#" .. tostring(tag))
+            end
+            if #tag_parts == 0 and not task.done then untagged_open = untagged_open + 1 end
+            local details = tostring(task.details or "")
+            table.insert(tasks, {
+                id = tostring(task.id),
+                title = tostring(task.title or ""),
+                done = task.done == true,
+                meta = #tag_parts > 0 and table.concat(tag_parts, " ") or "—",
+                details = details,
+                detail_preview = detail_preview(details),
+                has_details = details ~= "",
+            })
+        end
+    end
+
+    local chips = {}
+    if opts.show_tags ~= false then
+        table.insert(chips, {
+            tag = "all", label = "Todas", count = #(payload.items or {}),
+            active = filter == "", can_open = false,
+        })
+        for _, entry in ipairs(payload.tags or {}) do
+            local tag = tostring(entry.tag or "")
+            if tag ~= "" then
+                table.insert(chips, {
+                    tag = tag, label = "#" .. tag, count = tonumber(entry.open) or 0,
+                    active = filter == tag, can_open = (tonumber(entry.open) or 0) > 0,
+                })
+            end
+        end
+        if untagged_open > 0 then
+            table.insert(chips, {
+                tag = UNTAGGED_FILTER, label = "Sin etiqueta", count = untagged_open,
+                active = filter == UNTAGGED_FILTER, can_open = false,
+            })
+        end
+    end
+
+    local page_size = math.floor(tonumber(opts.task_rows) or 6)
+    if page_size < 1 then page_size = 1 end
+    if page_size > 10 then page_size = 10 end
+    local pages = math.ceil(#tasks / page_size)
+    local page = clamp_page(opts.todos_page, pages)
+    local visible = {}
+    local first = (page - 1) * page_size + 1
+    local last = math.min(#tasks, first + page_size - 1)
+    for i = first, last do visible[#visible + 1] = tasks[i] end
+
+    local todos_message = non_empty(todos_state.message)
+    if redundant_notice(todos_message, hint) then todos_message = nil end
+    local refreshed = nil
+    if type(state.refreshed_at) == "number" then
+        refreshed = fmt_relative(state.refreshed_at, now)
+    end
+    local empty = nil
+    if #tasks == 0 then
+        if filter == UNTAGGED_FILTER then
+            empty = "No untagged tasks."
+        elseif filter ~= "" then
+            empty = "No tasks with #" .. filter .. "."
+        else
+            empty = tostring(todos_state.line or "TODO'S unavailable.")
+        end
+    end
+    local todos_model = {
+        badge = "TODO",
+        title = "TASKS",
+        items = visible,
+        page = pages > 0 and page or 1,
+        pages = pages,
+        page_size = page_size,
+        empty = empty,
+        message = todos_message,
+        counts = { open = counts.open or 0, done = counts.done or 0 },
+        refreshed = refreshed,
+        truncated = payload.truncated and true or false,
+        tags = chips,
+        active_tag = filter,
+    }
+
+    return {
+        hero = hero,
+        hint = hint,
+        todos = todos_model,
+        nav = { active = "todos", tabs = { "dashboard", "todos", "store" } },
     }
 end
 

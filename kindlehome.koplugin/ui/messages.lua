@@ -26,6 +26,17 @@ local MAP = {
     path_saved = "Custom content folder saved.",
     path_reset = "Custom content folder cleared. Using the default location.",
     coming_soon = "Coming soon.",
+    todos_empty = "No tasks yet. Add one with +.",
+    todos_created = "Task added.",
+    todos_updated = "Task updated.",
+    todos_deleted = "Task deleted.",
+    todos_write_forbidden = "Writes are disabled on the server. Check API keys or TODO_ALLOW_INSECURE_WRITES.",
+    todos_invalid_text = "Enter a task description.",
+    todos_write_failed = "Could not save the task. Try again.",
+    todos_details_saved = "Task details saved.",
+    todos_details_invalid = "Details must be at most 1000 bytes.",
+    todos_no_details = "No details for this task.",
+    todos_unavailable = "TODO'S unavailable.",
     settings_unavailable = "Open Kindle Home settings from the dashboard gear.",
     path_unwritable = "Folder saved, but it could not be created. Check the path and permissions.",
 }
@@ -63,6 +74,33 @@ function M.hn(kind, status, has_cache)
     if status == "stale" then return "Showing cached HN data." end
     if status == "error" then return "HN unavailable." end
     return nil
+end
+
+function M.todos(kind, status, has_cache)
+    if kind == "http_401" then return MAP.http_401 end
+    if kind == "http_503" then return MAP.http_503 end
+    if kind == "offline" or kind == "timeout" or kind == "network" then
+        return has_cache and "Offline or network error. Showing cached TODO'S."
+            or "Offline or network error. Turn on WiFi and refresh."
+    end
+    if kind == "parse" or kind == "too_large" then return MAP[kind] end
+    if kind == "budget_exceeded" then return MAP.budget_exceeded end
+    if status == "stale" then return "Showing cached TODO'S." end
+    if status == "error" then return MAP.todos_unavailable end
+    return nil
+end
+
+function M.todos_write(res)
+    if not res or res.ok then return nil end
+    if res.error_kind == "http_401" then return MAP.http_401 end
+    if res.status == 403 then return MAP.todos_write_forbidden end
+    if res.status == 400 or res.error_kind == "invalid_text" then return MAP.todos_invalid_text end
+    if res.status == 413 then return MAP.too_large end
+    if res.status == 404 then return MAP.not_found end
+    if res.error_kind == "http_503" then return MAP.http_503 end
+    if res.error_kind == "timeout" or res.error_kind == "network" then return MAP.todos_write_failed end
+    if res.error_kind == "parse" then return MAP.parse end
+    return MAP.todos_write_failed
 end
 
 function M.reading(kind)

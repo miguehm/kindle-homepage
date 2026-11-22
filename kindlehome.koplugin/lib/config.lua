@@ -32,6 +32,10 @@ local DEFAULTS = {
     hnmd_max_items = 10,
     hn_items_per_page = 4, -- preferred rows per Top Stories page (degrades to fit)
     hnmd_ttl_minutes = 30,
+    -- TODO'S (hnmd /todos*, mutable content)
+    todos_enabled = true,
+    todos_include_tags = true,
+    todos_ttl_minutes = 5,
     index_max_bytes = 131072,   -- 128 KiB: /top metadata only (no article bodies)
     article_max_bytes = 524288, -- 512 KiB per downloaded Markdown article
     -- Network
@@ -128,9 +132,10 @@ end
 
 local function sanitize(key, value, default)
     if key == "refresh_on_open" or key == "show_battery" or key == "show_network"
-        or key == "show_weather" or key == "show_hn"
-        or key == "weather_enabled" or key == "hnmd_enabled"
-           or key == "ui_fullscreen" or key == "ui_clock_24h" then
+         or key == "show_weather" or key == "show_hn"
+         or key == "weather_enabled" or key == "hnmd_enabled"
+         or key == "todos_enabled" or key == "todos_include_tags"
+            or key == "ui_fullscreen" or key == "ui_clock_24h" then
         return as_bool(value, default)
     elseif key == "ui_font_scale" then
         return clamp_number(value, 0.85, 1.6, default)
@@ -156,7 +161,7 @@ local function sanitize(key, value, default)
         return clamp_int(value, 1, 20, default)
     elseif key == "hn_items_per_page" then
         return clamp_int(value, 1, 10, default)
-    elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" then
+    elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" or key == "todos_ttl_minutes" then
         return clamp_int(value, 1, 10080, default) -- up to 7 days
     elseif key == "http_timeout_s" then
         return clamp_int(value, 1, 60, default)

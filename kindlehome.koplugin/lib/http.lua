@@ -54,6 +54,107 @@ local function read_limited_body(response, max_bytes)
     return "", nil
 end
 
+local function encode_body(opts, max_request_bytes)
+    local body, content_type
+    if opts.json_body ~= nil then
+        local ok, encoded = pcall(rapidjson.encode, opts.json_body)
+        if not ok then return nil, nil, "parse" end
+        body = encoded
+        content_type = "application/json"
+    elseif opts.body ~= nil then
+        body = tostring(opts.body)
+        content_type = opts.content_type or "application/octet-stream"
+    else
+        body = ""
+    end
+    if #body > max_request_bytes then return nil, nil, "too_large" end
+    return body, content_type, nil
+end
+
+local function do_write(url, opts, method, max_request_bytes)
+    local body, content_type, body_err = encode_body(opts, max_request_bytes)
+    if body_err then
+        return result_error(body_err, body_err == "too_large" and "request body exceeds max_bytes" or "invalid_json_body")
+    end
+    local timeout = tonumber(opts.timeout_s) or 10
+    local max_bytes = tonumber(opts.max_bytes) or 65536
+    local headers = {
+        ["user-agent"] = opts.user_agent or USER_AGENT,
+        ["accept"] = opts.accept or "application/json",
+        ["content-type"] = content_type or "application/json",
+        ["content-length"] = tostring(#body),
+    }
+    if opts.bearer_token and opts.bearer_token ~= "" then
+        headers["authorization"] = "Bearer " .. opts.bearer_token
+    end
+    if type(opts.headers) == "table" then
+        for k, v in pairs(opts.headers) do headers[k] = v end
+    end
+
+    local sink_tbl = {}
+    local sink = ltn12.sink.table(sink_tbl)
+    local bytes = 0
+    local too_large = false
+    local limited_sink = function(chunk, err)
+        if chunk == nil then return sink(chunk, err) end
+        if err then return nil, err end
+        bytes = bytes + #chunk
+        if bytes > max_bytes then
+            too_large = true
+            return nil, "too_large"
+        end
+        return sink(chunk)
+    end
+
+    local req = {
+        url = url,
+        method = method,
+        headers = headers,
+        source = ltn12.source.string(body),
+        sink = limited_sink,
+        redirect = opts.redirect ~= false,
+    }
+
+    socketutil:set_timeout(timeout, timeout)
+    local ok_call, r1, r2, r3, r4 = pcall(http.request, req)
+    socketutil:reset_timeout()
+
+    if not ok_call then
+        return result_error(classify_socket_err(r1), tostring(r1))
+    end
+
+    local code = tonumber(r2) or tonumber(r1)
+    local resp_headers = type(r3) == "table" and r3 or nil
+    local status_line = r4 or r3
+
+    if too_large then
+        return result_error("too_large", "response exceeded max_bytes", code, resp_headers)
+    end
+    if r1 == nil and type(r2) == "string" and code == nil then
+        return result_error(classify_socket_err(r2), tostring(r2))
+    end
+    if type(code) ~= "number" then
+        return result_error("network", "no_status:" .. tostring(r2), nil, resp_headers)
+    end
+
+    local resp_body, resp_err = read_limited_body(sink_tbl, max_bytes)
+    if not resp_body then
+        return result_error(resp_err or "too_large", "response exceeded max_bytes", code, resp_headers)
+    end
+
+    if code == 401 then
+        return { ok = false, status = 401, headers = resp_headers, body = resp_body, error_kind = "http_401", error = status_line }
+    elseif code == 404 then
+        return { ok = false, status = 404, headers = resp_headers, body = resp_body, error_kind = "http_404", error = status_line }
+    elseif code == 503 then
+        return { ok = false, status = 503, headers = resp_headers, body = resp_body, error_kind = "http_503", error = status_line }
+    elseif code < 200 or code >= 300 then
+        return { ok = false, status = code, headers = resp_headers, body = resp_body, error_kind = "http_other", error = status_line }
+    end
+
+    return { ok = true, status = code, headers = resp_headers, body = resp_body }
+end
+
 local function do_get(url, opts)
     opts = opts or {}
     local timeout = tonumber(opts.timeout_s) or 10
@@ -304,6 +405,63 @@ function Http.get_to_file(url, opts)
             url = url, status = res.status, kind = res.error_kind,
         })
     end
+    return res
+end
+
+function Http.request(url, opts)
+    opts = opts or {}
+    local method = type(opts.method) == "string" and string.upper(opts.method) or "GET"
+    if method == "GET" then return Http.get(url, opts) end
+    local start = now_ms()
+    Logger.info("http", "write_start", { url = url, method = method })
+    local max_request_bytes = tonumber(opts.max_request_bytes) or 65536
+    local res = do_write(url, opts, method, max_request_bytes)
+    local retries = method == "POST" and 0 or (tonumber(opts.retries) or 0)
+    if not res.ok and res.error_kind ~= "http_401" and is_transient(res.error_kind) and retries > 0 then
+        for i = 1, retries do
+            Logger.warn("http", "retry_write", { url = url, method = method, attempt = i, kind = res.error_kind })
+            res = do_write(url, opts, method, max_request_bytes)
+            if res.ok or res.error_kind == "http_401" or not is_transient(res.error_kind) then break end
+        end
+    end
+    res.elapsed_ms = math.floor((now_ms() - start) * 1000)
+    if res.ok then
+        Logger.info("http", "write_ok", { url = url, method = method, status = res.status, ms = res.elapsed_ms })
+    else
+        Logger.warn("http", "write_error", { url = url, method = method, status = res.status, kind = res.error_kind })
+    end
+    return res
+end
+
+local function write_opts(opts, method, payload_key, payload)
+    local merged = {}
+    for k, v in pairs(opts or {}) do merged[k] = v end
+    merged.method = method
+    merged[payload_key] = payload
+    if method == "POST" then merged.retries = 0 end
+    return merged
+end
+
+function Http.post_json(url, body, opts)
+    return Http.request_json(url, write_opts(opts, "POST", "json_body", body))
+end
+
+function Http.patch_json(url, body, opts)
+    return Http.request_json(url, write_opts(opts, "PATCH", "json_body", body))
+end
+
+function Http.delete(url, opts)
+    return Http.request(url, write_opts(opts, "DELETE", "body", ""))
+end
+
+function Http.request_json(url, opts)
+    local res = Http.request(url, opts)
+    if not res.ok then return res end
+    local ok_decode, decoded = pcall(rapidjson.decode, res.body or "")
+    if not ok_decode then
+        return result_error("parse", "invalid_json", res.status, res.headers)
+    end
+    res.json = decoded
     return res
 end
 

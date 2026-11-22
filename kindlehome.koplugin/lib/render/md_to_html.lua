@@ -32,6 +32,8 @@ local EINK_CSS = table.concat({
     ".nav{margin:1.2em 0 0 0;padding-top:0.8em;border-top:0.07em solid #000;font-size:0.9em;}",
     ".navitem{margin:0.5em 0;}",
     ".footer-note{font-size:0.8em;color:#222;margin-top:1em;}",
+    ".task{font-family:monospace;font-weight:bold;}",
+    ".task.done{text-decoration:line-through;}",
 }, "")
 
 local function escape_html(s)
@@ -77,6 +79,17 @@ local function render_inline(text)
         return '<a href="' .. safe .. '">' .. label .. "</a>"
     end)
     return text
+end
+
+local function render_list_item(text)
+    local marker, rest = text:match("^%s*%[([ xX])%]%s*(.*)$")
+    if marker then
+        local checked = marker ~= " "
+        local cls = checked and ' class="task done"' or ' class="task"'
+        local glyph = checked and "[x]" or "[ ]"
+        return "<span" .. cls .. ">" .. glyph .. "</span> " .. render_inline(rest)
+    end
+    return render_inline(text)
 end
 
 local function flush_paragraph(buf, out)
@@ -168,7 +181,7 @@ function MdToHtml.render(md_text)
                         table.insert(out, "<ul>")
                         list_state.type = "ul"
                     end
-                    table.insert(out, "<li>" .. render_inline(ul) .. "</li>")
+                    table.insert(out, "<li>" .. render_list_item(ul) .. "</li>")
                 elseif ol then
                     flush_paragraph(pbuf, out)
                     if list_state.type ~= "ol" then
@@ -177,10 +190,22 @@ function MdToHtml.render(md_text)
                         list_state.type = "ol"
                     end
                     table.insert(out, "<li>" .. render_inline(ol) .. "</li>")
-                else
-                    if list_state.type then close_list(list_state, out) end
-                    table.insert(pbuf, (line:gsub("^%s+", ""):gsub("%s+$", "")))
-                end
+                 else
+                     local continuation = line:match("^%s%s+(.-)%s*$")
+                     local attached = false
+                     if continuation and continuation ~= "" and list_state.type and #out > 0 then
+                         local last = out[#out]
+                         if type(last) == "string" and last:match("</li>$") then
+                             local extra = "<br/>" .. render_inline(continuation)
+                             out[#out] = last:gsub("</li>$", function() return extra .. "</li>" end)
+                             attached = true
+                         end
+                     end
+                     if not attached then
+                         if list_state.type then close_list(list_state, out) end
+                         table.insert(pbuf, (line:gsub("^%s+", ""):gsub("%s+$", "")))
+                     end
+                 end
             end
         end
     end
