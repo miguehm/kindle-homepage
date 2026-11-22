@@ -38,7 +38,10 @@ function Refresh.load_source(cache, opts)
     local budget = opts.budget
 
     local cached, read_err = cache:read(name)
-    local expired = cached and cache:is_expired(cached) or true
+    local expired = true
+    if cached then
+        expired = cache:is_expired(cached) and true or false
+    end
 
     if cached and not expired then
         return { ok = true, from_cache = true, stale = cached.status == "stale", envelope = cached }
