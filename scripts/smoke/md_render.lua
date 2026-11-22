@@ -81,4 +81,15 @@ assert(linked:find("<div>Article URL: <a href=", 1, true), "source meta link mis
 assert(linked:find('href="https://example.com/story"', 1, true), "source href missing")
 assert(linked:find("<div>Source: hnmd</div>", 1, true), "Source label must stay distinct from source URL")
 
-print("OK md render smoke: html=" .. #html .. "B doc=" .. #doc .. "B")
+local tasks_html = Md.render("# Todos\n\n- [ ] Comprar leche #casa\n- [x] Revisar correo #trabajo\n")
+assert(tasks_html:find('<span class="task">[ ]</span> Comprar leche', 1, true), "open task marker missing")
+assert(tasks_html:find('<span class="task done">[x]</span> Revisar correo', 1, true), "done task marker missing")
+assert(tasks_html:find(".task.done{", 1, true) == nil, "inline HTML must not include the stylesheet")
+assert(Md.css():find(".task.done{", 1, true), "task CSS missing")
+
+local with_details = Md.render("- [ ] Comprar leche #casa\n  Llamar a la tienda\n  Antes de las 18:00\n")
+assert(with_details:find("Comprar leche", 1, true)
+    and with_details:find("Llamar a la tienda<br/>Antes de las 18:00</li>", 1, true),
+    "indented details must stay inside the task list item")
+
+print("OK md render smoke: html=" .. #html .. "B doc=" .. #doc .. "B tasks=2")

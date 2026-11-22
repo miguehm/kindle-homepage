@@ -438,8 +438,8 @@ local cfg_instance = {
 }
 local actions = {
     register = function() end,
-    dispatch = function(_, id)
-        table.insert(dispatched, { id = id })
+    dispatch = function(_, id, ctx)
+        table.insert(dispatched, { id = id, ctx = ctx })
         return true
     end,
 }
@@ -570,8 +570,10 @@ for _, cell in ipairs(nav_cells) do
     assert(type(cell.on_tap) == "function" and cell.show_parent == shell_instance, "nav cell wiring wrong")
 end
 nav_cells[2]:onTapNavCell()
-assert(notices[#notices] == "Coming soon.", "placeholder tab message missing")
-assert(nav_cells[1].active == true and nav_cells[2].active == false, "nav active state must not change")
+assert(dispatched[#dispatched].id == "nav", "todos tab must dispatch nav")
+assert(dispatched[#dispatched].ctx.tab == "todos", "todos tab must target todos")
+assert(dispatched[#dispatched].ctx.from == "dashboard", "nav must record origin")
+assert(nav_cells[1].active == true and nav_cells[2].active == false, "dashboard nav must stay active until re-shown")
 nav_cells[1]:onTapNavCell()
 
 local refreshed = 0

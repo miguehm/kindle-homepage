@@ -69,4 +69,15 @@ assert(with_custom:get("custom_content_dir") == "", "koreader install path must 
 assert(with_custom:set("documents_subdir", "..") == true, "traversal in subdir must be accepted then sanitized")
 assert(with_custom:get("documents_subdir") == "KindleHome", "traversal in subdir must fall back to default")
 
-print("OK config smoke: optional coordinates, path safety and custom content folder")
+assert(c:get("todos_enabled") == true, "todos must be enabled by default")
+assert(c:get("todos_include_tags") == true, "tag lists must be included by default")
+assert(c:get("todos_ttl_minutes") == 5, "todos TTL must default to 5 minutes")
+assert(c:set("todos_enabled", false) == true and c:get("todos_enabled") == false, "todos toggle must be settable")
+assert(c:set("todos_include_tags", false) == true and c:get("todos_include_tags") == false, "tag toggle must be settable")
+assert(c:set("todos_ttl_minutes", 99999) == true and c:get("todos_ttl_minutes") == 10080, "todos TTL must clamp")
+assert(c:set("todos_ttl_minutes", 0) == true and c:get("todos_ttl_minutes") == 1, "todos TTL must clamp low")
+c:flush()
+local todos_reloaded = Config:new()
+assert(todos_reloaded:get("todos_enabled") == false, "todos toggle must survive reload")
+
+print("OK config smoke: optional coordinates, path safety, custom folder and todos settings")

@@ -299,7 +299,31 @@ if ! grep -q 'ephemeral_articles_dir' kindlehome.koplugin/lib/paths.lua \
     fail=1
 fi
 
+# 10) TODO'S module: JSON read + local tag filter, writes via lib/todos only,
+#     on-demand per-tag Markdown via the native article chain.
+if ! grep -q 'function Http.post_json' kindlehome.koplugin/lib/http.lua \
+        || ! grep -q 'function Http.patch_json' kindlehome.koplugin/lib/http.lua \
+        || ! grep -q 'function Http.delete' kindlehome.koplugin/lib/http.lua \
+        || ! grep -q 'function Todos.fetch_index' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'function TodosState.invalidate' kindlehome.koplugin/lib/todos_state.lua \
+        || ! grep -q 'todos_ttl_minutes' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'dispatch("nav"' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'ui/todos.lua' kindlehome.koplugin/main.lua \
+        || ! grep -q 'kh:todos:tagdoc:' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'force = true' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'cre.render.reload' kindlehome.koplugin/ui/widget/todos_card.lua \
+        || ! grep -q 'allow_newline = true' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'multiinputdialog' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'function TagChips.build' kindlehome.koplugin/ui/widget/tag_chips.lua; then
+    echo "FAIL: TODO'S module wiring incomplete"
+    fail=1
+fi
+if grep -rn 'Http\.' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
+    echo "FAIL: ui/ must not call Http directly (go through lib/todos or article_store)"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and session page, ephemeral article HTML, safe image links)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and session page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details)"
 fi
 exit "$fail"
