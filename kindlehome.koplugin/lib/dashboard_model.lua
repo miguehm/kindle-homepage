@@ -2,6 +2,32 @@
 local DashboardModel = {}
 
 local PAGE_SIZE = 4
+local DUE_PATTERN = "^(%d%d%d%d)%-(%d%d)%-(%d%d)$"
+local DEFAULT_DUE_DAYS = 3
+
+-- Deadlines are canonical YYYY-MM-DD strings; comparing them lexicographically
+-- is the same as comparing calendar dates. "Today" is UTC, matching the API.
+local function due_bounds(now, due_days)
+    now = tonumber(now) or os.time()
+    due_days = tonumber(due_days) or DEFAULT_DUE_DAYS
+    if due_days < 1 then due_days = 1 end
+    if due_days > 30 then due_days = 30 end
+    return os.date("!%Y-%m-%d", now), os.date("!%Y-%m-%d", now + due_days * 86400)
+end
+
+local function classify_due(due, today, limit)
+    if type(due) ~= "string" or due == "" then return nil end
+    if due < today then return "overdue" end
+    if due <= limit then return "due_soon" end
+    return nil
+end
+
+local function format_due(due)
+    if type(due) ~= "string" then return nil end
+    local y, m, d = due:match(DUE_PATTERN)
+    if not y then return due end
+    return d .. "-" .. m .. "-" .. y
+end
 
 local function fmt_temp(value)
     if type(value) ~= "number" then return nil end
@@ -266,9 +292,13 @@ local function matches_tag(task, filter)
     return false
 end
 
-local function matches_status(task, status)
+local function matches_status(task, status, today, limit)
     if status == "open" then return task.done ~= true end
     if status == "done" then return task.done == true end
+    if status == "due_soon" or status == "overdue" then
+        if task.done then return false end
+        return classify_due(task.due_date, today, limit) == status
+    end
     return true
 end
 
@@ -276,12 +306,16 @@ local function status_count(counts, status)
     counts = counts or {}
     if status == "open" then return tonumber(counts.open) or 0 end
     if status == "done" then return tonumber(counts.done) or 0 end
+    if status == "due_soon" then return tonumber(counts.due_soon) or 0 end
+    if status == "overdue" then return tonumber(counts.overdue) or 0 end
     return tonumber(counts.total) or 0
 end
 
 local function status_word(status)
     if status == "open" then return "pendientes" end
     if status == "done" then return "terminadas" end
+    if status == "due_soon" then return "por vencer" end
+    if status == "overdue" then return "vencidas" end
     return "tareas"
 end
 
@@ -297,28 +331,38 @@ function DashboardModel.build_todos(state, opts)
     local filter = opts.tag_filter or ""
     if filter == "all" then filter = "" end
     local status_filter = opts.status_filter or "all"
-    if status_filter ~= "open" and status_filter ~= "done" then status_filter = "all" end
+    if status_filter ~= "open" and status_filter ~= "done" and status_filter ~= "all"
+            and status_filter ~= "due_soon" and status_filter ~= "overdue" then
+        status_filter = "all"
+    end
+    local today, limit = due_bounds(now, opts.due_days)
 
-    local untagged = { open = 0, done = 0, total = 0 }
+    local untagged = { open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
     for _, task in ipairs(payload.items or {}) do
         if #(task.tags or {}) == 0 then
             untagged.total = untagged.total + 1
+            local class = task.done and nil or classify_due(task.due_date, today, limit)
             if task.done then untagged.done = untagged.done + 1 else untagged.open = untagged.open + 1 end
+            if class == "due_soon" then untagged.due_soon = untagged.due_soon + 1
+            elseif class == "overdue" then untagged.overdue = untagged.overdue + 1 end
         end
     end
 
     local tasks = {}
     for _, task in ipairs(payload.items or {}) do
-        if matches_tag(task, filter) and matches_status(task, status_filter) then
+        if matches_tag(task, filter) and matches_status(task, status_filter, today, limit) then
             local tag_parts = {}
             for _, tag in ipairs(task.tags or {}) do
                 table.insert(tag_parts, "#" .. tostring(tag))
             end
+            local due_label = format_due(task.due_date)
+            if due_label then table.insert(tag_parts, "Vence: " .. due_label) end
             local details = tostring(task.details or "")
             table.insert(tasks, {
                 id = tostring(task.id),
                 title = tostring(task.title or ""),
                 done = task.done == true,
+                due_date = task.due_date,
                 meta = #tag_parts > 0 and table.concat(tag_parts, " ") or "—",
                 details = details,
                 detail_preview = detail_preview(details),
@@ -334,6 +378,10 @@ function DashboardModel.build_todos(state, opts)
           count = status_count(counts, "done"), active = status_filter == "done" },
         { kind = "status", value = "all", label = "Todas",
           count = status_count(counts, "total"), active = status_filter == "all" },
+        { kind = "status", value = "due_soon", label = "Por vencer",
+          count = status_count(counts, "due_soon"), active = status_filter == "due_soon" },
+        { kind = "status", value = "overdue", label = "Vencidas",
+          count = status_count(counts, "overdue"), active = status_filter == "overdue" },
     }
 
     local chips = {}
@@ -399,7 +447,8 @@ function DashboardModel.build_todos(state, opts)
         page_size = page_size,
         empty = empty,
         message = todos_message,
-        counts = { open = counts.open or 0, done = counts.done or 0 },
+        counts = { open = counts.open or 0, done = counts.done or 0,
+                   due_soon = counts.due_soon or 0, overdue = counts.overdue or 0 },
         refreshed = refreshed,
         truncated = payload.truncated and true or false,
         tags = chips,

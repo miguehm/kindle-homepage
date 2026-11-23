@@ -31,6 +31,13 @@ local function details_error(details)
     return nil
 end
 
+local function due_error(due)
+    if not Todos.valid_due_date(due) then
+        return Messages.for_kind("todos_invalid_due_date")
+    end
+    return nil
+end
+
 function TodosView:new(opts)
     opts = opts or {}
     local o = {
@@ -165,7 +172,7 @@ local function tags_to_input(tags)
     return table.concat(parts, " ")
 end
 
-function TodosView:prompt_task(title, initial_text, initial_tags, initial_details, on_save)
+function TodosView:prompt_task(title, initial_text, initial_tags, initial_details, initial_due, on_save)
     local dialog
     local buttons = {
         {
@@ -182,12 +189,13 @@ function TodosView:prompt_task(title, initial_text, initial_tags, initial_detail
                     local text = tostring(fields[1] or ""):match("^%s*(.-)%s*$") or ""
                     local tags_input = tostring(fields[2] or "")
                     local details = tostring(fields[3] or "")
+                    local due_input = tostring(fields[4] or ""):match("^%s*(.-)%s*$") or ""
                     local tags, tag_err = Todos.parse_tags(tags_input)
                     if tag_err then
                         self:show_notice(Messages.for_kind("todos_invalid_tags"))
                         return
                     end
-                    local ok, msg = on_save(text, tags, details)
+                    local ok, msg = on_save(text, tags, details, due_input)
                     if ok == false then
                         self:show_notice(msg)
                         return
@@ -217,6 +225,11 @@ function TodosView:prompt_task(title, initial_text, initial_tags, initial_detail
                 hint = _("Notes"),
                 allow_newline = true,
             },
+            {
+                description = _("Due date (optional)"),
+                text = initial_due or "",
+                hint = _("YYYY-MM-DD"),
+            },
         },
         buttons = buttons,
     }
@@ -231,7 +244,10 @@ end
 function TodosView:_apply_local(mutation, task)
     local state = self.last_state
     if not state or not state.todos then return end
-    local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id)
+    local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id, {
+        now = os.time(),
+        due_days = self.config and self.config:get("todos_due_soon_days") or nil,
+    })
     state.todos.payload = merged
     state.todos.line = string.format("TODO'S — %d open, %d done",
         merged.counts.open or 0, merged.counts.done or 0)
@@ -263,12 +279,14 @@ function TodosView:apply_write(run, success_key, mutation)
 end
 
 function TodosView:add_task()
-    self:prompt_task(_("New task"), "", "", "", function(text, tags, details)
+    self:prompt_task(_("New task"), "", "", "", "", function(text, tags, details, due)
         if text == "" then return false, Messages.for_kind("todos_invalid_text") end
         local err = details_error(details)
         if err then return false, err end
+        local due_err = due_error(due)
+        if due_err then return false, due_err end
         return self:apply_write(function()
-            return Todos.create(self.config, text, tags, details)
+            return Todos.create(self.config, text, tags, details, due)
         end, "todos_created", { kind = "create" }), nil
     end)
 end
@@ -296,9 +314,11 @@ function TodosView:rename_task(id)
         return
     end
     self:prompt_task(_("Edit task"), task.title or "", tags_to_input(task.tags),
-        task.details or "", function(text, tags, details)
+        task.details or "", task.due_date or "", function(text, tags, details, due)
         if text == "" then return false, Messages.for_kind("todos_invalid_text") end
         local err = details_error(details)
+        if err then return false, err end
+        err = due_error(due)
         if err then return false, err end
         local patch = {}
         if text ~= tostring(task.title or "") then patch.text = text end
@@ -322,6 +342,7 @@ function TodosView:rename_task(id)
         -- title without an explicit tag list and drop the task's tags.
         if patch.text ~= nil or not same_tags then patch.tags = tags end
         if details ~= tostring(task.details or "") then patch.details = details end
+        if due ~= tostring(task.due_date or "") then patch.due_date = due end
         if next(patch) == nil then
             return true, Messages.for_kind("todos_no_changes")
         end
@@ -420,11 +441,18 @@ function TodosView:open_tag(tag)
         return
     end
     local status = self.status_filter or "open"
-    if status ~= "open" and status ~= "done" then status = "all" end
+    if status ~= "open" and status ~= "done" and status ~= "due_soon" and status ~= "overdue" then
+        status = "all"
+    end
     local count_key, noun = "total", "tareas"
     if status == "open" then count_key, noun = "open", "abiertas" end
     if status == "done" then count_key, noun = "done", "terminadas" end
+    if status == "due_soon" then count_key, noun = "due_soon", "por vencer" end
+    if status == "overdue" then count_key, noun = "overdue", "vencidas" end
     local content_url = "/v1/todos/tags/" .. tag .. ".md?status=" .. status
+    if status == "due_soon" and self.config then
+        content_url = content_url .. "&due_days=" .. tostring(self.config:get("todos_due_soon_days"))
+    end
     local item = {
         id = "todos-tag-" .. tag,
         title = "#" .. tag .. " (" .. tostring(tonumber(entry[count_key]) or 0) .. " " .. noun .. ")",
@@ -465,7 +493,8 @@ end
 
 function TodosView:set_status_filter(status)
     status = tostring(status or "open")
-    if status ~= "open" and status ~= "done" and status ~= "all" then status = "open" end
+    if status ~= "open" and status ~= "done" and status ~= "all"
+            and status ~= "due_soon" and status ~= "overdue" then status = "open" end
     self.status_filter = status
     self.todos_page = 1
     if self.last_state then
@@ -602,6 +631,7 @@ function TodosView:show(opts)
             todos_page = self.todos_page,
             tag_filter = self.tag_filter,
             status_filter = self.status_filter,
+            due_days = self.config and self.config:get("todos_due_soon_days") or nil,
             show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
         })
     end

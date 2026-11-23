@@ -72,6 +72,13 @@ assert(with_custom:get("documents_subdir") == "KindleHome", "traversal in subdir
 assert(c:get("todos_enabled") == true, "todos must be enabled by default")
 assert(c:get("todos_include_tags") == true, "tag lists must be included by default")
 assert(c:get("todos_ttl_minutes") == 5, "todos TTL must default to 5 minutes")
+assert(c:get("todos_due_soon_days") == 3, "due-soon window must default to 3 days")
+assert(c:set("todos_due_soon_days", 99) == true and c:get("todos_due_soon_days") == 30,
+    "due-soon window must clamp to 30")
+assert(c:set("todos_due_soon_days", 0) == true and c:get("todos_due_soon_days") == 1,
+    "due-soon window must clamp to 1")
+assert(c:set("todos_due_soon_days", 7) == true and c:get("todos_due_soon_days") == 7,
+    "due-soon window must be settable")
 assert(c:set("todos_enabled", false) == true and c:get("todos_enabled") == false, "todos toggle must be settable")
 assert(c:set("todos_include_tags", false) == true and c:get("todos_include_tags") == false, "tag toggle must be settable")
 assert(c:set("todos_ttl_minutes", 99999) == true and c:get("todos_ttl_minutes") == 10080, "todos TTL must clamp")

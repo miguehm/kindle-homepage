@@ -33,6 +33,7 @@ local MAP = {
     todos_write_forbidden = "Writes are disabled on the server. Check API keys or TODO_ALLOW_INSECURE_WRITES.",
     todos_invalid_text = "Enter a task description.",
     todos_invalid_tags = "Invalid tag. Use letters, numbers, '-' or '_' (max 10).",
+    todos_invalid_due_date = "Invalid due date. Use YYYY-MM-DD.",
     todos_no_changes = "No changes.",
     todos_write_failed = "Could not save the task. Try again.",
     todos_details_saved = "Task details saved.",
@@ -97,6 +98,7 @@ function M.todos_write(res)
     if res.error_kind == "http_401" then return MAP.http_401 end
     if res.status == 403 then return MAP.todos_write_forbidden end
     if res.error_kind == "invalid_tags" then return MAP.todos_invalid_tags end
+    if res.error_kind == "invalid_due_date" then return MAP.todos_invalid_due_date end
     if res.status == 400 or res.error_kind == "invalid_text" then return MAP.todos_invalid_text end
     if res.status == 413 then return MAP.too_large end
     if res.status == 404 then return MAP.not_found end

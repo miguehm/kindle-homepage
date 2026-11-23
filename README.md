@@ -106,14 +106,17 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
   URL fetch are not supported.
 - The **Store** tab-bar entry is a placeholder. **Todo's** reads `/todos` from
   hnmd and supports adding, toggling, editing and deleting tasks. The task list
-  has status chips (**Pendientes / Terminadas / Todas**, active by default
-  **Pendientes**) combined with tag chips (**Sin filtro / #tag / Sin etiqueta**);
-  a long press on a tag chip opens its Markdown in the native reader. Writes
-  need a valid API key and server-side write permissions. The modal has three
-  fields (Task, Tags, Details); tags are optional and may be left empty. It
-  requires backend OpenAPI 1.3.0, which also guarantees that editing a task or
-  clearing its details never erases its tags. The TASKS card header has a
-  refresh button.
+  has five status chips (**Pendientes / Terminadas / Todas / Por vencer /
+  Vencidas**, active by default **Pendientes**) combined with tag chips
+  (**Sin filtro / #tag / Sin etiqueta**); each chip shows its count after a
+  colon (e.g. `Pendientes: 5`). A long press on a tag chip opens its Markdown in
+  the native reader. Writes need a valid API key and server-side write
+  permissions. The modal has four fields (Task, Tags, Details, Due date); tags
+  and the due date are optional. Deadlines are shown as `Vence: DD-MM-YYYY` in
+  the row. The **Por vencer** horizon is set in Ajustes → TODO'S → *Due soon
+  window (days)* (default 3, range 1–30). It requires backend OpenAPI 1.4.0,
+  which also guarantees that editing a task or clearing its details never
+  erases its tags. The TASKS card header has a refresh button.
 - Full internationalization and a screensaver/userpatch integration are not
   implemented.
 - The API key is stored as local plaintext by KOReader's settings system; it

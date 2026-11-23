@@ -329,6 +329,24 @@ for _, item in ipairs(tab) do
     if item.text == "Hacker News" then hn_menu = item.sub_item_table end
 end
 assert(hn_menu, "Hacker News settings missing")
+local todos_menu
+for _, item in ipairs(tab) do
+    if item.text == "TODO'S" then todos_menu = item.sub_item_table end
+end
+assert(todos_menu, "TODO'S settings missing")
+local due_entry
+for _, item in ipairs(todos_menu) do
+    if type(item.text_func) == "function" and item.text_func():match("^Due soon window") then
+        due_entry = item
+    end
+end
+assert(due_entry and due_entry.keep_menu_open, "due-soon window setting missing")
+due_entry.callback()
+local due_dialog = last_dialog()
+due_dialog.input = "7"
+click(due_dialog, 2)
+assert(values.todos_due_soon_days == 7, "due-soon window setting not saved")
+
 local page_entry
 for _, item in ipairs(hn_menu) do
     if type(item.text_func) == "function" and item.text_func():match("^Items per page:") then

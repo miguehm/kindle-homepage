@@ -71,7 +71,10 @@ function TodosState.load(config, paths, opts)
         allow_network = opts.allow_network ~= false,
         budget = opts.budget,
         fetch_fn = function()
-            return Todos.fetch_index(config, { status = "all" })
+            return Todos.fetch_index(config, {
+                status = "all",
+                due_days = config and config:get("todos_due_soon_days") or nil,
+            })
         end,
     })
     return finish(res, "todos")

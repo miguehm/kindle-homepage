@@ -393,6 +393,11 @@ function Menus:settings_items(main_instance)
                         callback = function() Menus:edit_int(config, "todos_ttl_minutes", _("TODO'S TTL (minutes)"), "5", 1, 10080, _("TODO'S TTL"), function() refresh_dashboard(main_instance) end) end,
                     },
                     {
+                        text_func = function() return _("Due soon window (days): ") .. tostring(config:get("todos_due_soon_days")) end,
+                        keep_menu_open = true,
+                        callback = function() Menus:edit_int(config, "todos_due_soon_days", _("Due soon window (days)"), "3", 1, 30, _("Due soon"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
                         text = _("Write permissions"),
                         keep_menu_open = true,
                         callback = function()

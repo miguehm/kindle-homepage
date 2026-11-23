@@ -324,6 +324,17 @@ if ! grep -q 'function Http.post_json' kindlehome.koplugin/lib/http.lua \
     echo "FAIL: TODO'S module wiring incomplete"
     fail=1
 fi
+if ! grep -q 'todos_due_soon_days' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'due_date' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'due_soon' kindlehome.koplugin/lib/dashboard_model.lua \
+        || ! grep -q 'Due date (optional)' kindlehome.koplugin/ui/todos.lua; then
+    echo "FAIL: TODO'S deadline support (config, client, model and modal) incomplete"
+    fail=1
+fi
+if ! grep -q 'chip.label .. ": "' kindlehome.koplugin/ui/widget/tag_chips.lua; then
+    echo "FAIL: filter chips must show a colon before the count"
+    fail=1
+fi
 if [ ! -f kindlehome.koplugin/assets/icons/action/eye.svg ] \
         || [ ! -f kindlehome.koplugin/assets/icons/action/plus.svg ] \
         || ! grep -q 'Theme.icon_file(callbacks.plugin_dir, "action", "eye")' \

@@ -59,7 +59,7 @@ local function chip_frame(chip, config, callbacks, show_parent)
         end
     end
     local label = TapChip:new{
-        text = chip.label .. " " .. tostring(chip.count),
+        text = chip.label .. ": " .. tostring(chip.count),
         config = config,
         fgcolor = fgcolor,
         show_parent = show_parent,

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.14.0] - 2026-11-23
+
+### Added
+- **Due dates in TODO'S.** The add/edit modal has a fourth **Due date** field (`YYYY-MM-DD`). Deadlines appear in the task row as `Vence: DD-MM-YYYY` and in the Markdown as `(vence YYYY-MM-DD)`. Open tasks with a deadline sort first by date (overdue first), matching the backend.
+- **Two new status chips: Por vencer / Vencidas.** They combine with the tag filter and take their counts from the server. **Por vencer** covers today through today + *Due soon window (days)* (default **3**, configurable in Ajustes → TODO'S, 1–30); **Vencidas** covers deadlines before today. Requires backend OpenAPI 1.4.0.
+
+### Changed
+- Filter chips now show a colon before the count (`Pendientes: 5`, `#casa: 2`) instead of a bare space.
+
 ## [2.13.1] - 2026-11-22
 
 ### Fixed

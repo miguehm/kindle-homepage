@@ -9,6 +9,8 @@ Todos.API_VERSION = 1
 
 local ID_PATTERN = "^[A-Za-z0-9_%-]+$"
 local TAG_PATTERN = "^[a-z0-9][a-z0-9_%-]*$"
+local DUE_PATTERN = "^(%d%d%d%d)%-(%d%d)%-(%d%d)$"
+local DEFAULT_DUE_DAYS = 3
 
 local function to_str(v)
     if v == nil then return nil end
@@ -27,6 +29,56 @@ end
 
 local function valid_tag(tag)
     return type(tag) == "string" and #tag >= 1 and #tag <= 32 and tag:match(TAG_PATTERN) ~= nil
+end
+
+-- Deadlines are canonical YYYY-MM-DD strings. os.time/os.date are used only to
+-- reject impossible calendar dates; both are available in Lua 5.1/LuaJIT.
+local function normalize_due_date(value)
+    if value == nil then return nil end
+    local text = tostring(value)
+    if text == "" then return nil end
+    local year, month, day = text:match(DUE_PATTERN)
+    if not year then return nil, "invalid_due_date" end
+    local y, m, d = tonumber(year), tonumber(month), tonumber(day)
+    if not y or not m or not d or m < 1 or m > 12 or d < 1 or d > 31 then
+        return nil, "invalid_due_date"
+    end
+    local ok, stamp = pcall(os.time, { year = y, month = m, day = d, hour = 12, min = 0, sec = 0 })
+    if not ok or not stamp then return nil, "invalid_due_date" end
+    local ok_date, parts = pcall(os.date, "!*t", stamp)
+    if not ok_date or type(parts) ~= "table" then return nil, "invalid_due_date" end
+    if parts.year ~= y or parts.month ~= m or parts.day ~= d then
+        return nil, "invalid_due_date"
+    end
+    return text
+end
+
+function Todos.valid_due_date(value)
+    if value == nil or value == "" then return true end
+    local _, err = normalize_due_date(value)
+    return err == nil
+end
+
+function Todos.due_bounds(now, due_days)
+    now = tonumber(now) or os.time()
+    due_days = tonumber(due_days) or DEFAULT_DUE_DAYS
+    if due_days < 1 then due_days = 1 end
+    if due_days > 30 then due_days = 30 end
+    return os.date("!%Y-%m-%d", now), os.date("!%Y-%m-%d", now + due_days * 86400)
+end
+
+function Todos.classify_due(due, today, limit)
+    if type(due) ~= "string" or due == "" then return nil end
+    if due < today then return "overdue" end
+    if due <= limit then return "due_soon" end
+    return nil
+end
+
+function Todos.format_due(due)
+    if type(due) ~= "string" then return nil end
+    local y, m, d = due:match(DUE_PATTERN)
+    if not y then return due end
+    return d .. "-" .. m .. "-" .. y
 end
 
 local function urlencode(value)
@@ -63,6 +115,7 @@ local function normalize_task(raw)
         title = title,
         tags = normalized_tags(raw.tags),
         details = to_str(raw.details) or "",
+        due_date = normalize_due_date(raw.due_date),
         done = raw.done and true or false,
         created_at = to_str(raw.created_at),
         updated_at = to_str(raw.updated_at),
@@ -77,6 +130,8 @@ local function normalize_counts(raw)
         open = to_num(raw.open),
         done = to_num(raw.done),
         total = to_num(raw.total),
+        due_soon = to_num(raw.due_soon),
+        overdue = to_num(raw.overdue),
     }
 end
 
@@ -92,6 +147,8 @@ local function normalize_tag_counts(raw)
                     open = to_num(entry.open),
                     done = to_num(entry.done),
                     total = to_num(entry.total),
+                    due_soon = to_num(entry.due_soon),
+                    overdue = to_num(entry.overdue),
                 })
             end
         end
@@ -127,6 +184,9 @@ end
 local function sort_tasks(a, b)
     if a.done ~= b.done then return not a.done end
     if not a.done then
+        local da, db = a.due_date, b.due_date
+        if (da ~= nil) ~= (db ~= nil) then return da ~= nil end
+        if da and db and da ~= db then return da < db end
         local ta, tb = primary_tag(a), primary_tag(b)
         if ta == "" and tb ~= "" then return false end
         if ta ~= "" and tb == "" then return true end
@@ -143,7 +203,9 @@ end
 
 -- Apply a local write to a cached todos payload. The server response is the
 -- authoritative task for create/update; delete needs only the id.
-function Todos.merge_payload(payload, action, task, id)
+function Todos.merge_payload(payload, action, task, id, opts)
+    opts = opts or {}
+    local today, limit = Todos.due_bounds(opts.now, opts.due_days)
     payload = payload or {}
     local items = {}
     for _, raw in ipairs(payload.items or {}) do
@@ -174,17 +236,22 @@ function Todos.merge_payload(payload, action, task, id)
     end
     table.sort(items, sort_tasks)
 
-    local counts = { open = 0, done = 0, total = #items }
+    local counts = { open = 0, done = 0, total = #items, due_soon = 0, overdue = 0 }
     local by_tag = {}
     for _, item in ipairs(items) do
+        local class = item.done and nil or Todos.classify_due(item.due_date, today, limit)
         if item.done then counts.done = counts.done + 1 else counts.open = counts.open + 1 end
+        if class == "due_soon" then counts.due_soon = counts.due_soon + 1
+        elseif class == "overdue" then counts.overdue = counts.overdue + 1 end
         for _, tag in ipairs(item.tags or {}) do
             local entry = by_tag[tag]
             if not entry then
-                entry = { tag = tag, open = 0, done = 0, total = 0 }
+                entry = { tag = tag, open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
                 by_tag[tag] = entry
             end
             if item.done then entry.done = entry.done + 1 else entry.open = entry.open + 1 end
+            if class == "due_soon" then entry.due_soon = entry.due_soon + 1
+            elseif class == "overdue" then entry.overdue = entry.overdue + 1 end
             entry.total = entry.total + 1
         end
     end
@@ -219,6 +286,16 @@ local function request_opts(config, opts)
     }
 end
 
+-- The HTTP layer returns 400 bodies as text. Surface the server's field name
+-- as an error_kind so ui/messages.lua can show an actionable notice.
+local function tag_write_error(res)
+    if res.ok or res.status ~= 400 or type(res.body) ~= "string" then return res end
+    if res.body:find('"due_date"', 1, true) then
+        res.error_kind = "invalid_due_date"
+    end
+    return res
+end
+
 local function write_opts(config, opts, method, payload)
     local merged = request_opts(config, opts)
     merged.method = method
@@ -244,12 +321,15 @@ function Todos.fetch_index(config, opts)
         return { ok = false, error_kind = "parse", error = "bad_base_url" }
     end
     local status = "all"
-    if opts.status == "open" or opts.status == "done" or opts.status == "all" then
+    if opts.status == "open" or opts.status == "done" or opts.status == "all"
+            or opts.status == "due_soon" or opts.status == "overdue" then
         status = opts.status
     end
     local url = base .. "/todos?status=" .. urlencode(status)
     local tag = to_str(opts.tag)
     if tag and tag ~= "" then url = url .. "&tag=" .. urlencode(tag) end
+    local due_days = tonumber(opts.due_days)
+    if due_days then url = url .. "&due_days=" .. tostring(due_days) end
 
     local res = Http.get_json(url, request_opts(config, opts))
     if not res.ok then
@@ -289,7 +369,7 @@ function Todos.fetch_index(config, opts)
     return { ok = true, status = res.status, payload = payload, fetched_at = os.time() }
 end
 
-function Todos.create(config, text, tags, details, opts)
+function Todos.create(config, text, tags, details, due_date, opts)
     local base = Hnmd.base_url(config)
     if not base then
         return { ok = false, error_kind = "parse", error = "bad_base_url" }
@@ -305,8 +385,16 @@ function Todos.create(config, text, tags, details, opts)
         end
         if details ~= "" then payload.details = details end
     end
+    if due_date ~= nil then
+        local due, err = normalize_due_date(due_date)
+        if err then
+            return { ok = false, error_kind = err, error = err }
+        end
+        if due then payload.due_date = due end
+    end
     local res = Http.request_json(base .. "/todos/tasks", write_opts(config, opts, "POST", payload))
     if not res.ok then
+        tag_write_error(res)
         Logger.warn("todos", "create_failed", { kind = res.error_kind, status = res.status })
         return res
     end
@@ -352,6 +440,13 @@ function Todos.update(config, id, patch, opts)
         end
         body.details = patch.details
     end
+    if patch.due_date ~= nil then
+        local due, err = normalize_due_date(patch.due_date)
+        if err then
+            return { ok = false, error_kind = err, error = err }
+        end
+        body.due_date = due or ""
+    end
     if patch.done ~= nil then body.done = patch.done and true or false end
     if next(body) == nil then
         return { ok = false, error_kind = "parse", error = "empty_patch" }
@@ -359,6 +454,7 @@ function Todos.update(config, id, patch, opts)
 
     local res = Http.request_json(base .. "/todos/tasks/" .. urlencode(id), write_opts(config, opts, "PATCH", body))
     if not res.ok then
+        tag_write_error(res)
         Logger.warn("todos", "update_failed", { kind = res.error_kind, status = res.status })
         return res
     end

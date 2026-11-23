@@ -36,6 +36,7 @@ local DEFAULTS = {
     todos_enabled = true,
     todos_include_tags = true,
     todos_ttl_minutes = 5,
+    todos_due_soon_days = 3, -- "por vencer" horizon for TODO'S chips (1..30)
     index_max_bytes = 131072,   -- 128 KiB: /top metadata only (no article bodies)
     article_max_bytes = 524288, -- 512 KiB per downloaded Markdown article
     -- Network
@@ -163,6 +164,8 @@ local function sanitize(key, value, default)
         return clamp_int(value, 1, 10, default)
     elseif key == "weather_ttl_minutes" or key == "hnmd_ttl_minutes" or key == "todos_ttl_minutes" then
         return clamp_int(value, 1, 10080, default) -- up to 7 days
+    elseif key == "todos_due_soon_days" then
+        return clamp_int(value, 1, 30, default)
     elseif key == "http_timeout_s" then
         return clamp_int(value, 1, 60, default)
     elseif key == "index_max_bytes" then

@@ -273,18 +273,23 @@ package.preload["lib/hnmd"] = function()
     }
 end
 
+local function due_date(offset)
+    return os.date("!%Y-%m-%d", os.time() + offset * 86400)
+end
+local today_due, past_due = due_date(0), due_date(-2)
+
 local state_payload = {
     schema_version = 1,
-    counts = { open = 2, done = 1, total = 3 },
+    counts = { open = 2, done = 1, total = 3, due_soon = 1, overdue = 1 },
     tags = {
-        { tag = "casa", open = 1, done = 0, total = 1 },
-        { tag = "trabajo", open = 0, done = 1, total = 1 },
+        { tag = "casa", open = 1, done = 0, total = 1, due_soon = 1, overdue = 0 },
+        { tag = "trabajo", open = 0, done = 1, total = 1, due_soon = 0, overdue = 0 },
     },
     truncated = false,
     items = {
-        { id = "a1", title = "Comprar leche", tags = { "casa" }, details = "Llamar a la tienda", done = false, revision = 1 },
-        { id = "b2", title = "Pagar alquiler", tags = {}, details = "", done = false, revision = 1 },
-        { id = "c3", title = "Revisar correo", tags = { "trabajo" }, details = "", done = true, revision = 2 },
+        { id = "a1", title = "Comprar leche", tags = { "casa" }, details = "Llamar a la tienda", due_date = today_due, done = false, revision = 1 },
+        { id = "b2", title = "Pagar alquiler", tags = {}, details = "", due_date = past_due, done = false, revision = 1 },
+        { id = "c3", title = "Revisar correo", tags = { "trabajo" }, details = "", due_date = today_due, done = true, revision = 2 },
     },
 }
 local applied = 0
@@ -320,18 +325,29 @@ package.preload["lib/todos"] = function()
             end
             items = keep
         end
-        local open, done = 0, 0
+        local open, done, soon, overdue = 0, 0, 0, 0
+        local today = os.date("!%Y-%m-%d", os.time())
+        local limit = os.date("!%Y-%m-%d", os.time() + 3 * 86400)
         for _, item in ipairs(items) do
             if item.done then done = done + 1 else open = open + 1 end
+            if not item.done and item.due_date then
+                if item.due_date < today then overdue = overdue + 1
+                elseif item.due_date <= limit then soon = soon + 1 end
+            end
         end
         return { items = items, tags = payload.tags or {},
-                 counts = { open = open, done = done, total = #items }, truncated = false }
+                 counts = { open = open, done = done, total = #items, due_soon = soon, overdue = overdue },
+                 truncated = false }
     end
     return {
-        create = function(_, text, tags, details)
-            table.insert(writes, { kind = "create", text = text, tags = tags, details = details })
+        valid_due_date = function(value)
+            return value == nil or value == "" or type(value) == "string"
+                and value:match("^%d%d%d%d%-%d%d%-%d%d$") ~= nil
+        end,
+        create = function(_, text, tags, details, due)
+            table.insert(writes, { kind = "create", text = text, tags = tags, details = details, due = due })
             return success(nil, { id = "new1", title = text, tags = tags or {}, details = details,
-                                  done = false, revision = 1 })
+                                  due_date = due, done = false, revision = 1 })
         end,
         update = function(_, id, patch)
             table.insert(writes, { kind = "update", id = id, patch = patch })
@@ -346,6 +362,9 @@ package.preload["lib/todos"] = function()
             if patch.tags ~= nil then original.tags = patch.tags end
             if patch.details ~= nil then original.details = patch.details end
             if patch.done ~= nil then original.done = patch.done end
+            if patch.due_date ~= nil then
+                original.due_date = patch.due_date ~= "" and patch.due_date or nil
+            end
             original.revision = (original.revision or 1) + 1
             return success(id, original)
         end,
@@ -432,10 +451,21 @@ assert(pending_model.todos.active_status == "open" and #pending_model.todos.item
 local done_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "done" })
 assert(#done_model.todos.items == 1 and done_model.todos.items[1].title == "Revisar correo",
     "done status filter failed")
-assert(#pending_model.todos.status_chips == 3
+assert(#pending_model.todos.status_chips == 5
     and pending_model.todos.status_chips[1].value == "open"
     and pending_model.todos.status_chips[2].value == "done"
-    and pending_model.todos.status_chips[3].value == "all", "status chips missing")
+    and pending_model.todos.status_chips[3].value == "all"
+    and pending_model.todos.status_chips[4].value == "due_soon"
+    and pending_model.todos.status_chips[5].value == "overdue", "status chips missing")
+local soon_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "due_soon" })
+assert(#soon_model.todos.items == 1 and soon_model.todos.items[1].id == "a1",
+    "due_soon filter failed")
+local overdue_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "overdue" })
+assert(#overdue_model.todos.items == 1 and overdue_model.todos.items[1].id == "b2",
+    "overdue filter failed")
+local due_label = os.date("!%d-%m-%Y", os.time())
+assert(soon_model.todos.items[1].meta:find("Vence: " .. due_label, 1, true) ~= nil,
+    "due date must be rendered as DD-MM-YYYY in the row meta")
 local both_model = DashboardModel.build_todos(raw_state, {
     task_rows = 6, status_filter = "open", tag_filter = "casa",
 })
@@ -446,7 +476,7 @@ local config = {
         local values = {
             hn_items_per_page = 6, ui_clock_24h = false, show_battery = true,
             show_network = true, refresh_budget_s = 20, ui_font_scale = 1.0,
-            todos_include_tags = true,
+            todos_include_tags = true, todos_due_soon_days = 3,
         }
         return values[key]
     end,
@@ -467,6 +497,7 @@ local view = TodosView:new{
 view:show({ allow_network = false })
 assert(shown == 1 and captured_shell and captured_shell.title == "TODO'S", "todos shell missing")
 assert(captured_shell.body.fits ~= nil, "todos body fit flag missing")
+assert(#captured_shell.body.model.todos.status_chips == 5, "shell must show all five status chips")
 assert(type(captured_shell.body.getCropRegion) == "function", "crop region missing")
 assert(captured_shell.body.dialog and captured_shell.body.show_parent, "dialog wiring missing")
 assert(captured_shell.body.model.nav.active == "todos", "active tab must be todos")
@@ -523,23 +554,30 @@ for _, widget in ipairs(tap_icons) do
 end
 assert(eye and type(eye.on_tap) == "function", "eye details icon missing")
 
-local status_done = chip("Terminadas 1")
+local status_done = chip("Terminadas: 1")
 assert(status_done and type(status_done.on_tap) == "function", "done status chip missing")
 status_done:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1
     and captured_shell.body.model.todos.active_status == "done", "done filter failed")
-chip("Todas 3"):onTapChip()
+chip("Todas: 3"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 3, "Todas status chip must show every task")
-chip("Pendientes 2"):onTapChip()
+chip("Pendientes: 2"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 2, "Pendientes status chip must reset to open")
+chip("Por vencer: 1"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 1
+    and captured_shell.body.model.todos.active_status == "due_soon", "due soon chip failed")
+chip("Vencidas: 1"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 1
+    and captured_shell.body.model.todos.active_status == "overdue", "overdue chip failed")
+chip("Pendientes: 2"):onTapChip()
 
-local casa_chip = chip("#casa 1")
+local casa_chip = chip("#casa: 1")
 assert(casa_chip and type(casa_chip.on_tap) == "function", "tag chip missing")
 assert(type(casa_chip.on_hold) == "function", "tag chip must support long press")
 casa_chip:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1, "chip must filter the task list")
 assert(captured_shell.body.model.todos.active_tag == "casa", "chip must set the active tag")
-chip("Sin filtro 2"):onTapChip()
+chip("Sin filtro: 2"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 2, "Sin filtro must clear the tag filter")
 
 local plus = nil
@@ -553,15 +591,18 @@ assert(plus and type(plus.on_tap) == "function", "solid '+' add icon missing")
 assert(plus.width >= 28, "add icon must stay larger than the row icons")
 plus:onTapIcon()
 local add_dialog = dialogs[#dialogs]
-assert(add_dialog and type(add_dialog.getFields) == "function" and #add_dialog.fields == 3,
-    "add modal must have three fields")
+assert(add_dialog and type(add_dialog.getFields) == "function" and #add_dialog.fields == 4,
+    "add modal must have four fields")
 assert(add_dialog.fields[3].allow_newline == true, "details field must allow newlines")
+assert(add_dialog.fields[4].hint == "YYYY-MM-DD", "due date field must document its format")
 add_dialog.fields[1].text = "Comprar pan #casa"
 add_dialog.fields[2].text = "casa urgente"
 add_dialog.fields[3].text = "En la panadería de la esquina"
+add_dialog.fields[4].text = today_due
 add_dialog.buttons[1][2].callback()
 assert(writes[#writes].kind == "create" and writes[#writes].text == "Comprar pan #casa", "create not dispatched")
 assert(writes[#writes].details == "En la panadería de la esquina", "create must send details")
+assert(writes[#writes].due == today_due, "create must send the due date")
 assert(writes[#writes].tags[1] == "casa" and writes[#writes].tags[2] == "urgente", "create must send tags")
 assert(applied == 1, "write must apply locally")
 assert(notices[#notices] == "Task added.", "create notice missing")
@@ -590,12 +631,14 @@ rows[1]:onTapRow()
 assert(dialogs[#dialogs].fields[1].text == "Comprar leche", "edit modal not prefilled")
 assert(dialogs[#dialogs].fields[2].text == "casa", "tags not prefilled in modal")
 assert(dialogs[#dialogs].fields[3].text == "Llamar a la tienda", "details not prefilled in modal")
+assert(dialogs[#dialogs].fields[4].text == today_due, "due date not prefilled in modal")
 dialogs[#dialogs].fields[1].text = "Comprar leche entera"
 dialogs[#dialogs].fields[3].text = "Llamar a la tienda grande"
 dialogs[#dialogs].buttons[1][2].callback()
 assert(writes[#writes].patch.text == "Comprar leche entera", "rename failed")
 assert(writes[#writes].patch.details == "Llamar a la tienda grande", "edit must send details")
 assert(writes[#writes].patch.tags[1] == "casa", "rename must resend tags")
+assert(writes[#writes].patch.due_date == nil, "unchanged due date must not be resent")
 
 eye:onTapIcon()
 assert(viewers[#viewers] and viewers[#viewers].text == "Llamar a la tienda grande",
@@ -603,6 +646,7 @@ assert(viewers[#viewers] and viewers[#viewers].text == "Llamar a la tienda grand
 
 icon("edit"):onTapIcon()
 assert(dialogs[#dialogs].fields[3].text == "Llamar a la tienda grande", "edit icon must prefill details")
+assert(dialogs[#dialogs].fields[4].text == today_due, "edit icon must prefill due date")
 dialogs[#dialogs].fields[3].text = "nueva nota"
 dialogs[#dialogs].buttons[1][2].callback()
 assert(writes[#writes].patch.details == "nueva nota", "details patch failed")
@@ -645,5 +689,15 @@ local function has_handle_event(node, seen)
     return true
 end
 has_handle_event(captured_shell.body, {})
+
+local TodosBody = dofile(PLUGIN .. "ui/todos_body.lua")
+local small_body = TodosBody.build(model, config, 600, 800, {
+    show_parent = {}, plugin_dir = PLUGIN,
+    on_status = function() end, on_tag = function() end, on_tag_doc = function() end,
+    on_nav = function() end,
+})
+assert(small_body and small_body.dimen.h == 800
+    and #small_body.model.todos.status_chips == 5,
+    "todos body with five status chips must build at small scale")
 
 print("OK todos UI smoke: model=3 tasks nav=3 rows=" .. tostring(#rows) .. " writes=" .. tostring(#writes))
