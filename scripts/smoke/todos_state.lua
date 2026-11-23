@@ -107,6 +107,11 @@ assert(store["todos_top.json"] == nil, "no todos_top cache must be written")
 TodosState.invalidate(paths)
 assert(store["todos.json"].status == "stale" and store["todos.json"].fetched_at == 0, "invalidate failed")
 
+assert(TodosState.apply(paths, first.payload) == true, "local apply failed")
+assert(store["todos.json"].status == "ok" and store["todos.json"].ttl_seconds == 0,
+    "local apply must write a fresh but immediately refreshable envelope")
+assert(store["todos.json"].payload.counts.open == 2, "local apply lost the payload")
+
 calls = {}
 failure = { ok = false, status = 401, error_kind = "http_401", body = "{}" }
 local stale = TodosState.load(config, paths, { allow_network = true })

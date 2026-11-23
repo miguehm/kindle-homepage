@@ -45,6 +45,7 @@ function TodosView:new(opts)
         task_index = {},
         tag_index = {},
         tag_filter = nil,
+        status_filter = "open",
         last_state = nil,
         refreshing = false,
     }
@@ -101,6 +102,18 @@ function TodosView:is_online()
     return ok and conn and true or false
 end
 
+function TodosView:_index_payload(payload)
+    self.task_index = {}
+    self.tag_index = {}
+    payload = payload or {}
+    for _, task in ipairs(payload.items or {}) do
+        if task.id then self.task_index[tostring(task.id)] = task end
+    end
+    for _, entry in ipairs(payload.tags or {}) do
+        if entry.tag then self.tag_index[tostring(entry.tag)] = entry end
+    end
+end
+
 function TodosView:show_notice(text)
     if not text or text == "" then return end
     UIManager:show(InfoMessage:new{ text = text, timeout = 4 })
@@ -136,15 +149,8 @@ function TodosView:build_state(opts)
         show_network = (not self.config) or self.config:get("show_network"),
     }
     self.last_state = state
-    self.task_index = {}
-    self.tag_index = {}
     local payload = todos and todos.payload or {}
-    for _, task in ipairs(payload.items or {}) do
-        if task.id then self.task_index[tostring(task.id)] = task end
-    end
-    for _, entry in ipairs(payload.tags or {}) do
-        if entry.tag then self.tag_index[tostring(entry.tag)] = entry end
-    end
+    self:_index_payload(payload)
     Logger.info("todos_view", "state_built", {
         todos = todos and todos.status or "nil",
         tasks = #(payload.items or {}),
@@ -153,7 +159,13 @@ function TodosView:build_state(opts)
     return state
 end
 
-function TodosView:prompt_task(title, initial_text, initial_details, on_save)
+local function tags_to_input(tags)
+    local parts = {}
+    for _, tag in ipairs(tags or {}) do table.insert(parts, tostring(tag)) end
+    return table.concat(parts, " ")
+end
+
+function TodosView:prompt_task(title, initial_text, initial_tags, initial_details, on_save)
     local dialog
     local buttons = {
         {
@@ -168,8 +180,14 @@ function TodosView:prompt_task(title, initial_text, initial_details, on_save)
                 callback = function()
                     local fields = dialog:getFields() or {}
                     local text = tostring(fields[1] or ""):match("^%s*(.-)%s*$") or ""
-                    local details = tostring(fields[2] or "")
-                    local ok, msg = on_save(text, details)
+                    local tags_input = tostring(fields[2] or "")
+                    local details = tostring(fields[3] or "")
+                    local tags, tag_err = Todos.parse_tags(tags_input)
+                    if tag_err then
+                        self:show_notice(Messages.for_kind("todos_invalid_tags"))
+                        return
+                    end
+                    local ok, msg = on_save(text, tags, details)
                     if ok == false then
                         self:show_notice(msg)
                         return
@@ -186,7 +204,12 @@ function TodosView:prompt_task(title, initial_text, initial_details, on_save)
             {
                 description = _("Task"),
                 text = initial_text or "",
-                hint = _("Text with optional #tags"),
+                hint = _("Task text"),
+            },
+            {
+                description = _("Tags (optional)"),
+                text = initial_tags or "",
+                hint = _("Space or comma separated; #optional"),
             },
             {
                 description = _("Details (optional)"),
@@ -202,7 +225,27 @@ function TodosView:prompt_task(title, initial_text, initial_details, on_save)
     return dialog
 end
 
-function TodosView:apply_write(run, success_key)
+-- Apply the server's response to the payload the user is looking at. This
+-- makes writes deterministic and independent of the network: no extra GET is
+-- needed, and a failed next refresh cannot roll back a successful save.
+function TodosView:_apply_local(mutation, task)
+    local state = self.last_state
+    if not state or not state.todos then return end
+    local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id)
+    state.todos.payload = merged
+    state.todos.line = string.format("TODO'S — %d open, %d done",
+        merged.counts.open or 0, merged.counts.done or 0)
+    state.todos.status = "ok"
+    state.todos.stale = false
+    state.todos.error_kind = nil
+    state.todos.message = nil
+    state.todos.fetched_at = os.time()
+    state.refreshed_at = os.time()
+    self:_index_payload(merged)
+    if self.paths then pcall(TodosState.apply, self.paths, merged) end
+end
+
+function TodosView:apply_write(run, success_key, mutation)
     local ok, res = pcall(run)
     if not ok then
         Logger.err("todos_view", "write_exception")
@@ -213,20 +256,20 @@ function TodosView:apply_write(run, success_key)
         self:show_notice(Messages.todos_write(res))
         return false
     end
-    if self.paths then TodosState.invalidate(self.paths) end
+    if mutation then self:_apply_local(mutation, res.task) end
     self:show_notice(Messages.for_kind(success_key))
-    self:refresh({ allow_network = self:is_online(), reset_page = false })
+    self:show({ state = self.last_state, allow_network = false })
     return true
 end
 
 function TodosView:add_task()
-    self:prompt_task(_("New task"), "", "", function(text, details)
+    self:prompt_task(_("New task"), "", "", "", function(text, tags, details)
         if text == "" then return false, Messages.for_kind("todos_invalid_text") end
         local err = details_error(details)
         if err then return false, err end
         return self:apply_write(function()
-            return Todos.create(self.config, text, nil, details)
-        end, "todos_created"), nil
+            return Todos.create(self.config, text, tags, details)
+        end, "todos_created", { kind = "create" }), nil
     end)
 end
 
@@ -243,7 +286,7 @@ function TodosView:toggle_task(id)
     local done = task.done and true or false
     self:apply_write(function()
         return Todos.update(self.config, id, { done = not done })
-    end, "todos_updated")
+    end, "todos_updated", { kind = "update" })
 end
 
 function TodosView:rename_task(id)
@@ -252,13 +295,39 @@ function TodosView:rename_task(id)
         self:show_notice(Messages.for_kind("not_found"))
         return
     end
-    self:prompt_task(_("Edit task"), task.title or "", task.details or "", function(text, details)
+    self:prompt_task(_("Edit task"), task.title or "", tags_to_input(task.tags),
+        task.details or "", function(text, tags, details)
         if text == "" then return false, Messages.for_kind("todos_invalid_text") end
         local err = details_error(details)
         if err then return false, err end
+        local patch = {}
+        if text ~= tostring(task.title or "") then patch.text = text end
+        local existing = {}
+        for _, tag in ipairs(task.tags or {}) do table.insert(existing, tostring(tag)) end
+        local same_tags = #existing == #tags
+        if same_tags then
+            local in_existing, in_new = {}, {}
+            for _, tag in ipairs(existing) do in_existing[tag] = true end
+            for _, tag in ipairs(tags) do in_new[tag] = true end
+            for tag in pairs(in_existing) do
+                if not in_new[tag] then same_tags = false break end
+            end
+            if same_tags then
+                for tag in pairs(in_new) do
+                    if not in_existing[tag] then same_tags = false break end
+                end
+            end
+        end
+        -- Always resend tags alongside text: the backend must never reparse a
+        -- title without an explicit tag list and drop the task's tags.
+        if patch.text ~= nil or not same_tags then patch.tags = tags end
+        if details ~= tostring(task.details or "") then patch.details = details end
+        if next(patch) == nil then
+            return true, Messages.for_kind("todos_no_changes")
+        end
         return self:apply_write(function()
-            return Todos.update(self.config, id, { text = text, details = details })
-        end, "todos_updated"), nil
+            return Todos.update(self.config, id, patch)
+        end, "todos_updated", { kind = "update" }), nil
     end)
 end
 
@@ -275,7 +344,8 @@ function TodosView:delete_task(id)
         cancel_text = _("Cancel"),
         ok_callback = function()
             UIManager:close(confirm)
-            self:apply_write(function() return Todos.delete_task(self.config, id) end, "todos_deleted")
+            self:apply_write(function() return Todos.delete_task(self.config, id) end,
+                "todos_deleted", { kind = "delete", id = id })
         end,
     }
     UIManager:show(confirm)
@@ -349,10 +419,15 @@ function TodosView:open_tag(tag)
         self:show_notice(Messages.for_kind("bad_base_url", "Invalid base URL."))
         return
     end
-    local content_url = "/v1/todos/tags/" .. tag .. ".md"
+    local status = self.status_filter or "open"
+    if status ~= "open" and status ~= "done" then status = "all" end
+    local count_key, noun = "total", "tareas"
+    if status == "open" then count_key, noun = "open", "abiertas" end
+    if status == "done" then count_key, noun = "done", "terminadas" end
+    local content_url = "/v1/todos/tags/" .. tag .. ".md?status=" .. status
     local item = {
         id = "todos-tag-" .. tag,
-        title = "#" .. tag .. " (" .. tostring(entry.open or 0) .. " abiertas)",
+        title = "#" .. tag .. " (" .. tostring(tonumber(entry[count_key]) or 0) .. " " .. noun .. ")",
         hn_url = Hnmd.resolve_content_url(base, content_url) or (base .. content_url),
         content_status = "ok",
         content_url = content_url,
@@ -382,6 +457,16 @@ function TodosView:set_tag_filter(tag)
     tag = tostring(tag or "")
     if tag == "all" then tag = "" end
     self.tag_filter = tag ~= "" and tag or nil
+    self.todos_page = 1
+    if self.last_state then
+        self:show({ state = self.last_state, allow_network = false })
+    end
+end
+
+function TodosView:set_status_filter(status)
+    status = tostring(status or "open")
+    if status ~= "open" and status ~= "done" and status ~= "all" then status = "open" end
+    self.status_filter = status
     self.todos_page = 1
     if self.last_state then
         self:show({ state = self.last_state, allow_network = false })
@@ -450,6 +535,7 @@ function TodosView:handle_link(uri)
     if cmd == "delete" and arg ~= "" then self:delete_task(arg); return true end
     if cmd == "details" and arg ~= "" then self:edit_details(arg); return true end
     if cmd == "tag" and arg ~= "" then self:set_tag_filter(arg); return true end
+    if cmd == "status" and arg ~= "" then self:set_status_filter(arg); return true end
     if cmd == "tagdoc" and arg ~= "" then self:open_tag(arg); return true end
 
     Logger.warn("todos_view", "unknown_link", { uri = uri })
@@ -504,6 +590,7 @@ function TodosView:show(opts)
     if opts.refreshing ~= nil then state.refreshing = opts.refreshing == true end
     self.refreshing = state.refreshing == true
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
+    self.last_state = state
 
     local now = os.time()
     local clock_24h = self.config and self.config:get("ui_clock_24h") == true
@@ -514,6 +601,7 @@ function TodosView:show(opts)
             task_rows = rows,
             todos_page = self.todos_page,
             tag_filter = self.tag_filter,
+            status_filter = self.status_filter,
             show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
         })
     end
@@ -550,6 +638,7 @@ function TodosView:show(opts)
                 on_details = function(id) self:show_details(id) end,
                 on_edit_details = function(id) self:handle_link("kh:todos:details:" .. id) end,
                 on_tag = function(tag) self:handle_link("kh:todos:tag:" .. tag) end,
+                on_status = function(status) self:handle_link("kh:todos:status:" .. status) end,
                 on_tag_doc = function(tag) self:handle_link("kh:todos:tagdoc:" .. tag) end,
                 on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
                 on_next_page = function()
@@ -575,6 +664,7 @@ function TodosView:show(opts)
         tasks = current_model.todos and #current_model.todos.items or 0,
         tags = current_model.todos and #current_model.todos.tags or 0,
         filter = current_model.todos and current_model.todos.active_tag or nil,
+        status = current_model.todos and current_model.todos.active_status or nil,
         rows = current_model.todos and current_model.todos.page_size or nil,
         native = true,
     })

@@ -10,7 +10,6 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 
 local Theme = require("lib/render/theme")
 local DesignText = require("ui/widget/design_text")
-local TapIcon = require("ui/widget/tap_icon")
 
 local TagChips = {}
 
@@ -19,6 +18,7 @@ local TapChip = InputContainer:extend{
     config = nil,
     fgcolor = nil,
     on_tap = nil,
+    on_hold = nil,
     show_parent = nil,
 }
 
@@ -29,6 +29,7 @@ function TapChip:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = size.w, h = size.h }
     self.ges_events = {
         TapChip = { GestureRange:new{ ges = "tap", range = self.dimen } },
+        HoldChip = { GestureRange:new{ ges = "hold", range = self.dimen } },
     }
 end
 
@@ -38,33 +39,38 @@ function TapChip:onTapChip()
     return true
 end
 
+function TapChip:onHoldChip()
+    if type(self.on_hold) ~= "function" then return false end
+    self.on_hold()
+    return true
+end
+
 local function chip_frame(chip, config, callbacks, show_parent)
     local fgcolor = chip.active and Theme.color.inverse_fg or Theme.color.fg
+    local on_tap
+    local on_hold = nil
+    if chip.kind == "status" then
+        on_tap = function() callbacks.on_status(chip.value) end
+    else
+        on_tap = function() callbacks.on_tag(chip.tag) end
+        if chip.can_open then
+            -- A long press opens the tag's Markdown; the chip itself only filters.
+            on_hold = function() callbacks.on_tag_doc(chip.tag) end
+        end
+    end
     local label = TapChip:new{
         text = chip.label .. " " .. tostring(chip.count),
         config = config,
         fgcolor = fgcolor,
         show_parent = show_parent,
-        on_tap = function() callbacks.on_tag(chip.tag) end,
+        on_tap = on_tap,
+        on_hold = on_hold,
     }
     local group = HorizontalGroup:new{ align = "center" }
     table.insert(group, label)
-    local gap = Theme.native_size(config, Theme.space.xs)
     local border = Theme.hairline(config)
     local padding = Theme.native_size(config, 5)
     local width = label:getSize().w + 2 * (border + padding)
-    if chip.can_open then
-        local opener = TapIcon:new{
-            icon = "book.opened",
-            width = Theme.native_size(config, 16),
-            height = Theme.native_size(config, 16),
-            show_parent = show_parent,
-            on_tap = function() callbacks.on_tag_doc(chip.tag) end,
-        }
-        width = width + gap + opener:getSize().w
-        table.insert(group, HorizontalSpan:new{ width = gap })
-        table.insert(group, opener)
-    end
     return FrameContainer:new{
         margin = 0,
         padding = padding,
@@ -75,8 +81,7 @@ local function chip_frame(chip, config, callbacks, show_parent)
     }, width
 end
 
-function TagChips.build(model, config, content_w, callbacks)
-    local chips = model and model.tags or {}
+local function layout(chips, config, content_w, callbacks)
     if #chips == 0 then return nil end
     local show_parent = callbacks.show_parent
     local gap = Theme.native_size(config, Theme.space.xs)
@@ -103,6 +108,14 @@ function TagChips.build(model, config, content_w, callbacks)
     if row_count > 0 then table.insert(root, DesignText.span(config, Theme.space.xs)) end
     table.insert(root, row)
     return root
+end
+
+function TagChips.build(model, config, content_w, callbacks)
+    return layout(model and model.tags or {}, config, content_w, callbacks)
+end
+
+function TagChips.build_status(model, config, content_w, callbacks)
+    return layout(model and model.status_chips or {}, config, content_w, callbacks)
 end
 
 return TagChips

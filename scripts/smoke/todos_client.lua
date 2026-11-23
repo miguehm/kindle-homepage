@@ -123,4 +123,35 @@ local deleted = Todos.delete_task(config, "new123")
 assert(deleted.ok and deleted.status == 200, "delete failed")
 assert(last_call().opts.method == "DELETE", "delete method wrong")
 
-print("OK todos client smoke: /todos JSON, per-tag markdown URL, CRUD, details, bearer, validation")
+local parsed = assert(Todos.parse_tags("#Casa, urgente casa"))
+assert(#parsed == 2 and parsed[1] == "casa" and parsed[2] == "urgente", "tag parsing failed")
+assert(#assert(Todos.parse_tags("")) == 0, "empty tag field must be valid")
+assert(Todos.parse_tags("bad!tag") == nil, "invalid tag must be rejected")
+
+reset()
+next_json = { id = "new123", title = "Tarea", tags = {}, details = "", done = false, revision = 4 }
+local tags_cleared = Todos.update(config, "new123", { tags = {} })
+assert(tags_cleared.ok, "clearing tags failed")
+assert(type(last_call().opts.json_body.tags) == "table"
+    and #last_call().opts.json_body.tags == 0, "empty tags patch missing")
+assert(last_call().opts.json_options and last_call().opts.json_options.empty_table_as_array == true,
+    "empty tags must be encoded as a JSON array")
+
+local payload = index.payload
+local after_create = Todos.merge_payload(payload, "create", {
+    id = "new1", title = "Nueva", tags = { "casa" }, done = false,
+})
+assert(#after_create.items == 3 and after_create.counts.open == 2
+    and after_create.counts.done == 1 and after_create.counts.total == 3,
+    "local create merge failed")
+local after_update = Todos.merge_payload(after_create, "update", {
+    id = "new1", title = "Nueva", tags = { "casa" }, done = true, done_at = "2026-11-22T15:00:00Z",
+})
+assert(#after_update.items == 3 and after_update.counts.done == 2
+    and after_update.counts.open == 1, "local update merge failed")
+local after_delete = Todos.merge_payload(after_update, "delete", nil, "new1")
+assert(#after_delete.items == 2 and after_delete.counts.done == 1
+    and after_delete.counts.open == 1, "local delete merge failed")
+assert(#payload.items == 2, "merge must not mutate the source payload")
+
+print("OK todos client smoke: /todos JSON, per-tag markdown URL, CRUD, details, tags, local merge, bearer, validation")

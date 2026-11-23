@@ -58,7 +58,35 @@ local function icon(name, width, on_tap, show_parent)
     }
 end
 
-local function build_header(model, config, content_w, callbacks)
+local function details_icon(width, on_tap, show_parent, eye_file)
+    if eye_file then
+        return TapIcon:new{
+            file = eye_file,
+            width = width,
+            height = width,
+            show_parent = show_parent,
+            on_tap = on_tap,
+        }
+    end
+    return icon("notice-info", width, on_tap, show_parent)
+end
+
+-- KOReader's native "plus" is an outlined appbar icon: its 2/48 stroke reads
+-- as a hollow cross at small sizes. Ship a solid '+' instead.
+local function plus_icon(width, on_tap, show_parent, plus_file)
+    if plus_file then
+        return TapIcon:new{
+            file = plus_file,
+            width = width,
+            height = width,
+            show_parent = show_parent,
+            on_tap = on_tap,
+        }
+    end
+    return icon("plus", width, on_tap, show_parent)
+end
+
+local function build_header(model, config, content_w, callbacks, plus_file)
     local row = HorizontalGroup:new{ align = "center" }
     local badge = FrameContainer:new{
         margin = 0,
@@ -69,7 +97,7 @@ local function build_header(model, config, content_w, callbacks)
     }
     local title = DesignText.line(model.title or "TASKS", config, "label_lg", true)
     local gap = Theme.native_size(config, Theme.space.sm)
-    local add_w = Theme.native_size(config, 24)
+    local add_w = Theme.native_size(config, 30)
     local refresh_w = Theme.native_size(config, 22)
     local has_refresh = type(callbacks.on_refresh) == "function"
     local icon_space = add_w + (has_refresh and refresh_w + gap or 0)
@@ -82,11 +110,11 @@ local function build_header(model, config, content_w, callbacks)
         table.insert(row, icon("cre.render.reload", refresh_w, callbacks.on_refresh, callbacks.show_parent))
         table.insert(row, HorizontalSpan:new{ width = gap })
     end
-    table.insert(row, glyph("+", config, add_w, callbacks.on_add, callbacks.show_parent))
+    table.insert(row, plus_icon(add_w, callbacks.on_add, callbacks.show_parent, plus_file))
     return row
 end
 
-local function build_task_row(task, config, content_w, callbacks)
+local function build_task_row(task, config, content_w, callbacks, eye_file)
     local check_w = Theme.native_size(config, 28)
     local delete_w = Theme.native_size(config, 20)
     local info_w = Theme.native_size(config, 18)
@@ -115,9 +143,9 @@ local function build_task_row(task, config, content_w, callbacks)
         on_tap = task.id and function() callbacks.on_rename(task.id) end or nil,
     })
     table.insert(row, HorizontalSpan:new{ width = gap })
-    table.insert(row, icon("notice-info", info_w, function()
+    table.insert(row, details_icon(info_w, function()
         callbacks.on_details(task.id)
-    end, callbacks.show_parent))
+    end, callbacks.show_parent, eye_file))
     table.insert(row, HorizontalSpan:new{ width = gap })
     table.insert(row, icon("edit", info_w, function()
         callbacks.on_edit_details(task.id)
@@ -149,8 +177,12 @@ function TodosCard.build(model, config, inner_w, callbacks)
     local border = Theme.hairline(config)
     local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
+    local eye_file = callbacks.plugin_dir
+        and Theme.icon_file(callbacks.plugin_dir, "action", "eye") or nil
+    local plus_file = callbacks.plugin_dir
+        and Theme.icon_file(callbacks.plugin_dir, "action", "plus") or nil
     local content = VerticalGroup:new{ align = "left" }
-    table.insert(content, build_header(model, config, content_w, callbacks))
+    table.insert(content, build_header(model, config, content_w, callbacks, plus_file))
     table.insert(content, DesignText.span(config, Theme.space.sm))
     table.insert(content, DesignText.divider(config, content_w))
 
@@ -161,7 +193,7 @@ function TodosCard.build(model, config, inner_w, callbacks)
     else
         for index, task in ipairs(model.items) do
             table.insert(content, DesignText.span(config, Theme.space.sm))
-            table.insert(content, build_task_row(task, config, content_w, callbacks))
+            table.insert(content, build_task_row(task, config, content_w, callbacks, eye_file))
             if index < #model.items then
                 table.insert(content, DesignText.span(config, Theme.space.sm))
                 table.insert(content, DesignText.divider(config, content_w))

@@ -57,7 +57,12 @@ end
 local function encode_body(opts, max_request_bytes)
     local body, content_type
     if opts.json_body ~= nil then
-        local ok, encoded = pcall(rapidjson.encode, opts.json_body)
+        local ok, encoded
+        if opts.json_options ~= nil then
+            ok, encoded = pcall(rapidjson.encode, opts.json_body, opts.json_options)
+        else
+            ok, encoded = pcall(rapidjson.encode, opts.json_body)
+        end
         if not ok then return nil, nil, "parse" end
         body = encoded
         content_type = "application/json"

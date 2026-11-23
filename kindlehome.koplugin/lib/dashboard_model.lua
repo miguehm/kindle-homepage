@@ -266,6 +266,25 @@ local function matches_tag(task, filter)
     return false
 end
 
+local function matches_status(task, status)
+    if status == "open" then return task.done ~= true end
+    if status == "done" then return task.done == true end
+    return true
+end
+
+local function status_count(counts, status)
+    counts = counts or {}
+    if status == "open" then return tonumber(counts.open) or 0 end
+    if status == "done" then return tonumber(counts.done) or 0 end
+    return tonumber(counts.total) or 0
+end
+
+local function status_word(status)
+    if status == "open" then return "pendientes" end
+    if status == "done" then return "terminadas" end
+    return "tareas"
+end
+
 function DashboardModel.build_todos(state, opts)
     state = state or {}
     opts = opts or {}
@@ -277,15 +296,24 @@ function DashboardModel.build_todos(state, opts)
     local counts = payload.counts or {}
     local filter = opts.tag_filter or ""
     if filter == "all" then filter = "" end
+    local status_filter = opts.status_filter or "all"
+    if status_filter ~= "open" and status_filter ~= "done" then status_filter = "all" end
 
-    local tasks, untagged_open = {}, 0
+    local untagged = { open = 0, done = 0, total = 0 }
     for _, task in ipairs(payload.items or {}) do
-        if matches_tag(task, filter) then
+        if #(task.tags or {}) == 0 then
+            untagged.total = untagged.total + 1
+            if task.done then untagged.done = untagged.done + 1 else untagged.open = untagged.open + 1 end
+        end
+    end
+
+    local tasks = {}
+    for _, task in ipairs(payload.items or {}) do
+        if matches_tag(task, filter) and matches_status(task, status_filter) then
             local tag_parts = {}
             for _, tag in ipairs(task.tags or {}) do
                 table.insert(tag_parts, "#" .. tostring(tag))
             end
-            if #tag_parts == 0 and not task.done then untagged_open = untagged_open + 1 end
             local details = tostring(task.details or "")
             table.insert(tasks, {
                 id = tostring(task.id),
@@ -299,24 +327,35 @@ function DashboardModel.build_todos(state, opts)
         end
     end
 
+    local status_chips = {
+        { kind = "status", value = "open", label = "Pendientes",
+          count = status_count(counts, "open"), active = status_filter == "open" },
+        { kind = "status", value = "done", label = "Terminadas",
+          count = status_count(counts, "done"), active = status_filter == "done" },
+        { kind = "status", value = "all", label = "Todas",
+          count = status_count(counts, "total"), active = status_filter == "all" },
+    }
+
     local chips = {}
     if opts.show_tags ~= false then
         table.insert(chips, {
-            tag = "all", label = "Todas", count = #(payload.items or {}),
+            tag = "all", label = "Sin filtro", count = status_count(counts, status_filter),
             active = filter == "", can_open = false,
         })
         for _, entry in ipairs(payload.tags or {}) do
             local tag = tostring(entry.tag or "")
-            if tag ~= "" then
+            if tag ~= "" and (tonumber(entry.total) or 0) > 0 then
+                local count = status_count(entry, status_filter)
                 table.insert(chips, {
-                    tag = tag, label = "#" .. tag, count = tonumber(entry.open) or 0,
-                    active = filter == tag, can_open = (tonumber(entry.open) or 0) > 0,
+                    tag = tag, label = "#" .. tag, count = count,
+                    active = filter == tag, can_open = count > 0,
                 })
             end
         end
-        if untagged_open > 0 then
+        local untagged_count = status_count(untagged, status_filter)
+        if untagged_count > 0 then
             table.insert(chips, {
-                tag = UNTAGGED_FILTER, label = "Sin etiqueta", count = untagged_open,
+                tag = UNTAGGED_FILTER, label = "Sin etiqueta", count = untagged_count,
                 active = filter == UNTAGGED_FILTER, can_open = false,
             })
         end
@@ -340,12 +379,15 @@ function DashboardModel.build_todos(state, opts)
     end
     local empty = nil
     if #tasks == 0 then
-        if filter == UNTAGGED_FILTER then
-            empty = "No untagged tasks."
+        local line = tostring(todos_state.line or "")
+        if filter == "" and #(payload.items or {}) == 0 and line:find("unavailable", 1, true) then
+            empty = line
+        elseif filter == UNTAGGED_FILTER then
+            empty = "No hay tareas " .. status_word(status_filter) .. " sin etiqueta."
         elseif filter ~= "" then
-            empty = "No tasks with #" .. filter .. "."
+            empty = "No hay tareas " .. status_word(status_filter) .. " con #" .. filter .. "."
         else
-            empty = tostring(todos_state.line or "TODO'S unavailable.")
+            empty = "No hay tareas " .. status_word(status_filter) .. "."
         end
     end
     local todos_model = {
@@ -361,7 +403,9 @@ function DashboardModel.build_todos(state, opts)
         refreshed = refreshed,
         truncated = payload.truncated and true or false,
         tags = chips,
+        status_chips = status_chips,
         active_tag = filter,
+        active_status = status_filter,
     }
 
     return {

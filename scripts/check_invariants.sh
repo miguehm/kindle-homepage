@@ -314,8 +314,28 @@ if ! grep -q 'function Http.post_json' kindlehome.koplugin/lib/http.lua \
         || ! grep -q 'cre.render.reload' kindlehome.koplugin/ui/widget/todos_card.lua \
         || ! grep -q 'allow_newline = true' kindlehome.koplugin/ui/todos.lua \
         || ! grep -q 'multiinputdialog' kindlehome.koplugin/ui/todos.lua \
-        || ! grep -q 'function TagChips.build' kindlehome.koplugin/ui/widget/tag_chips.lua; then
+        || ! grep -q 'function TagChips.build' kindlehome.koplugin/ui/widget/tag_chips.lua \
+        || ! grep -q 'function TagChips.build_status' kindlehome.koplugin/ui/widget/tag_chips.lua \
+        || ! grep -q 'kh:todos:status:' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'status_filter' kindlehome.koplugin/lib/dashboard_model.lua \
+        || ! grep -q 'function Todos.merge_payload' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'function TodosState.apply' kindlehome.koplugin/lib/todos_state.lua \
+        || ! grep -q 'json_options' kindlehome.koplugin/lib/http.lua; then
     echo "FAIL: TODO'S module wiring incomplete"
+    fail=1
+fi
+if [ ! -f kindlehome.koplugin/assets/icons/action/eye.svg ] \
+        || [ ! -f kindlehome.koplugin/assets/icons/action/plus.svg ] \
+        || ! grep -q 'Theme.icon_file(callbacks.plugin_dir, "action", "eye")' \
+            kindlehome.koplugin/ui/widget/todos_card.lua \
+        || ! grep -q 'Theme.icon_file(callbacks.plugin_dir, "action", "plus")' \
+            kindlehome.koplugin/ui/widget/todos_card.lua \
+        || ! grep -q 'HoldChip' kindlehome.koplugin/ui/widget/tag_chips.lua; then
+    echo "FAIL: TODO'S eye/plus icon assets and long-press tag Markdown opener are missing"
+    fail=1
+fi
+if grep -q 'book.opened' kindlehome.koplugin/ui/widget/tag_chips.lua; then
+    echo "FAIL: tag filter chips must not render a book icon"
     fail=1
 fi
 if grep -rn 'Http\.' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then

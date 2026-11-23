@@ -36,6 +36,11 @@ local function build_sections(model, config, content_w, callbacks)
             model.hint, content_w, config, "body_sm", false, Theme.color.muted))
     end
     if model.todos then
+        local status_chips = TagChips.build_status(model.todos, config, content_w, {
+            on_status = callbacks.on_status,
+            show_parent = callbacks.show_parent,
+        })
+        if status_chips then table.insert(sections, status_chips) end
         local chips = TagChips.build(model.todos, config, content_w, {
             on_tag = callbacks.on_tag,
             on_tag_doc = callbacks.on_tag_doc,

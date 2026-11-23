@@ -188,7 +188,7 @@ package.preload["ui/widget/container/inputcontainer"] = function()
         o = self:extend(o)
         inputs[#inputs + 1] = o
         if o.content_group then o.is_row = true end
-        if o.icon then tap_icons[#tap_icons + 1] = o end
+        if o.icon or o.file then tap_icons[#tap_icons + 1] = o end
         if o.init then o:init() end
         return o
     end
@@ -276,7 +276,10 @@ end
 local state_payload = {
     schema_version = 1,
     counts = { open = 2, done = 1, total = 3 },
-    tags = { { tag = "casa", open = 2, done = 0, total = 2 } },
+    tags = {
+        { tag = "casa", open = 1, done = 0, total = 1 },
+        { tag = "trabajo", open = 0, done = 1, total = 1 },
+    },
     truncated = false,
     items = {
         { id = "a1", title = "Comprar leche", tags = { "casa" }, details = "Llamar a la tienda", done = false, revision = 1 },
@@ -284,27 +287,79 @@ local state_payload = {
         { id = "c3", title = "Revisar correo", tags = { "trabajo" }, details = "", done = true, revision = 2 },
     },
 }
-local invalidations = 0
+local applied = 0
 package.preload["lib/todos_state"] = function()
     return {
         load = function()
             return { status = "ok", line = "TODO'S — 2 open, 1 done", payload = state_payload,
                      fetched_at = os.time(), stale = false }
         end,
-        invalidate = function() invalidations = invalidations + 1 end,
+        apply = function(_, _payload) applied = applied + 1 end,
+        invalidate = function() end,
     }
 end
 package.preload["lib/todos"] = function()
-    local function success(id)
-        return { ok = true, status = 200, task = { id = id or "new1", title = "Task", tags = {}, done = false, revision = 1 } }
+    local function success(id, task)
+        return { ok = true, status = 200,
+                 task = task or { id = id or "new1", title = "Task", tags = {}, done = false, revision = 1 } }
+    end
+    local function merge(payload, action, task, id)
+        payload = payload or {}
+        local items = {}
+        for _, item in ipairs(payload.items or {}) do table.insert(items, item) end
+        if action == "create" and task then table.insert(items, task) end
+        if action == "update" and task then
+            for index, item in ipairs(items) do
+                if item.id == task.id then items[index] = task break end
+            end
+        end
+        if action == "delete" then
+            local keep = {}
+            for _, item in ipairs(items) do
+                if item.id ~= tostring(id) then table.insert(keep, item) end
+            end
+            items = keep
+        end
+        local open, done = 0, 0
+        for _, item in ipairs(items) do
+            if item.done then done = done + 1 else open = open + 1 end
+        end
+        return { items = items, tags = payload.tags or {},
+                 counts = { open = open, done = done, total = #items }, truncated = false }
     end
     return {
-        create = function(_, text, _, details)
-            table.insert(writes, { kind = "create", text = text, details = details })
-            return success()
+        create = function(_, text, tags, details)
+            table.insert(writes, { kind = "create", text = text, tags = tags, details = details })
+            return success(nil, { id = "new1", title = text, tags = tags or {}, details = details,
+                                  done = false, revision = 1 })
         end,
-        update = function(_, id, patch) table.insert(writes, { kind = "update", id = id, patch = patch }); return success(id) end,
+        update = function(_, id, patch)
+            table.insert(writes, { kind = "update", id = id, patch = patch })
+            local original = {}
+            for _, item in ipairs(state_payload.items) do
+                if item.id == id then
+                    for k, v in pairs(item) do original[k] = v end
+                    break
+                end
+            end
+            if patch.text ~= nil then original.title = patch.text end
+            if patch.tags ~= nil then original.tags = patch.tags end
+            if patch.details ~= nil then original.details = patch.details end
+            if patch.done ~= nil then original.done = patch.done end
+            original.revision = (original.revision or 1) + 1
+            return success(id, original)
+        end,
         delete_task = function(_, id) table.insert(writes, { kind = "delete", id = id }); return { ok = true, status = 204 } end,
+        merge_payload = merge,
+        parse_tags = function(input)
+            local out = {}
+            if input == nil then return out, nil end
+            for part in tostring(input):gmatch("[^%s,]+") do
+                local tag = part:match("^#+(.+)$") or part
+                table.insert(out, tag:lower())
+            end
+            return out, nil
+        end,
     }
 end
 local store_calls = {}
@@ -360,7 +415,8 @@ local model = DashboardModel.build_todos(raw_state, { task_rows = 6, todos_page 
 assert(model.nav.active == "todos" and #model.nav.tabs == 3, "todos nav model wrong")
 assert(model.todos.items[1].title == "Comprar leche" and model.todos.counts.open == 2, "todos model rows wrong")
 assert(model.todos.items[1].details == "Llamar a la tienda", "details lost in model")
-assert(#model.todos.tags == 3 and model.todos.tags[1].tag == "all", "tag chips missing")
+assert(#model.todos.tags == 4 and model.todos.tags[1].tag == "all"
+    and model.todos.tags[1].label == "Sin filtro", "tag chips missing")
 assert(model.docs == nil, "the TASK LISTS card must be gone")
 local filtered = DashboardModel.build_todos(raw_state, { task_rows = 6, tag_filter = "casa" })
 assert(#filtered.todos.items == 1 and filtered.todos.items[1].title == "Comprar leche", "local tag filter failed")
@@ -370,6 +426,20 @@ local empty_state = {}
 empty_state.todos = { line = "TODO'S unavailable.", payload = { counts = {}, items = {} } }
 local empty_model = DashboardModel.build_todos(empty_state, {})
 assert(empty_model.todos.empty == "TODO'S unavailable.", "empty model wrong")
+local pending_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "open" })
+assert(pending_model.todos.active_status == "open" and #pending_model.todos.items == 2,
+    "pending status filter failed")
+local done_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "done" })
+assert(#done_model.todos.items == 1 and done_model.todos.items[1].title == "Revisar correo",
+    "done status filter failed")
+assert(#pending_model.todos.status_chips == 3
+    and pending_model.todos.status_chips[1].value == "open"
+    and pending_model.todos.status_chips[2].value == "done"
+    and pending_model.todos.status_chips[3].value == "all", "status chips missing")
+local both_model = DashboardModel.build_todos(raw_state, {
+    task_rows = 6, status_filter = "open", tag_filter = "casa",
+})
+assert(#both_model.todos.items == 1, "status and tag filters must combine")
 
 local config = {
     get = function(_, key)
@@ -400,6 +470,8 @@ assert(captured_shell.body.fits ~= nil, "todos body fit flag missing")
 assert(type(captured_shell.body.getCropRegion) == "function", "crop region missing")
 assert(captured_shell.body.dialog and captured_shell.body.show_parent, "dialog wiring missing")
 assert(captured_shell.body.model.nav.active == "todos", "active tab must be todos")
+assert(captured_shell.body.model.todos.active_status == "open", "default status must be pending")
+assert(#captured_shell.body.model.todos.items == 2, "default view must show only pending tasks")
 
 local nav_cells = {}
 for _, input in ipairs(inputs) do
@@ -441,27 +513,57 @@ assert(refresh and type(refresh.on_tap) == "function", "refresh button missing i
 refresh:onTapIcon()
 assert(dispatched[#dispatched].id == "refresh" and dispatched[#dispatched].ctx.source == "todos",
     "refresh button must dispatch refresh from todos")
-assert(icon("book.opened"), "per-tag Markdown icon missing")
-local casa_chip = chip("#casa 2")
+assert(icon("book.opened") == nil, "tag chips must not render a book icon")
+local eye = nil
+for _, widget in ipairs(tap_icons) do
+    if type(widget.file) == "string" and widget.file:find("eye.svg", 1, true) then
+        eye = widget
+        break
+    end
+end
+assert(eye and type(eye.on_tap) == "function", "eye details icon missing")
+
+local status_done = chip("Terminadas 1")
+assert(status_done and type(status_done.on_tap) == "function", "done status chip missing")
+status_done:onTapChip()
+assert(#captured_shell.body.model.todos.items == 1
+    and captured_shell.body.model.todos.active_status == "done", "done filter failed")
+chip("Todas 3"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 3, "Todas status chip must show every task")
+chip("Pendientes 2"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 2, "Pendientes status chip must reset to open")
+
+local casa_chip = chip("#casa 1")
 assert(casa_chip and type(casa_chip.on_tap) == "function", "tag chip missing")
+assert(type(casa_chip.on_hold) == "function", "tag chip must support long press")
 casa_chip:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1, "chip must filter the task list")
 assert(captured_shell.body.model.todos.active_tag == "casa", "chip must set the active tag")
-chip("Todas 3"):onTapChip()
-assert(#captured_shell.body.model.todos.items == 3, "Todas must clear the filter")
+chip("Sin filtro 2"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 2, "Sin filtro must clear the tag filter")
 
-local plus = glyph("+")
-assert(plus and type(plus.on_tap) == "function", "add button missing")
-plus:onTapGlyph()
+local plus = nil
+for _, widget in ipairs(tap_icons) do
+    if type(widget.file) == "string" and widget.file:find("plus.svg", 1, true) then
+        plus = widget
+        break
+    end
+end
+assert(plus and type(plus.on_tap) == "function", "solid '+' add icon missing")
+assert(plus.width >= 28, "add icon must stay larger than the row icons")
+plus:onTapIcon()
 local add_dialog = dialogs[#dialogs]
-assert(add_dialog and type(add_dialog.getFields) == "function" and #add_dialog.fields == 2, "add modal must have two fields")
-assert(add_dialog.fields[2].allow_newline == true, "details field must allow newlines")
+assert(add_dialog and type(add_dialog.getFields) == "function" and #add_dialog.fields == 3,
+    "add modal must have three fields")
+assert(add_dialog.fields[3].allow_newline == true, "details field must allow newlines")
 add_dialog.fields[1].text = "Comprar pan #casa"
-add_dialog.fields[2].text = "En la panadería de la esquina"
+add_dialog.fields[2].text = "casa urgente"
+add_dialog.fields[3].text = "En la panadería de la esquina"
 add_dialog.buttons[1][2].callback()
 assert(writes[#writes].kind == "create" and writes[#writes].text == "Comprar pan #casa", "create not dispatched")
 assert(writes[#writes].details == "En la panadería de la esquina", "create must send details")
-assert(invalidations == 1, "write must invalidate caches")
+assert(writes[#writes].tags[1] == "casa" and writes[#writes].tags[2] == "urgente", "create must send tags")
+assert(applied == 1, "write must apply locally")
 assert(notices[#notices] == "Task added.", "create notice missing")
 
 local checkbox = glyph("[ ]")
@@ -483,15 +585,37 @@ for _, widget in ipairs(tap_icons) do
     if widget.icon == "edit" then edit_icons[#edit_icons + 1] = widget end
 end
 assert(#edit_icons >= #rows, "edit details must be available on every row, even without details")
-assert(icon("notice-info"), "view details icon missing on every row")
+assert(eye, "view details icon missing on every row")
 rows[1]:onTapRow()
 assert(dialogs[#dialogs].fields[1].text == "Comprar leche", "edit modal not prefilled")
-assert(dialogs[#dialogs].fields[2].text == "Llamar a la tienda", "details not prefilled in modal")
+assert(dialogs[#dialogs].fields[2].text == "casa", "tags not prefilled in modal")
+assert(dialogs[#dialogs].fields[3].text == "Llamar a la tienda", "details not prefilled in modal")
 dialogs[#dialogs].fields[1].text = "Comprar leche entera"
-dialogs[#dialogs].fields[2].text = "Llamar a la tienda grande"
+dialogs[#dialogs].fields[3].text = "Llamar a la tienda grande"
 dialogs[#dialogs].buttons[1][2].callback()
 assert(writes[#writes].patch.text == "Comprar leche entera", "rename failed")
 assert(writes[#writes].patch.details == "Llamar a la tienda grande", "edit must send details")
+assert(writes[#writes].patch.tags[1] == "casa", "rename must resend tags")
+
+eye:onTapIcon()
+assert(viewers[#viewers] and viewers[#viewers].text == "Llamar a la tienda grande",
+    "eye icon must open the full note in a text viewer")
+
+icon("edit"):onTapIcon()
+assert(dialogs[#dialogs].fields[3].text == "Llamar a la tienda grande", "edit icon must prefill details")
+dialogs[#dialogs].fields[3].text = "nueva nota"
+dialogs[#dialogs].buttons[1][2].callback()
+assert(writes[#writes].patch.details == "nueva nota", "details patch failed")
+assert(writes[#writes].patch.text == nil and writes[#writes].patch.tags == nil,
+    "details-only save must not touch text or tags")
+
+icon("edit"):onTapIcon()
+dialogs[#dialogs].fields[2].text = ""
+dialogs[#dialogs].buttons[1][2].callback()
+assert(type(writes[#writes].patch.tags) == "table" and #writes[#writes].patch.tags == 0,
+    "emptying the tags field must send an empty tag list")
+assert(writes[#writes].patch.text == nil and writes[#writes].patch.details == nil,
+    "clearing tags must not touch text or details")
 
 local del = glyph("x")
 assert(del, "delete button missing")
@@ -499,17 +623,6 @@ del:onTapGlyph()
 assert(confirms[#confirms] and type(confirms[#confirms].ok_callback) == "function", "delete confirmation missing")
 confirms[#confirms].ok_callback()
 assert(writes[#writes].kind == "delete" and writes[#writes].id == "a1", "delete failed")
-
-local info = icon("notice-info")
-assert(info and type(info.on_tap) == "function", "view details icon missing")
-info:onTapIcon()
-assert(viewers[#viewers] and viewers[#viewers].text == "Llamar a la tienda",
-    "view details icon must open the full note in a text viewer")
-icon("edit"):onTapIcon()
-assert(dialogs[#dialogs].fields[2].text == "Llamar a la tienda", "edit icon must prefill details")
-dialogs[#dialogs].fields[2].text = "nueva nota"
-dialogs[#dialogs].buttons[1][2].callback()
-assert(writes[#writes].patch.details == "nueva nota", "details patch failed")
 
 view:handle_link("kh:todos:tagdoc:casa")
 assert(store_calls[#store_calls].id == "todos-tag-casa" and store_calls[#store_calls].force == true,

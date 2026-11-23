@@ -99,6 +99,114 @@ local function normalize_tag_counts(raw)
     return out
 end
 
+-- Parse the free-form Tags field. Values may be separated by spaces or commas
+-- and may carry a leading '#'. An empty field is valid and means "no tags".
+function Todos.parse_tags(input)
+    local out = {}
+    if input == nil then return out, nil end
+    for part in tostring(input):gmatch("[^%s,]+") do
+        local tag = part:match("^#+(.+)$") or part
+        tag = tag:lower()
+        if not valid_tag(tag) then return nil, "invalid_tags" end
+        local seen = false
+        for _, existing in ipairs(out) do
+            if existing == tag then seen = true break end
+        end
+        if not seen then
+            if #out >= 10 then return nil, "invalid_tags" end
+            table.insert(out, tag)
+        end
+    end
+    return out, nil
+end
+
+local function primary_tag(task)
+    return (task.tags and task.tags[1]) or ""
+end
+
+local function sort_tasks(a, b)
+    if a.done ~= b.done then return not a.done end
+    if not a.done then
+        local ta, tb = primary_tag(a), primary_tag(b)
+        if ta == "" and tb ~= "" then return false end
+        if ta ~= "" and tb == "" then return true end
+        if ta ~= tb then return ta < tb end
+        local ca, cb = a.created_at or "", b.created_at or ""
+        if ca ~= cb then return ca < cb end
+        return tostring(a.id) < tostring(b.id)
+    end
+    local da, db = a.done_at, b.done_at
+    if (da == nil) ~= (db == nil) then return da ~= nil end
+    if da and db and da ~= db then return da > db end
+    return tostring(a.id) < tostring(b.id)
+end
+
+-- Apply a local write to a cached todos payload. The server response is the
+-- authoritative task for create/update; delete needs only the id.
+function Todos.merge_payload(payload, action, task, id)
+    payload = payload or {}
+    local items = {}
+    for _, raw in ipairs(payload.items or {}) do
+        local normalized = normalize_task(raw)
+        if normalized then table.insert(items, normalized) end
+    end
+    local changed = normalize_task(task)
+    if action == "create" then
+        if changed then table.insert(items, changed) end
+    elseif action == "update" then
+        if changed then
+            local found = false
+            for index, existing in ipairs(items) do
+                if existing.id == changed.id then
+                    items[index] = changed
+                    found = true
+                    break
+                end
+            end
+            if not found then table.insert(items, changed) end
+        end
+    elseif action == "delete" then
+        local keep = {}
+        for _, existing in ipairs(items) do
+            if existing.id ~= tostring(id) then table.insert(keep, existing) end
+        end
+        items = keep
+    end
+    table.sort(items, sort_tasks)
+
+    local counts = { open = 0, done = 0, total = #items }
+    local by_tag = {}
+    for _, item in ipairs(items) do
+        if item.done then counts.done = counts.done + 1 else counts.open = counts.open + 1 end
+        for _, tag in ipairs(item.tags or {}) do
+            local entry = by_tag[tag]
+            if not entry then
+                entry = { tag = tag, open = 0, done = 0, total = 0 }
+                by_tag[tag] = entry
+            end
+            if item.done then entry.done = entry.done + 1 else entry.open = entry.open + 1 end
+            entry.total = entry.total + 1
+        end
+    end
+    local names = {}
+    for name in pairs(by_tag) do table.insert(names, name) end
+    table.sort(names)
+    local tags = {}
+    for _, name in ipairs(names) do table.insert(tags, by_tag[name]) end
+
+    return {
+        schema_version = payload.schema_version or Todos.API_VERSION,
+        generated_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        filter = payload.filter or { status = "all" },
+        counts = counts,
+        tags = tags,
+        returned_count = #items,
+        truncated = payload.truncated and true or false,
+        items = items,
+        source_base_url = payload.source_base_url,
+    }
+end
+
 local function request_opts(config, opts)
     opts = opts or {}
     local api_key = config and config:get("hnmd_api_key") or ""
@@ -121,6 +229,10 @@ local function write_opts(config, opts, method, payload)
         merged.json_body = payload
     else
         merged.body = ""
+    end
+    if method == "POST" or method == "PATCH" then
+        -- rapidjson encodes an empty Lua table as {} by default; the API needs [].
+        merged.json_options = { empty_table_as_array = true }
     end
     return merged
 end
@@ -177,34 +289,6 @@ function Todos.fetch_index(config, opts)
     return { ok = true, status = res.status, payload = payload, fetched_at = os.time() }
 end
 
-function Todos.fetch_tags(config, opts)
-    opts = opts or {}
-    local base = Hnmd.base_url(config)
-    if not base then
-        return { ok = false, error_kind = "parse", error = "bad_base_url" }
-    end
-    local res = Http.get_json(base .. "/todos/tags", request_opts(config, opts))
-    if not res.ok then
-        Logger.warn("todos", "tags_failed", { kind = res.error_kind, status = res.status })
-        return res
-    end
-    local data = res.json
-    if type(data) ~= "table" or to_num(data.schema_version) ~= Todos.API_VERSION then
-        return { ok = false, error_kind = "parse", error = "invalid_response" }
-    end
-    return {
-        ok = true,
-        status = res.status,
-        payload = {
-            counts = normalize_counts(data.counts),
-            tags = normalize_tag_counts(data.tags),
-            untagged = normalize_counts(data.untagged),
-            generated_at = to_str(data.generated_at),
-        },
-        fetched_at = os.time(),
-    }
-end
-
 function Todos.create(config, text, tags, details, opts)
     local base = Hnmd.base_url(config)
     if not base then
@@ -256,7 +340,11 @@ function Todos.update(config, id, patch, opts)
         if type(patch.tags) ~= "table" then
             return { ok = false, error_kind = "parse", error = "invalid_tags" }
         end
-        body.tags = patch.tags
+        local tags, tag_err = Todos.parse_tags(table.concat(patch.tags, " "))
+        if tag_err then
+            return { ok = false, error_kind = "invalid_tags", error = tag_err }
+        end
+        body.tags = tags
     end
     if patch.details ~= nil then
         if type(patch.details) ~= "string" or #patch.details > 1000 then

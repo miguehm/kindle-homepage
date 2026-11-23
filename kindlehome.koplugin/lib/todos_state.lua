@@ -77,6 +77,25 @@ function TodosState.load(config, paths, opts)
     return finish(res, "todos")
 end
 
+-- Persist a locally merged payload after a successful write. ttl_seconds = 0
+-- means the next load refreshes from the server when online, while offline
+-- clients keep the merged payload as a stale fallback.
+function TodosState.apply(paths, payload)
+    if not paths or type(payload) ~= "table" then return false end
+    local cache = Cache:new(paths)
+    local ok = cache:write("todos.json", {
+        fetched_at = os.time(),
+        ttl_seconds = 0,
+        source = "todos",
+        status = "ok",
+        payload = payload,
+    })
+    if not ok then
+        Logger.warn("todos_state", "apply_write_failed", { source = "todos" })
+    end
+    return ok
+end
+
 function TodosState.invalidate(paths)
     local cache = Cache:new(paths)
     for _, name in ipairs({ "todos.json" }) do
