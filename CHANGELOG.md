@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.13.1] - 2026-11-22
+
+### Fixed
+- **The add-task button is a real `+` again.** KOReader's native `plus` icon is an outlined appbar shape (a hollow cross at small sizes), so the plugin now ships its own thin-stroked `assets/icons/action/plus.svg`, matching the weight of the other header icons at the larger 30 dp size.
+
+## [2.13.0] - 2026-11-22
+
+### Fixed
+- **Tags are no longer lost when editing a task.** The edit modal now sends only the fields that actually changed, and always includes the explicit tag list when the title changes. Clearing `details` no longer clears `tags`; emptying the **Tags** field leaves the task without tags on purpose. Requires backend OpenAPI 1.3.0.
+- **Writes are reflected immediately.** After a successful `POST`/`PATCH`/`DELETE`, the server response is merged into the local payload and cached, so the list updates without a new request and an offline refresh cannot roll back a successful save.
+
+### Added
+- **Status filters in TODO'S.** New **Pendientes / Terminadas / Todas** chips combine with the tag filter; **Pendientes** is active by default. Tag chips now show **Sin filtro** instead of a second “Todas”.
+- **Tags field.** Adding or editing a task uses a three-field modal (Task, Tags, Details). Tags are optional, may be left empty, accept spaces or commas and an optional leading `#`.
+
+### Changed
+- The details icon is now an eye (`assets/icons/action/eye.svg`) instead of `notice-info`, and the add button is larger (its own thin `+` asset arrived in 2.13.1).
+- Tag filter chips no longer show the book icon; a **long press** on a tag chip opens its Markdown (`/v1/todos/tags/<tag>.md`) with the current status filter.
+
 ## [2.12.1] - 2026-11-22
 
 ### Fixed

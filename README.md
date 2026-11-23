@@ -105,11 +105,15 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
 - Hacker News content comes only from hnmd; RSS/Atom and arbitrary external
   URL fetch are not supported.
 - The **Store** tab-bar entry is a placeholder. **Todo's** reads `/todos` from
-  hnmd and supports adding, toggling, editing and deleting tasks, filtering by
-  tag with chips and opening a tag's Markdown in the native reader; writes need
-  a   valid API key and server-side write permissions. The optional `details`
-  field requires backend OpenAPI 1.2.0 and is entered in the same modal as the
-  task text; the TASKS card header has a refresh button.
+  hnmd and supports adding, toggling, editing and deleting tasks. The task list
+  has status chips (**Pendientes / Terminadas / Todas**, active by default
+  **Pendientes**) combined with tag chips (**Sin filtro / #tag / Sin etiqueta**);
+  a long press on a tag chip opens its Markdown in the native reader. Writes
+  need a valid API key and server-side write permissions. The modal has three
+  fields (Task, Tags, Details); tags are optional and may be left empty. It
+  requires backend OpenAPI 1.3.0, which also guarantees that editing a task or
+  clearing its details never erases its tags. The TASKS card header has a
+  refresh button.
 - Full internationalization and a screensaver/userpatch integration are not
   implemented.
 - The API key is stored as local plaintext by KOReader's settings system; it
