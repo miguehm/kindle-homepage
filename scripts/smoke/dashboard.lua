@@ -582,9 +582,10 @@ for _, spec in ipairs(dispatched) do
 end
 local refresh_icon
 for _, icon in ipairs(tap_icons) do
-    if icon.icon == "cre.render.reload" then refresh_icon = icon end
+    if type(icon.file) == "string" and icon.file:find("refresh.svg", 1, true) then refresh_icon = icon end
 end
-assert(refresh_icon and type(refresh_icon.on_tap) == "function", "in-card refresh missing")
+assert(refresh_icon and type(refresh_icon.on_tap) == "function" and refresh_icon.icon == nil,
+    "two-arrow in-card refresh missing")
 refresh_icon.on_tap()
 assert(dispatched[#dispatched].id == "refresh", "refresh dispatch failed")
 

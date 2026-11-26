@@ -539,8 +539,15 @@ local function chip(text)
     return nil
 end
 
-local refresh = icon("cre.render.reload")
-assert(refresh and type(refresh.on_tap) == "function", "refresh button missing in TASKS header")
+local refresh = nil
+for _, widget in ipairs(tap_icons) do
+    if type(widget.file) == "string" and widget.file:find("refresh.svg", 1, true) then
+        refresh = widget
+        break
+    end
+end
+assert(refresh and type(refresh.on_tap) == "function" and refresh.icon == nil,
+    "two-arrow refresh asset missing in TASKS header")
 refresh:onTapIcon()
 assert(dispatched[#dispatched].id == "refresh" and dispatched[#dispatched].ctx.source == "todos",
     "refresh button must dispatch refresh from todos")

@@ -58,6 +58,21 @@ local function icon(name, width, on_tap, show_parent)
     }
 end
 
+-- Two-arrow cycle shipped by the plugin; the native "cre.render.reload" is a
+-- framed document with a tiny badge, which is unreadable at e-ink sizes.
+local function refresh_icon(width, on_tap, show_parent, refresh_file)
+    if refresh_file then
+        return TapIcon:new{
+            file = refresh_file,
+            width = width,
+            height = width,
+            show_parent = show_parent,
+            on_tap = on_tap,
+        }
+    end
+    return icon("cre.render.reload", width, on_tap, show_parent)
+end
+
 local function details_icon(width, on_tap, show_parent, eye_file)
     if eye_file then
         return TapIcon:new{
@@ -102,12 +117,14 @@ local function build_header(model, config, content_w, callbacks, plus_file)
     local has_refresh = type(callbacks.on_refresh) == "function"
     local icon_space = add_w + (has_refresh and refresh_w + gap or 0)
     local used = badge:getSize().w + gap + title:getSize().w + icon_space
+    local refresh_file = callbacks.plugin_dir
+        and Theme.icon_file(callbacks.plugin_dir, "action", "refresh") or nil
     table.insert(row, badge)
     table.insert(row, HorizontalSpan:new{ width = gap })
     table.insert(row, title)
     table.insert(row, HorizontalSpan:new{ width = math.max(0, content_w - used) })
     if has_refresh then
-        table.insert(row, icon("cre.render.reload", refresh_w, callbacks.on_refresh, callbacks.show_parent))
+        table.insert(row, refresh_icon(refresh_w, callbacks.on_refresh, callbacks.show_parent, refresh_file))
         table.insert(row, HorizontalSpan:new{ width = gap })
     end
     table.insert(row, plus_icon(add_w, callbacks.on_add, callbacks.show_parent, plus_file))

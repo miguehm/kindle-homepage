@@ -18,7 +18,29 @@ local TapRow = require("ui/widget/tap_row")
 
 local StoriesCard = {}
 
-local function build_header(hn, config, content_w, callbacks)
+-- Two-arrow cycle shipped by the plugin; the native "cre.render.reload" is a
+-- framed document with a tiny badge, which is unreadable at e-ink sizes.
+local function refresh_icon(icon_size, on_refresh, show_parent, plugin_dir)
+    local refresh_file = plugin_dir and Theme.icon_file(plugin_dir, "action", "refresh") or nil
+    if refresh_file then
+        return TapIcon:new{
+            file = refresh_file,
+            width = icon_size,
+            height = icon_size,
+            show_parent = show_parent,
+            on_tap = on_refresh,
+        }
+    end
+    return TapIcon:new{
+        icon = "cre.render.reload",
+        width = icon_size,
+        height = icon_size,
+        show_parent = show_parent,
+        on_tap = on_refresh,
+    }
+end
+
+local function build_header(hn, config, content_w, callbacks, plugin_dir)
     local row = HorizontalGroup:new{ align = "center" }
     local badge = FrameContainer:new{
         margin = 0,
@@ -55,13 +77,7 @@ local function build_header(hn, config, content_w, callbacks)
         table.insert(row, label)
         table.insert(row, HorizontalSpan:new{ width = label_gap })
     end
-    table.insert(row, TapIcon:new{
-        icon = "cre.render.reload",
-        width = icon_size,
-        height = icon_size,
-        show_parent = callbacks.show_parent,
-        on_tap = callbacks.on_refresh,
-    })
+    table.insert(row, refresh_icon(icon_size, callbacks.on_refresh, callbacks.show_parent, plugin_dir))
     return row
 end
 
@@ -148,7 +164,7 @@ function StoriesCard.build(hn, config, inner_w, callbacks, plugin_dir, fill_heig
     local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
     local content = VerticalGroup:new{ align = "left" }
-    table.insert(content, build_header(hn, config, content_w, callbacks))
+    table.insert(content, build_header(hn, config, content_w, callbacks, plugin_dir))
     table.insert(content, DesignText.span(config, Theme.space.sm))
     table.insert(content, DesignText.divider(config, content_w))
 
