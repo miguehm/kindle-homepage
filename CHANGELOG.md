@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0] - 2026-11-26
+
+### Changed
+- **Refresh icon is now two arrows in a cycle.** Both the TASKS header in TODO'S and Top Stories use the plugin's own `assets/icons/action/refresh.svg` instead of KOReader's `cre.render.reload` (a framed document with a tiny badge that was hard to read on e-ink). The native icon remains only as a fallback when no plugin asset path is available.
+- **The TODO'S card fills the remaining viewport height.** Like Top Stories, it now absorbs the space left under the status/tag chips, so the list no longer floats at the top with a blank area below it. The pager, when present, stays bottom-anchored inside the taller card.
+- **Due dates no longer need to be typed in full.** The add/edit modal adds **Today / Tomorrow / +1 week** presets and a **Pick…** button that opens KOReader's native date picker (year/month/day spinners, plus **Clear**). The `YYYY-MM-DD` field is kept for exact entry and validation; all generated dates use the same canonical UTC format. If the picker widget is unavailable, presets still work.
+
 ## [2.14.0] - 2026-11-23
 
 ### Added

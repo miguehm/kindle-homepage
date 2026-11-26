@@ -112,11 +112,14 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
   colon (e.g. `Pendientes: 5`). A long press on a tag chip opens its Markdown in
   the native reader. Writes need a valid API key and server-side write
   permissions. The modal has four fields (Task, Tags, Details, Due date); tags
-  and the due date are optional. Deadlines are shown as `Vence: DD-MM-YYYY` in
-  the row. The **Por vencer** horizon is set in Ajustes → TODO'S → *Due soon
-  window (days)* (default 3, range 1–30). It requires backend OpenAPI 1.4.0,
-  which also guarantees that editing a task or clearing its details never
-  erases its tags. The TASKS card header has a refresh button.
+  and the due date are optional. The due date accepts an exact `YYYY-MM-DD` or
+  can be filled with the **Today / Tomorrow / +1 week** presets and KOReader's
+  native date picker (**Pick…** / **Clear**). Deadlines are shown as
+  `Vence: DD-MM-YYYY` in the row. The **Por vencer** horizon is set in Ajustes →
+  TODO'S → *Due soon window (days)* (default 3, range 1–30). It requires backend
+  OpenAPI 1.4.0, which also guarantees that editing a task or clearing its
+  details never erases its tags. The TASKS card header has a two-arrow refresh
+  button and the card fills the available height.
 - Full internationalization and a screensaver/userpatch integration are not
   implemented.
 - The API key is stored as local plaintext by KOReader's settings system; it
