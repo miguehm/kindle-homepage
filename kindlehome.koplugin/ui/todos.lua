@@ -38,8 +38,29 @@ local function due_error(due)
     return nil
 end
 
+-- Presets and the native picker both emit the canonical UTC YYYY-MM-DD form
+-- that lib/todos.lua validates and the backend expects.
+local function due_from_offset(days)
+    return os.date("!%Y-%m-%d", os.time() + days * 86400)
+end
+
+local function due_parts(value)
+    local y, m, d = tostring(value or ""):match("^(%d+)%-(%d+)%-(%d+)$")
+    y, m, d = tonumber(y), tonumber(m), tonumber(d)
+    if y and m and d and y >= 1 and m >= 1 and m <= 12 and d >= 1 and d <= 31 then
+        return y, m, d
+    end
+    local now = os.date("!*t")
+    return now.year, now.month, now.day
+end
+
 function TodosView:new(opts)
     opts = opts or {}
+    local ok_dt, DateTimeWidget = pcall(function() return require("ui/widget/datetimewidget") end)
+    if not ok_dt then
+        Logger.warn("todos_view", "datetime_widget_unavailable", { err = tostring(DateTimeWidget) })
+        DateTimeWidget = nil
+    end
     local o = {
         config = opts.config,
         paths = opts.paths,
@@ -55,6 +76,7 @@ function TodosView:new(opts)
         status_filter = "open",
         last_state = nil,
         refreshing = false,
+        datetime_widget = DateTimeWidget,
     }
     setmetatable(o, self)
     self.__index = self
@@ -172,8 +194,56 @@ local function tags_to_input(tags)
     return table.concat(parts, " ")
 end
 
+function TodosView:_pick_due_date(dialog, set_due)
+    local DateTimeWidget = self.datetime_widget
+    if not DateTimeWidget then return end
+    local fields = type(dialog.getFields) == "function" and dialog:getFields() or {}
+    local year, month, day = due_parts(fields[4])
+    local picker
+    local function restore_keyboard()
+        if type(dialog.onShowKeyboard) == "function" then dialog:onShowKeyboard() end
+    end
+    picker = DateTimeWidget:new{
+        year = year,
+        month = month,
+        day = day,
+        title_text = _("Set due date"),
+        ok_text = _("Set"),
+        extra_text = _("Clear"),
+        extra_callback = function()
+            set_due("")
+            if picker and type(picker.onClose) == "function" then picker:onClose() end
+            restore_keyboard()
+        end,
+        callback = function(value)
+            set_due(string.format("%04d-%02d-%02d", value.year, value.month, value.day))
+            restore_keyboard()
+        end,
+    }
+    UIManager:show(picker)
+end
+
 function TodosView:prompt_task(title, initial_text, initial_tags, initial_details, initial_due, on_save)
     local dialog
+    local function set_due(value)
+        value = value or ""
+        if dialog.input_fields and dialog.input_fields[4]
+                and type(dialog.input_fields[4].setText) == "function" then
+            dialog.input_fields[4]:setText(value)
+        end
+        dialog.fields[4].text = value
+    end
+    local due_row = {
+        { text = _("Today"), callback = function() set_due(due_from_offset(0)) end },
+        { text = _("Tomorrow"), callback = function() set_due(due_from_offset(1)) end },
+        { text = _("+1 week"), callback = function() set_due(due_from_offset(7)) end },
+    }
+    if self.datetime_widget then
+        table.insert(due_row, { text = _("Pick…"), callback = function()
+            self:_pick_due_date(dialog, set_due)
+        end })
+    end
+    table.insert(due_row, { text = _("Clear"), callback = function() set_due("") end })
     local buttons = {
         {
             {
@@ -206,6 +276,7 @@ function TodosView:prompt_task(title, initial_text, initial_tags, initial_detail
             },
         },
     }
+    table.insert(buttons, due_row)
     dialog = MultiInputDialog:new{
         title = title,
         fields = {

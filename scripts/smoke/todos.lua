@@ -4,7 +4,7 @@ local PLUGIN = (arg and arg[1] or ".") .. "/"
 
 local SCREEN_W, SCREEN_H, SCROLLBAR = 1200, 1600, 12
 local captured_shell, shown, dispatched, notices = nil, 0, {}, {}
-local inputs, dialogs, confirms, viewers, tap_icons = {}, {}, {}, {}, {}
+local inputs, dialogs, confirms, viewers, tap_icons, datepickers = {}, {}, {}, {}, {}, {}
 local writes = {}
 
 local function geom(o)
@@ -242,7 +242,26 @@ package.preload["ui/widget/multiinputdialog"] = function()
             for i, field in ipairs(o.fields or {}) do out[i] = field.text or "" end
             return out
         end
+        o.input_fields = {}
+        for i, field in ipairs(o.fields or {}) do
+            o.input_fields[i] = {
+                text = field.text or "",
+                setText = function(self, value)
+                    self.text = value
+                    field.text = value
+                end,
+            }
+        end
         dialogs[#dialogs + 1] = o
+        return o
+    end
+    return M
+end
+package.preload["ui/widget/datetimewidget"] = function()
+    local M = {}
+    function M:new(o)
+        datepickers[#datepickers + 1] = o
+        o.onClose = function() end
         return o
     end
     return M
@@ -614,6 +633,23 @@ assert(add_dialog and type(add_dialog.getFields) == "function" and #add_dialog.f
     "add modal must have four fields")
 assert(add_dialog.fields[3].allow_newline == true, "details field must allow newlines")
 assert(add_dialog.fields[4].hint == "YYYY-MM-DD", "due date field must document its format")
+local due_row = add_dialog.buttons[2]
+assert(#due_row == 5, "quick due presets and picker buttons missing")
+due_row[1].callback()
+assert(add_dialog:getFields()[4] == due_date(0), "Today preset must write a canonical date")
+due_row[2].callback()
+assert(add_dialog:getFields()[4] == due_date(1), "Tomorrow preset must write a canonical date")
+due_row[3].callback()
+assert(add_dialog:getFields()[4] == due_date(7), "+1 week preset must write a canonical date")
+local pick_button = due_row[4]
+assert(pick_button.text == "Pick…", "native date picker button missing")
+pick_button.callback()
+local picker = datepickers[#datepickers]
+assert(picker and picker.year and picker.month and picker.day, "date picker must open with a valid date")
+picker.callback({ year = 2027, month = 2, day = 3 })
+assert(add_dialog:getFields()[4] == "2027-02-03", "picker must write a canonical due date")
+picker.extra_callback(picker)
+assert(add_dialog:getFields()[4] == "", "Clear must empty the due date")
 add_dialog.fields[1].text = "Comprar pan #casa"
 add_dialog.fields[2].text = "casa urgente"
 add_dialog.fields[3].text = "En la panadería de la esquina"

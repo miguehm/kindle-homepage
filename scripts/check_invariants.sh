@@ -324,6 +324,26 @@ if ! grep -q 'function Http.post_json' kindlehome.koplugin/lib/http.lua \
     echo "FAIL: TODO'S module wiring incomplete"
     fail=1
 fi
+if ! grep -q 'Theme.icon_file(callbacks.plugin_dir, "action", "refresh")' \
+        kindlehome.koplugin/ui/widget/todos_card.lua \
+        || ! grep -q 'Theme.icon_file(plugin_dir, "action", "refresh")' \
+        kindlehome.koplugin/ui/widget/stories_card.lua \
+        || [ ! -f kindlehome.koplugin/assets/icons/action/refresh.svg ]; then
+    echo "FAIL: refresh control must use the two-arrow cycle asset in TODO'S and Top Stories"
+    fail=1
+fi
+if ! grep -q 'TodosCard.apply_fill(card' kindlehome.koplugin/ui/todos_body.lua \
+        || ! grep -q 'function TodosCard.apply_fill' kindlehome.koplugin/ui/widget/todos_card.lua; then
+    echo "FAIL: TODO'S card must absorb the leftover viewport height"
+    fail=1
+fi
+if ! grep -q 'ui/widget/datetimewidget' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q '_("Today")' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q '_("Tomorrow")' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q '_("+1 week")' kindlehome.koplugin/ui/todos.lua; then
+    echo "FAIL: due date presets and native picker must stay wired"
+    fail=1
+fi
 if ! grep -q 'todos_due_soon_days' kindlehome.koplugin/lib/config.lua \
         || ! grep -q 'due_date' kindlehome.koplugin/lib/todos.lua \
         || ! grep -q 'due_soon' kindlehome.koplugin/lib/dashboard_model.lua \
