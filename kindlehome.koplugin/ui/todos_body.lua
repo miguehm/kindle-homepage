@@ -29,8 +29,9 @@ function BodyWrapper:getCropRegion()
     return self.dimen
 end
 
-local function build_sections(model, config, content_w, callbacks)
+local function build_sections(model, config, content_w, callbacks, fill_height)
     local sections = {}
+    local card = nil
     if model.hint then
         table.insert(sections, DesignText.box(
             model.hint, content_w, config, "body_sm", false, Theme.color.muted))
@@ -47,9 +48,10 @@ local function build_sections(model, config, content_w, callbacks)
             show_parent = callbacks.show_parent,
         })
         if chips then table.insert(sections, chips) end
-        table.insert(sections, TodosCard.build(model.todos, config, content_w, callbacks))
+        card = TodosCard.build(model.todos, config, content_w, callbacks, fill_height)
+        table.insert(sections, card)
     end
-    return sections
+    return sections, card
 end
 
 local function assemble(sections, config)
@@ -64,7 +66,9 @@ local function assemble(sections, config)
 end
 
 local function build_page(measured_model, config, content_w, callbacks)
-    local root = assemble(build_sections(measured_model, config, content_w, callbacks), config)
+    -- No fill during measurement: filling would hide the real content height.
+    local sections, card = build_sections(measured_model, config, content_w, callbacks)
+    local root = assemble(sections, config)
     local page = LeftContainer:new{
         dimen = Geom:new{ w = content_w, h = root:getSize().h },
         root,
@@ -72,7 +76,7 @@ local function build_page(measured_model, config, content_w, callbacks)
     local row = HorizontalGroup:new{ align = "top" }
     table.insert(row, HorizontalSpan:new{ width = Theme.margin(config) })
     table.insert(row, page)
-    return page, root, row
+    return page, root, row, card
 end
 
 function TodosBody.build(model, config, width, height, callbacks)
@@ -101,9 +105,9 @@ function TodosBody.build(model, config, width, height, callbacks)
         if type(callbacks.model_for) == "function" then
             measured_model = callbacks.model_for(rows) or model
         end
-        local page, root, row = build_page(measured_model, config, content_w, callbacks)
+        local page, root, row, card = build_page(measured_model, config, content_w, callbacks)
         return {
-            rows = rows, model = measured_model, page = page, root = root, row = row,
+            rows = rows, model = measured_model, page = page, root = root, row = row, card = card,
             fits = root:getSize().h <= viewport_h,
         }
     end
@@ -139,6 +143,16 @@ function TodosBody.build(model, config, width, height, callbacks)
         scroll.show_parent = callbacks.show_parent
         viewport = scroll
     else
+        local card = chosen.card
+        if card then
+            local extra = viewport_h - chosen.root:getSize().h
+            if extra > 0 then
+                TodosCard.apply_fill(card, card:getSize().h + extra)
+                if chosen.root.resetLayout then chosen.root:resetLayout() end
+                chosen.page.dimen = Geom:new{ w = content_w, h = chosen.root:getSize().h }
+                if chosen.row.resetLayout then chosen.row:resetLayout() end
+            end
+        end
         filler = VerticalSpan:new{ width = math.max(0, viewport_h - chosen.row:getSize().h) }
         viewport = chosen.row
     end

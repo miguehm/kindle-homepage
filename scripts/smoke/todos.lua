@@ -497,6 +497,18 @@ local view = TodosView:new{
 view:show({ allow_network = false })
 assert(shown == 1 and captured_shell and captured_shell.title == "TODO'S", "todos shell missing")
 assert(captured_shell.body.fits ~= nil, "todos body fit flag missing")
+assert(captured_shell.body.fits == true, "todos body must fit without scrolling")
+assert(captured_shell.body.filler == nil or (captured_shell.body.filler.width or 0) <= 0,
+    "todos card must absorb the leftover viewport height")
+local TodosCard = require("ui/widget/todos_card")
+local pager_content = {
+    { tag = "header" }, { tag = "divider" }, { tag = "spacer" }, { tag = "pager" },
+    getSize = function() return { w = 10, h = 100 } end,
+}
+local pager_card = { fill_info = { border = 1, padding = 2, has_pager = true }, [1] = pager_content }
+TodosCard.apply_fill(pager_card, 120)
+assert(#pager_content == 5 and pager_content[4].width == 14 and pager_content[5].tag == "pager"
+    and pager_card.fill_info == nil, "pager must stay bottom-anchored inside the filled card")
 assert(#captured_shell.body.model.todos.status_chips == 5, "shell must show all five status chips")
 assert(type(captured_shell.body.getCropRegion) == "function", "crop region missing")
 assert(captured_shell.body.dialog and captured_shell.body.show_parent, "dialog wiring missing")

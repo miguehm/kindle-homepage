@@ -190,7 +190,23 @@ local function build_pager(model, config, content_w, callbacks)
     return row
 end
 
-function TodosCard.build(model, config, inner_w, callbacks)
+function TodosCard.apply_fill(card, fill_height)
+    local info = card.fill_info
+    if not info or not fill_height then return end
+    local content = card[1]
+    local gap = fill_height - 2 * (info.border + info.padding) - content:getSize().h
+    if gap <= 0 then return end
+    if info.has_pager then
+        -- Keep the pager row bottom-anchored inside the taller card.
+        table.insert(content, #content, VerticalSpan:new{ width = gap })
+    else
+        table.insert(content, VerticalSpan:new{ width = gap })
+    end
+    if content.resetLayout then content:resetLayout() end
+    card.fill_info = nil
+end
+
+function TodosCard.build(model, config, inner_w, callbacks, fill_height)
     local border = Theme.hairline(config)
     local padding = Theme.native_size(config, 10)
     local content_w = math.max(1, inner_w - 2 * (border + padding))
@@ -234,7 +250,7 @@ function TodosCard.build(model, config, inner_w, callbacks)
         table.insert(content, build_pager(model, config, content_w, callbacks))
     end
 
-    return FrameContainer:new{
+    local frame = FrameContainer:new{
         margin = 0,
         padding = padding,
         bordersize = border,
@@ -242,6 +258,9 @@ function TodosCard.build(model, config, inner_w, callbacks)
         background = Theme.color.canvas,
         content,
     }
+    frame.fill_info = { border = border, padding = padding, has_pager = model.pages > 1 }
+    TodosCard.apply_fill(frame, fill_height)
+    return frame
 end
 
 return TodosCard
