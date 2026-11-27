@@ -6,8 +6,13 @@ local captured, captured_shell, shell_instance, shown = nil, nil, nil, 0
 local READER_THROW = false
 local READER_CALLBACK = nil
 
+local clipboard, notices = nil, {}
+package.preload["ui/widget/infomessage"] = function()
+    return { new = function(_, o) notices[#notices + 1] = o.text; return o end }
+end
 package.preload["device"] = function()
     return {
+        input = { setClipboardText = function(text) clipboard = text end },
         screen = {
             scaleBySize = function(_, n) return math.floor(n * 2) end,
             getWidth = function() return 1200 end,
@@ -67,6 +72,7 @@ package.preload["lib/logger"] = function()
 end
 
 local ArticleView = dofile(PLUGIN .. "ui/article_view.lua")
+
 
 local closed, back_called = false, false
 local actions = {
@@ -172,5 +178,13 @@ assert(fallback_called == true, "failed ReaderUI must call on_fallback")
 assert(captured_shell, "failed ReaderUI must show the fallback shell")
 assert(failed_cleaned == 1 and not exists(failed_html),
     "failed ReaderUI must delete the unused ephemeral HTML")
+
+do
+    local links = ArticleView:new{}
+    assert(links:handle_link("https://example.com/story") == true
+        and clipboard == "https://example.com/story"
+        and notices[#notices]:find("Link copied", 1, true),
+        "external links must be copied to the clipboard with a short notice")
+end
 
 print("OK article_view smoke: pager body=" .. #w.body .. "B reader cleanup OK")

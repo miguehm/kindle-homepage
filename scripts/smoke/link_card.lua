@@ -108,7 +108,8 @@ P:atomic_write(canonical .. ".html", "<!--kh-meta-v2--><html><body>old render</b
 local regenerated = store:render_derived(canonical, meta, false)
 assert(regenerated, "old derived html must be regenerated")
 local migrated = read(regenerated)
-assert(migrated:find("<!--kh-meta-v2-->", 1, true), "render marker missing after migration")
+assert(migrated:find(require("lib/render/md_to_html").render_marker(), 1, true),
+    "render marker missing after migration")
 assert(read(canonical .. ".html") == nil, "render_derived must remove the legacy adjacent html")
 
 os.execute("rm -rf '" .. dir .. "'")

@@ -2,8 +2,11 @@
 local MdToHtml = {}
 
 -- Persisted HTML carries a marker so old derived files can be regenerated when
--- the meta/link contract changes without touching the canonical .md.
-local RENDER_MARKER = "<!--kh-meta-v2-->"
+-- the meta/link contract changes without touching the canonical .md. Every
+-- version shares MARKER_PREFIX, which identifies plugin-generated files for
+-- cleanup regardless of version.
+local MARKER_PREFIX = "<!--kh-meta-v"
+local RENDER_MARKER = MARKER_PREFIX .. "3-->"
 
 -- Relative units only: KOReader's HTML layout passes a DPI-scaled
 -- `default_font_size`, while absolute CSS px would be interpreted as device
@@ -23,11 +26,13 @@ local EINK_CSS = table.concat({
     "p{line-height:1.5;margin:0 0 0.8em 0;}",
     "ul,ol{line-height:1.5;margin:0 0 0.9em 1.2em;padding:0;}",
     "li{margin:0.2em 0;}",
+    "li ul,li ol{margin:0.2em 0 0.2em 1.2em;}",
     "pre{font-family:monospace;font-size:0.85em;white-space:pre-wrap;border:0.07em solid #000;padding:0.6em;margin:0.7em 0;}",
     "code{font-family:monospace;}",
     "hr{border:0;border-top:0.07em solid #000;margin:1em 0;}",
     "a{color:#000;text-decoration:underline;}",
-    ".meta{font-size:0.78em;color:#222;margin:0 0 0.9em 0;}",
+    ".meta{font-size:0.8em;color:#222;line-height:1.4;margin:0 0 1em 0;padding-bottom:0.6em;border-bottom:0.07em solid #000;}",
+    ".meta a{margin-right:0.8em;}",
     ".notice{font-size:0.95em;margin:0.8em 0;padding:0.7em;border:0.07em solid #000;}",
     ".nav{margin:1.2em 0 0 0;padding-top:0.8em;border-top:0.07em solid #000;font-size:0.9em;}",
     ".navitem{margin:0.5em 0;}",
@@ -174,6 +179,17 @@ function MdToHtml.render(md_text)
                     local level = #hashes
                     if level > 6 then level = 6 end
                     table.insert(out, "<h" .. level .. ">" .. render_inline(heading) .. "</h" .. level .. ">")
+                elseif ul and list_state.type and #line:match("^(%s*)") >= 2 and #out > 0
+                        and type(out[#out]) == "string" and out[#out]:match("</li>$") then
+                    -- One nesting level: an indented bullet under a list item
+                    -- joins (or opens) a sub-list inside that item.
+                    local last = out[#out]
+                    local item = "<li>" .. render_list_item(ul) .. "</li>"
+                    if last:match("</ul></li>$") then
+                        out[#out] = last:gsub("</ul></li>$", function() return item .. "</ul></li>" end)
+                    else
+                        out[#out] = last:gsub("</li>$", function() return "<ul>" .. item .. "</ul></li>" end)
+                    end
                 elseif ul then
                     flush_paragraph(pbuf, out)
                     if list_state.type ~= "ul" then
@@ -221,28 +237,33 @@ function MdToHtml.render(md_text)
     return table.concat(out, "\n")
 end
 
+-- Compact byline under the title: "domain · date · N pts", then the links.
+-- Internal fields (source, id, status) stay out of the reading view.
 local function meta_html(meta)
     if type(meta) ~= "table" then return "" end
-    local parts = {}
-    local function add(label, value)
+    local facts = {}
+    local function add(value)
         if value == nil then return end
         value = tostring(value)
-        if value == "" then return end
-        table.insert(parts, "<div>" .. escape_html(label) .. ": " .. escape_html(value) .. "</div>")
+        if value ~= "" then table.insert(facts, escape_html(value)) end
     end
+    add(meta.domain)
+    add(meta.by and ("by " .. tostring(meta.by)) or nil)
+    add(meta.date)
+    if tonumber(meta.score) then add(tostring(meta.score) .. " pts") end
+    if tonumber(meta.descendants) then add(tostring(meta.descendants) .. " comments") end
+    if meta.status == "stale" then add("saved copy") end
+    local links = {}
     local function add_link(label, href)
         local safe = sanitize_href(href)
         if not safe then return end
-        table.insert(parts, "<div>" .. escape_html(label) .. ': <a href="' .. safe .. '">'
-            .. escape_html(safe) .. "</a></div>")
+        table.insert(links, '<a href="' .. safe .. '">' .. escape_html(label) .. "</a>")
     end
-    add("Source", meta.source)
-    add("Title", meta.title)
-    add("Date", meta.date)
-    add("ID", meta.id)
-    add("Status", meta.status)
-    add_link("HN", meta.hn_url)
-    add_link("Article URL", meta.url)
+    add_link("Original article", meta.url)
+    add_link("HN discussion", meta.hn_url)
+    local parts = {}
+    if #facts > 0 then table.insert(parts, "<div>" .. table.concat(facts, " · ") .. "</div>") end
+    if #links > 0 then table.insert(parts, "<div>" .. table.concat(links, " ") .. "</div>") end
     if #parts == 0 then return "" end
     return '<div class="meta">' .. table.concat(parts, "") .. "</div>"
 end
@@ -284,6 +305,11 @@ end
 
 function MdToHtml.css()
     return EINK_CSS
+end
+
+-- True for any plugin-generated HTML head, whatever its marker version.
+function MdToHtml.is_generated(head)
+    return type(head) == "string" and head:find(MARKER_PREFIX, 1, true) ~= nil
 end
 
 function MdToHtml.render_marker()

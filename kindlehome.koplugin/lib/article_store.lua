@@ -207,12 +207,17 @@ local function mtime(path)
     return 0
 end
 
-local function has_render_marker(path)
+-- `current_only`: the file was rendered with today's marker (safe to reuse).
+-- Otherwise any marker version proves the file is plugin-generated.
+local function has_render_marker(path, current_only)
     local f = io.open(path, "rb")
     if not f then return false end
     local head = f:read(512)
     f:close()
-    return head ~= nil and head:find(MdToHtml.render_marker(), 1, true) ~= nil
+    if current_only then
+        return head ~= nil and head:find(MdToHtml.render_marker(), 1, true) ~= nil
+    end
+    return MdToHtml.is_generated(head)
 end
 
 -- Removes the old derived "<file>.md.html" that lived next to the canonical
@@ -304,7 +309,7 @@ function ArticleStore:render_derived(md_path, meta, force)
     end
     self:_remove_legacy_html(md_path, html_path)
     if not force and file_non_empty(html_path) and mtime(html_path) >= mtime(md_path)
-            and has_render_marker(html_path) then
+            and has_render_marker(html_path, true) then
         return html_path
     end
 

@@ -19,6 +19,8 @@ local ArticleHtmlPager = InputContainer:extend{
     css = nil,
     font_size = nil,
     on_link = nil,
+    start_page = nil,      -- page to restore (session memory per article)
+    on_page_change = nil,  -- function(page)
     htmlbox_widget = nil,
     v_scroll_bar = nil,
     _pan_y = nil,
@@ -40,6 +42,11 @@ function ArticleHtmlPager:init()
         html_link_tapped_callback = self.on_link,
     }
     self.htmlbox_widget:setContent(self.body, self.css, self.font_size)
+    local start = tonumber(self.start_page)
+    local count = self.htmlbox_widget.page_count or 1
+    if start and start > 1 and start <= count then
+        self.htmlbox_widget:setPageNumber(start)
+    end
 
     self.v_scroll_bar = VerticalScrollBar:new{
         enable = self.htmlbox_widget.page_count > 1,
@@ -95,6 +102,7 @@ function ArticleHtmlPager:scrollText(direction)
     if target < 1 or target > htmlbox.page_count then return false end
     htmlbox:setPageNumber(target)
     self:_repaint()
+    if type(self.on_page_change) == "function" then self.on_page_change(target) end
     return true
 end
 
@@ -106,6 +114,7 @@ function ArticleHtmlPager:scrollToRatio(ratio)
     if page == htmlbox.page_number then return false end
     htmlbox:setPageNumber(page)
     self:_repaint()
+    if type(self.on_page_change) == "function" then self.on_page_change(page) end
     return true
 end
 
@@ -118,9 +127,19 @@ function ArticleHtmlPager:onPagerSwipe(_, ges)
     return false
 end
 
+-- Links win over page turns; otherwise the left third goes back and the
+-- right two thirds go forward (forward is the common action).
 function ArticleHtmlPager:onPagerTap(_, ges)
     if not ges.pos then return false end
-    if ges.pos.x < Screen:getWidth() / 2 then
+    local htmlbox = self.htmlbox_widget
+    if htmlbox and type(htmlbox.getLinkByPosition) == "function" and type(self.on_link) == "function" then
+        local ok, link = pcall(function() return htmlbox:getLinkByPosition(ges.pos) end)
+        if ok and link then
+            self.on_link(link)
+            return true
+        end
+    end
+    if ges.pos.x < Screen:getWidth() / 3 then
         return self:scrollText(-1)
     end
     return self:scrollText(1)

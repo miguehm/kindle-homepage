@@ -1,5 +1,7 @@
 -- SPDX-License-Identifier: MIT
+local Device = require("device")
 local UIManager = require("ui/uimanager")
+local InfoMessage = require("ui/widget/infomessage")
 local ArticleHtmlPager = require("ui/article_html_pager")
 local ReaderUI = require("apps/reader/readerui")
 
@@ -19,6 +21,9 @@ function ArticleView:new(opts)
         widget = nil,
         on_close = opts.on_close,
         current = nil,
+        -- Fallback pager position per article, for this session only (the
+        -- native reader keeps its own progress).
+        fallback_pages = {},
     }
     setmetatable(o, self)
     self.__index = self
@@ -86,6 +91,21 @@ function ArticleView:handle_link(uri)
         end
     elseif uri == "kh:close" then
         self:close()
+        return true
+    end
+    -- External links cannot open on the Kindle: copy them for later.
+    if uri:match("^https?://") then
+        local copied = false
+        local input = Device and Device.input
+        if input and type(input.setClipboardText) == "function" then
+            copied = pcall(function() input.setClipboardText(uri) end)
+        end
+        local shown = #uri > 80 and (uri:sub(1, 79) .. "…") or uri
+        UIManager:show(InfoMessage:new{
+            text = (copied and "Link copied:\n" or "Link:\n") .. shown,
+            timeout = 4,
+        })
+        Logger.info("article_view", "external_link", { copied = copied })
         return true
     end
     Logger.warn("article_view", "unknown_link", { uri = uri })
@@ -193,6 +213,10 @@ function ArticleView:show(doc)
                 body = body,
                 css = css,
                 font_size = font_size,
+                start_page = doc.id and self.fallback_pages[doc.id] or nil,
+                on_page_change = function(page)
+                    if doc.id then self.fallback_pages[doc.id] = page end
+                end,
                 on_link = function(link)
                     self:handle_link(link and link.uri)
                 end,

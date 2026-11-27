@@ -75,11 +75,26 @@ local linked = Md.document({
     },
     body_html = "<p>x</p>",
 })
-assert(linked:find("<div>HN: <a href=", 1, true), "HN meta link missing")
+assert(linked:find(">HN discussion</a>", 1, true), "HN meta link missing")
 assert(linked:find('href="https://news.ycombinator.com/item?id=42"', 1, true), "HN href missing")
-assert(linked:find("<div>Article URL: <a href=", 1, true), "source meta link missing")
+assert(linked:find(">Original article</a>", 1, true), "source meta link missing")
 assert(linked:find('href="https://example.com/story"', 1, true), "source href missing")
-assert(linked:find("<div>Source: hnmd</div>", 1, true), "Source label must stay distinct from source URL")
+assert(not linked:find("Source:", 1, true) and not linked:find("hnmd", 1, true),
+    "internal fields must stay out of the reading view")
+local byline = Md.document({
+    title = "Byline",
+    meta = { title = "Byline", domain = "example.com", date = "2026-11-16", score = 342,
+             id = "42", status = "ok", source = "hnmd" },
+    body_html = "<p>x</p>",
+})
+assert(byline:find("example.com · 2026-11-16 · 342 pts", 1, true), "compact byline missing")
+assert(not byline:find("Title:", 1, true) and not byline:find("ID:", 1, true)
+    and not byline:find("Status:", 1, true), "the title must not repeat in the meta block")
+assert(Md.is_generated("<!--kh-meta-v2--><html>") and Md.is_generated(Md.render_marker())
+    and not Md.is_generated("<html>"), "every marker version must identify generated HTML")
+local nested = Md.render("- parent\n  - child one\n  - child two\n- next\n")
+assert(nested:find("<li>parent<ul><li>child one</li><li>child two</li></ul></li>", 1, true)
+    and nested:find("<li>next</li>", 1, true), "indented bullets must nest one level")
 
 local tasks_html = Md.render("# Todos\n\n- [ ] Comprar leche #casa\n- [x] Revisar correo #trabajo\n")
 assert(tasks_html:find('<span class="task">[ ]</span> Comprar leche', 1, true), "open task marker missing")
