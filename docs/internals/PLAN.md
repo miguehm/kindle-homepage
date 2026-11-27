@@ -759,3 +759,32 @@ Tras crear una tarea aparecían números falsos en **Vencidas** que desaparecía
 | `./scripts/smoke_ui.sh` | PASS | **25 smokes**; `todos_client.lua` cubre deltas, preservación de contadores due y create idempotente; `todos.lua` cubre el refresh automático y la línea de reloj |
 
 Pendiente en PW5: crear con/sin vencimiento y comprobar que `Vencidas` no se dispara, toggle/editar/borrar con el refresh automático, offline tras escribir, 12/24 h, `tz` configurado y escalas S–XL/apaisado.
+
+## 15) Fase 36 — actualizaciones de pantalla mínimas (release 2.19.0)
+
+Estado: **repo PASS (2026-11-26)**; matriz en Kindle PW5 pendiente.
+
+### Motivo y causa raíz
+Cualquier cambio de estado (`refresh`, cambio de página, filtro, ajuste, indicador `Updating…`) pasaba por `Dashboard:show()` / `TodosView:show()`, que hacía `_teardown()` + `Shell:new` + `shell:show()` → `UIManager:setDirty(shell, "full")`. Un refresco manual costaba **2 flashes completos** (indicador + resultado) y uno automático tras escribir **3**; un 304 con el mismo payload también repintaba. En e-ink eso se traduce en parpadeos evitables y UI bloqueada durante el rebuild.
+
+### Decisiones
+- `Shell:update_body()` reutiliza el Shell abierto: sustituye sólo el body dentro del `VerticalGroup`, llama a `resetLayout()` y encola **una** `UIManager:setDirty(self, "ui", region)` con el `getCropRegion()` del body desplazado por `header_height`. Nunca cierra/reabre ni hace `setDirty` a widgets anidados.
+- Firma determinista (`lib/ui_signature.lua`, serializador Lua 5.1 sin dependencias) del estado + bandera de vista. Si la firma es igual a la ya pintada, **no se hace nada**: cero `setDirty`. Así un refresco servido por caché vigente y un `set_refreshing(false)` redundante no cuestan ni un repintado. Un 304 sí actualiza `fetched_at` y con él la etiqueta relativa (`Updated`, `5 min ago`), así que en ese caso se pinta una sola vez.
+- El modelo se reconstruye desde `self.last_state` en cada actualización in-place (`_build_model`), y el `body_factory` lee `self.model` en vez de un modelo capturado, para que el indicador y los filtros lleguen realmente al body. Tras el swap se sincroniza la página clampada y se refresca la firma.
+- `show({force_full=true})` (rotación / `on_layout_change`) conserva la ruta antigua con `Shell:new` + refresco `full`. Apertura y cierre siguen siendo `full`.
+- Cada 8 actualizaciones `ui` se promueve una a `full` (contador por Shell, reiniciado en `show()`/cierre) para evitar ghosting acumulado en e-ink. Las actualizaciones sin cambios no incrementan el contador.
+- Sólo el refresco **explícito** pinta `Updating…`; los automáticos (tras escribir o al abrir con `refresh_on_open`) pasan `indicator=false` y pintan directamente el resultado. El refresco manual sigue usando `forceRePaint` para que el indicador se vea antes del fetch bloqueante.
+
+### Desviaciones registradas
+- Fase 16 documentaba "cambio de página → reconstruir el shell, flash aceptable". Queda **superada**: el cambio de página ahora es un repintado regional sin flash; la firma incluye la página, así que paginar siempre produce exactamente una actualización.
+- La firma se calcula sobre el estado renderizado, no sobre el payload crudo: se repinta cuando cambia algo visible (por ejemplo la etiqueta relativa tras un 304), aunque los datos de fondo sean los mismos.
+- El contador de promoción es por instancia de Shell y no se persiste: tras reiniciar KOReader empieza en cero, igual que la propia pantalla.
+
+### Verificación (2026-11-26, Linux dev, `luac5.1` / `lua5.1`)
+| Gate | Resultado | Evidencia |
+| --- | --- | --- |
+| `./scripts/check_lua51.sh` | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)` |
+| `./scripts/check_invariants.sh` | PASS | Nuevos guards de `update_body`, `setDirty(self, "ui", region)`, firma/`force_full` en ambas vistas y `show_indicator` en `main.lua` |
+| `./scripts/smoke_ui.sh` | PASS | **26 smokes**; nuevo `refresh_paint.lua` (7 `ui` regionales + 1 `full`, región `0/100/1200/1500`, open/close `full`); dashboard y TODO'S comprueban que un repintado idéntico cuesta cero y que paginar/filtrar reparte una actualización `ui` sin reabrir el Shell |
+
+Pendiente en PW5: contar flashes en refresco manual (2, ambos regionales), automático tras escritura (1), page/filtros (1) y 304 (0); comprobar que el `full` periódico limpia el ghosting y que el indicador `Updating…` sigue siendo visible antes del fetch; rotación con `force_full`; `crash.log` sin `Error when loading`.

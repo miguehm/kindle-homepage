@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.19.0] - 2026-11-26
+
+### Changed
+- **Minimum screen updates on every refresh.** The Shell is no longer torn down and recreated when only the content changes: paging, filters, settings repaints, refresh results and the `Updating…` indicator now swap just the body and enqueue one non-flashing `ui` refresh for that framebuffer slice. A deterministic signature of the painted state skips the repaint entirely when nothing changed — a refresh served from a still-valid cache, or a redundant `Updating…` flag toggle, costs zero screen updates. Every eighth in-place update is promoted to a full refresh to clear e-ink ghosting; opening, closing and rotation remain full refreshes.
+
+### Added
+- **Indicator only for explicit refreshes.** The `Updating…` paint is shown for manual refreshes (still forced before the blocking fetch) and skipped for automatic refreshes after a TODO'S write or on open, so those now cost a single paint of the final result.
+
 ## [2.18.0] - 2026-11-26
 
 ### Fixed
