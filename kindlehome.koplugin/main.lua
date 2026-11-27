@@ -144,10 +144,16 @@ function KindleHome:registerActions()
     end)
     self.actions:register("refresh", function(ctx)
         local src = ctx and ctx.source
-        local user_initiated = ctx and (src == "dashboard" or src == "todos"
+        -- A refresh following a write is automatic: keep the current page,
+        -- skip the WiFi prompt and the modal spinner.
+        local auto = ctx and ctx.auto == true
+        local user_initiated = (not auto) and ctx and (src == "dashboard" or src == "todos"
             or src == "dispatcher" or ctx.user_initiated)
         local view = src == "todos" and self:getTodos() or nil
-        self:request_dashboard_refresh({ view = view, user_initiated = user_initiated, reset_page = user_initiated })
+        self:request_dashboard_refresh({
+            view = view, user_initiated = user_initiated,
+            reset_page = user_initiated, allow_network = ctx and ctx.allow_network,
+        })
     end)
     self.actions:register("close", function(ctx)
         local src = ctx and ctx.source

@@ -3,7 +3,7 @@
 local PLUGIN = (arg and arg[1] or ".") .. "/"
 
 local SCREEN_W, SCREEN_H, SCROLLBAR = 1200, 1600, 12
-local captured_shell, shown, dispatched, notices = nil, 0, {}, {}
+local captured_shell, shown, dispatched, notices, scheduled = nil, 0, {}, {}, {}
 local inputs, dialogs, confirms, viewers, tap_icons, datepickers = {}, {}, {}, {}, {}, {}
 local writes = {}
 
@@ -43,7 +43,7 @@ package.preload["ui/uimanager"] = function()
         close = function() end,
         setDirty = function() end,
         forceRePaint = function() end,
-        scheduleIn = function() end,
+        scheduleIn = function(_, delay, cb) table.insert(scheduled, cb) end,
     }
 end
 package.preload["ui/widget/infomessage"] = function()
@@ -283,7 +283,10 @@ package.preload["lib/logger"] = function()
     return { info = function() end, warn = function() end, err = function() end }
 end
 package.preload["lib/refresh"] = function()
-    return { new_budget = function() return {} end }
+    return {
+        new_budget = function() return {} end,
+        is_in_progress = function() return false end,
+    }
 end
 package.preload["lib/hnmd"] = function()
     return {
@@ -327,36 +330,52 @@ package.preload["lib/todos"] = function()
         return { ok = true, status = 200,
                  task = task or { id = id or "new1", title = "Task", tags = {}, done = false, revision = 1 } }
     end
+    -- Mirrors lib/todos.lua: server due counters are preserved, only
+    -- deterministic open/done/total deltas are applied locally.
     local function merge(payload, action, task, id)
         payload = payload or {}
-        local items = {}
-        for _, item in ipairs(payload.items or {}) do table.insert(items, item) end
-        if action == "create" and task then table.insert(items, task) end
-        if action == "update" and task then
+        local items, by_id = {}, {}
+        for _, item in ipairs(payload.items or {}) do
+            table.insert(items, item)
+            by_id[item.id] = item
+        end
+        local d_open, d_done = 0, 0
+        if action == "create" and task then
+            if by_id[task.id] then
+                for index, item in ipairs(items) do
+                    if item.id == task.id then items[index] = task break end
+                end
+                if by_id[task.id].done ~= task.done then
+                    if task.done then d_open, d_done = -1, 1 else d_open, d_done = 1, -1 end
+                end
+            else
+                table.insert(items, task)
+                if task.done then d_done = 1 else d_open = 1 end
+            end
+        elseif action == "update" and task then
+            local old = by_id[task.id]
             for index, item in ipairs(items) do
                 if item.id == task.id then items[index] = task break end
             end
-        end
-        if action == "delete" then
-            local keep = {}
-            for _, item in ipairs(items) do
-                if item.id ~= tostring(id) then table.insert(keep, item) end
+            if old and old.done ~= task.done then
+                if task.done then d_open, d_done = -1, 1 else d_open, d_done = 1, -1 end
             end
-            items = keep
-        end
-        local open, done, soon, overdue = 0, 0, 0, 0
-        local today = os.date("!%Y-%m-%d", os.time())
-        local limit = os.date("!%Y-%m-%d", os.time() + 3 * 86400)
-        for _, item in ipairs(items) do
-            if item.done then done = done + 1 else open = open + 1 end
-            if not item.done and item.due_date then
-                if item.due_date < today then overdue = overdue + 1
-                elseif item.due_date <= limit then soon = soon + 1 end
+        elseif action == "delete" then
+            for index, item in ipairs(items) do
+                if item.id == tostring(id) then
+                    if item.done then d_done = -1 else d_open = -1 end
+                    table.remove(items, index)
+                    break
+                end
             end
         end
-        return { items = items, tags = payload.tags or {},
-                 counts = { open = open, done = done, total = #items, due_soon = soon, overdue = overdue },
-                 truncated = false }
+        local counts = {}
+        for key, value in pairs(payload.counts or {}) do counts[key] = value end
+        counts.open = (counts.open or 0) + d_open
+        counts.done = (counts.done or 0) + d_done
+        counts.total = (counts.total or 0) + d_open + d_done
+        return { items = items, tags = payload.tags or {}, counts = counts,
+                 truncated = false, partial = payload.partial and true or false }
     end
     return {
         valid_due_date = function(value)
@@ -456,6 +475,17 @@ assert(model.todos.items[1].details == "Llamar a la tienda", "details lost in mo
 assert(#model.todos.tags == 4 and model.todos.tags[1].tag == "all"
     and model.todos.tags[1].label == "Sin filtro", "tag chips missing")
 assert(model.docs == nil, "the TASK LISTS card must be gone")
+assert(model.todos.clock_line and model.todos.clock_line:find("2:00 PM", 1, true),
+    "todos model must expose a small 12h date/time line")
+local model_24h = DashboardModel.build_todos(raw_state, { task_rows = 6, clock_24h = true })
+assert(model_24h.todos.clock_line:find("14:00", 1, true) ~= nil,
+    "clock line must respect ui_clock_24h")
+local updating_state = {}
+for key, value in pairs(raw_state) do updating_state[key] = value end
+updating_state.refreshing = true
+local updating_model = DashboardModel.build_todos(updating_state, { clock_24h = true })
+assert(updating_model.todos.clock_line:find("Updating", 1, true) ~= nil,
+    "clock line must show the refresh state")
 local filtered = DashboardModel.build_todos(raw_state, { task_rows = 6, tag_filter = "casa" })
 assert(#filtered.todos.items == 1 and filtered.todos.items[1].title == "Comprar leche", "local tag filter failed")
 local untagged = DashboardModel.build_todos(raw_state, { task_rows = 6, tag_filter = "__untagged__" })
@@ -495,7 +525,7 @@ local config = {
         local values = {
             hn_items_per_page = 6, ui_clock_24h = false, show_battery = true,
             show_network = true, refresh_budget_s = 20, ui_font_scale = 1.0,
-            todos_include_tags = true, todos_due_soon_days = 3,
+            todos_include_tags = true, todos_due_soon_days = 3, todos_timezone = "",
         }
         return values[key]
     end,
@@ -661,6 +691,14 @@ assert(writes[#writes].due == today_due, "create must send the due date")
 assert(writes[#writes].tags[1] == "casa" and writes[#writes].tags[2] == "urgente", "create must send tags")
 assert(applied == 1, "write must apply locally")
 assert(notices[#notices] == "Task added.", "create notice missing")
+assert(#scheduled == 1, "create must defer one refresh outside the dialog callback")
+local before_auto = #dispatched
+scheduled[#scheduled]()
+assert(#dispatched == before_auto + 1 and dispatched[#dispatched].id == "refresh"
+    and dispatched[#dispatched].ctx.source == "todos"
+    and dispatched[#dispatched].ctx.auto == true
+    and dispatched[#dispatched].ctx.allow_network == true,
+    "create must auto-refresh the TODO'S counters from the server")
 
 local checkbox = glyph("[ ]")
 assert(checkbox, "open-task checkbox missing")
@@ -733,6 +771,18 @@ view:handle_link("kh:settings")
 assert(dispatched[#dispatched].id == "settings", "settings link failed")
 view:handle_link("kh:refresh")
 assert(dispatched[#dispatched].id == "refresh" and dispatched[#dispatched].ctx.source == "todos", "refresh source wrong")
+
+local function has_text(node, needle, seen)
+    if type(node) ~= "table" or seen[node] then return false end
+    seen[node] = true
+    if type(node.text) == "string" and node.text:find(needle, 1, true) then return true end
+    for _, child in pairs(node) do
+        if has_text(child, needle, seen) then return true end
+    end
+    return false
+end
+assert(has_text(captured_shell.body, captured_shell.body.model.todos.clock_line, {}),
+    "TASKS card must render the small clock/date line")
 
 local function has_handle_event(node, seen)
     if type(node) ~= "table" or seen[node] then return true end

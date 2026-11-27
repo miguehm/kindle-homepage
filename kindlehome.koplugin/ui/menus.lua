@@ -447,6 +447,13 @@ function Menus:settings_items(main_instance)
                         end,
                     },
                     {
+                        text = _("Timezone note"),
+                        keep_menu_open = true,
+                        callback = function()
+                            show_info(_("Set the Kindle clock to the same timezone as TODO'S timezone so due-date presets and counters match the server."), 8)
+                        end,
+                    },
+                    {
                         text = _("Write permissions"),
                         keep_menu_open = true,
                         callback = function()

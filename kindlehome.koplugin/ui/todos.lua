@@ -38,19 +38,26 @@ local function due_error(due)
     return nil
 end
 
--- Presets and the native picker both emit the canonical UTC YYYY-MM-DD form
--- that lib/todos.lua validates and the backend expects.
-local function due_from_offset(days)
-    return os.date("!%Y-%m-%d", os.time() + days * 86400)
+-- Deadlines are canonical YYYY-MM-DD strings. With todos_timezone configured
+-- the server interprets them in that zone, so presets follow the device's
+-- local day (the Kindle clock must be set to the same zone). Without one both
+-- sides use UTC.
+local function due_uses_local(config)
+    return (config and config:get("todos_timezone") or "") ~= ""
 end
 
-local function due_parts(value)
+local function due_from_offset(config, days)
+    return os.date(due_uses_local(config) and "%Y-%m-%d" or "!%Y-%m-%d",
+        os.time() + days * 86400)
+end
+
+local function due_parts(value, config)
     local y, m, d = tostring(value or ""):match("^(%d+)%-(%d+)%-(%d+)$")
     y, m, d = tonumber(y), tonumber(m), tonumber(d)
     if y and m and d and y >= 1 and m >= 1 and m <= 12 and d >= 1 and d <= 31 then
         return y, m, d
     end
-    local now = os.date("!*t")
+    local now = os.date(due_uses_local(config) and "*t" or "!*t")
     return now.year, now.month, now.day
 end
 
@@ -76,6 +83,7 @@ function TodosView:new(opts)
         status_filter = "open",
         last_state = nil,
         refreshing = false,
+        _refresh_scheduled = false,
         datetime_widget = DateTimeWidget,
     }
     setmetatable(o, self)
@@ -198,7 +206,7 @@ function TodosView:_pick_due_date(dialog, set_due)
     local DateTimeWidget = self.datetime_widget
     if not DateTimeWidget then return end
     local fields = type(dialog.getFields) == "function" and dialog:getFields() or {}
-    local year, month, day = due_parts(fields[4])
+    local year, month, day = due_parts(fields[4], self.config)
     local picker
     local function restore_keyboard()
         if type(dialog.onShowKeyboard) == "function" then dialog:onShowKeyboard() end
@@ -234,9 +242,9 @@ function TodosView:prompt_task(title, initial_text, initial_tags, initial_detail
         dialog.fields[4].text = value
     end
     local due_row = {
-        { text = _("Today"), callback = function() set_due(due_from_offset(0)) end },
-        { text = _("Tomorrow"), callback = function() set_due(due_from_offset(1)) end },
-        { text = _("+1 week"), callback = function() set_due(due_from_offset(7)) end },
+        { text = _("Today"), callback = function() set_due(due_from_offset(self.config, 0)) end },
+        { text = _("Tomorrow"), callback = function() set_due(due_from_offset(self.config, 1)) end },
+        { text = _("+1 week"), callback = function() set_due(due_from_offset(self.config, 7)) end },
     }
     if self.datetime_widget then
         table.insert(due_row, { text = _("Pick…"), callback = function()
@@ -310,16 +318,15 @@ function TodosView:prompt_task(title, initial_text, initial_tags, initial_detail
 end
 
 -- Apply the server's response to the payload the user is looking at. This
--- makes writes deterministic and independent of the network: no extra GET is
--- needed, and a failed next refresh cannot roll back a successful save.
+-- keeps the write visible immediately and survives a failing next refresh;
+-- a deferred refresh then replaces the counters with the server's values.
 function TodosView:_apply_local(mutation, task)
     local state = self.last_state
     if not state or not state.todos then return end
-    local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id, {
-        now = os.time(),
-        due_days = self.config and self.config:get("todos_due_soon_days") or nil,
-        use_local = (self.config and self.config:get("todos_timezone") or "") ~= "",
-    })
+    -- Counters from the server stay authoritative; merge_payload applies only
+    -- deterministic deltas. The refresh scheduled after the write replaces
+    -- due_soon/overdue with the server's real values.
+    local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id)
     state.todos.payload = merged
     state.todos.line = string.format("TODO'S — %d open, %d done",
         merged.counts.open or 0, merged.counts.done or 0)
@@ -331,6 +338,34 @@ function TodosView:_apply_local(mutation, task)
     state.refreshed_at = os.time()
     self:_index_payload(merged)
     if self.paths then pcall(TodosState.apply, self.paths, merged) end
+end
+
+-- After a successful write, ask the server for the real global counters. The
+-- call is deferred outside the input callback so the dialog closes first and
+-- the blocking GET does not freeze it. Writes made in quick succession share
+-- one refresh, and an in-flight refresh is left alone.
+function TodosView:schedule_refresh_after_write()
+    if self._refresh_scheduled then return end
+    self._refresh_scheduled = true
+    local function run()
+        self._refresh_scheduled = false
+        if type(Refresh.is_in_progress) == "function" and Refresh.is_in_progress() then return end
+        if not self:is_online() then return end
+        Logger.info("todos_view", "auto_refresh", { online = true })
+        if self.actions then
+            self.actions:dispatch("refresh", {
+                source = "todos", todos = self, auto = true, allow_network = true,
+            })
+        else
+            local ok, err = pcall(function() self:refresh({ allow_network = true }) end)
+            if not ok then Logger.warn("todos_view", "auto_refresh_failed", { err = tostring(err) }) end
+        end
+    end
+    if type(UIManager.scheduleIn) == "function" then
+        UIManager:scheduleIn(0.2, run)
+    else
+        run()
+    end
 end
 
 function TodosView:apply_write(run, success_key, mutation)
@@ -358,6 +393,7 @@ function TodosView:apply_write(run, success_key, mutation)
     if mutation then self:_apply_local(mutation, res.task) end
     self:show_notice(Messages.for_kind(success_key))
     self:show({ state = self.last_state, allow_network = false })
+    if mutation then self:schedule_refresh_after_write() end
     return true
 end
 
@@ -722,6 +758,7 @@ function TodosView:show(opts)
             tag_filter = self.tag_filter,
             status_filter = self.status_filter,
             due_days = self.config and self.config:get("todos_due_soon_days") or nil,
+            use_local = due_uses_local(self.config),
             show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
         })
     end
