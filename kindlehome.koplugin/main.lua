@@ -84,9 +84,15 @@ function KindleHome:request_dashboard_refresh(opts)
             return
         end
         local notice = nil
+        -- Only an explicit refresh gets an "Updating…" paint. Automatic
+        -- refreshes (after a write, or on open) paint the result once instead.
+        local show_indicator = opts.indicator
+        if show_indicator == nil then show_indicator = opts.user_initiated == true end
         if view.widget then
-            view:set_refreshing(true)
-            pcall(function() UIManager:forceRePaint() end)
+            if show_indicator then
+                view:set_refreshing(true)
+                pcall(function() UIManager:forceRePaint() end)
+            end
         elseif opts.user_initiated then
             notice = InfoMessage:new{ text = _("Refreshing…"), timeout = 8 }
             UIManager:show(notice)
@@ -254,7 +260,8 @@ function KindleHome:onKindlehomeShowTodos()
         UIManager:scheduleIn(0.5, function()
             if Refresh.is_in_progress() then return end
             self:request_dashboard_refresh({
-                view = self:getTodos(), user_initiated = true, allow_network = is_online(),
+                view = self:getTodos(), user_initiated = true, indicator = false,
+                allow_network = is_online(),
             })
         end)
     end
@@ -272,6 +279,7 @@ function KindleHome:onKindlehomeShowDashboard()
             if Refresh.is_in_progress() then return end
             self:request_dashboard_refresh({
                 user_initiated = true,
+                indicator = false,
                 allow_network = is_online(),
                 reset_page = false,
             })

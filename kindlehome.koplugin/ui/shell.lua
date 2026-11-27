@@ -23,6 +23,11 @@ local Logger = require("lib/logger")
 
 local Screen = Device.screen
 
+-- Non-flashing ("ui") repaints are cheap on e-ink, but an occasional full
+-- refresh is still needed to clear ghosting. One every N in-place updates is
+-- enough; opening, closing and rotating always refresh fully on their own.
+local UI_UPDATES_BEFORE_FULL = 8
+
 local Shell = InputContainer:extend{
     title = "Kindle Home",
     config = nil,
@@ -36,7 +41,24 @@ local Shell = InputContainer:extend{
     show_title_bar = true,
     header_factory = nil, -- function(width, shell) -> custom header widget
     _closing = false,
+    _ui_updates = 0,
 }
+
+-- UIManager:setDirty only flags top-level widgets, so each child that can
+-- request a repaint must point at the Shell. Shared by the first layout and by
+-- subsequent in-place body swaps.
+function Shell:_adopt_body()
+    local body = self.body
+    if not body then return end
+    self.body.dialog = self
+    self.body.show_parent = self
+    if self.body.htmlbox_widget then
+        self.body.htmlbox_widget.dialog = self
+    end
+    if type(self.body.getCropRegion) == "function" then
+        self.cropping_widget = self.body
+    end
+end
 
 function Shell:init()
     local fullscreen = self.fullscreen
@@ -97,14 +119,7 @@ function Shell:init()
     if not self.body then
         Logger.err("shell", "body_missing")
     else
-        self.body.dialog = self
-        self.body.show_parent = self
-        if self.body.htmlbox_widget then
-            self.body.htmlbox_widget.dialog = self
-        end
-        if type(self.body.getCropRegion) == "function" then
-            self.cropping_widget = self.body
-        end
+        self:_adopt_body()
     end
 
     Logger.info("shell", "layout", {
@@ -118,12 +133,17 @@ function Shell:init()
 
     local group = VerticalGroup:new{ align = "left" }
     if self.title_bar then table.insert(group, self.title_bar) end
-    if self.body then table.insert(group, self.body) end
+    if self.body then
+        self.body_index = #group + 1
+        table.insert(group, self.body)
+    end
     if self.action_bar then table.insert(group, self.action_bar) end
 
     self[1] = group
     self.dimen = Geom:new{ w = Screen:getWidth(), h = Screen:getHeight() }
     self.header_height = header_height
+    self.body_height = body_height
+    self._ui_updates = 0
 
     self.ges_events = {
         SwipeHeader = {
@@ -150,7 +170,61 @@ end
 function Shell:show()
     UIManager:show(self)
     UIManager:setDirty(self, "full")
+    self._ui_updates = 0
     Logger.info("shell", "shown", { fullscreen = self.covers_fullscreen })
+end
+
+-- State changes that leave the layout alone (paging, filters, refresh result,
+-- refresh indicator) only need the body repainted. Reuse the open Shell and
+-- refresh just that framebuffer slice instead of closing and recreating it.
+function Shell:update_body(opts)
+    opts = opts or {}
+    if not self.body_factory or not self[1] then return false end
+    local body = opts.body
+    if not body then
+        body = self.body_factory(Screen:getWidth(),
+            self.body_height or math.max(1, Screen:getHeight() - self.header_height), self)
+    end
+    if not body then return false end
+
+    local group = self[1]
+    local index = self.body_index
+    if not index or group[index] == nil then
+        index = nil
+        for i, child in ipairs(group) do
+            if child == self.body then index = i break end
+        end
+        if not index then index = #group + 1 end
+        self.body_index = index
+    end
+    group[index] = body
+    self.body = body
+    self:_adopt_body()
+    if type(group.resetLayout) == "function" then group:resetLayout() end
+
+    self._ui_updates = (self._ui_updates or 0) + 1
+    local promote = self._ui_updates >= UI_UPDATES_BEFORE_FULL
+    if promote then
+        self._ui_updates = 0
+        UIManager:setDirty(self, "full")
+        Logger.info("shell", "update_full", { after = UI_UPDATES_BEFORE_FULL })
+        return true
+    end
+
+    local region = nil
+    if type(body.getCropRegion) == "function" then
+        local crop = body:getCropRegion()
+        if crop then
+            region = Geom:new{
+                x = crop.x or 0,
+                y = (crop.y or 0) + (self.header_height or 0),
+                w = crop.w or Screen:getWidth(),
+                h = crop.h or (self.body_height or Screen:getHeight()),
+            }
+        end
+    end
+    UIManager:setDirty(self, "ui", region)
+    return true
 end
 
 function Shell:request_close()

@@ -12,6 +12,7 @@ local ArticleStore = require("lib/article_store")
 local DashboardModel = require("lib/dashboard_model")
 local Hnmd = require("lib/hnmd")
 local Logger = require("lib/logger")
+local UiSignature = require("lib/ui_signature")
 local Messages = require("ui/messages")
 local Refresh = require("lib/refresh")
 local Todos = require("lib/todos")
@@ -732,9 +733,22 @@ function TodosView:_shell_close()
     end
 end
 
-function TodosView:show(opts)
-    opts = opts or {}
-    self:_teardown()
+-- As with the dashboard, fold everything that can change the painted TODO'S
+-- card into one signature so unchanged refreshes cost no screen update at all.
+function TodosView:_signature(state)
+    return UiSignature.of({
+        state = state,
+        todos_page = self.todos_page,
+        tag_filter = self.tag_filter,
+        status_filter = self.status_filter,
+        clock_24h = self.config and self.config:get("ui_clock_24h") == true,
+        include_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
+        due_days = self.config and self.config:get("todos_due_soon_days") or nil,
+        timezone = self.config and self.config:get("todos_timezone") or "",
+    })
+end
+
+function TodosView:_state_for_show(opts)
     local state
     if opts.state then
         state = {}
@@ -746,12 +760,38 @@ function TodosView:show(opts)
     self.refreshing = state.refreshing == true
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
     self.last_state = state
+    return state
+end
 
-    local now = os.time()
-    local clock_24h = self.config and self.config:get("ui_clock_24h") == true
+-- The model clamps an out-of-range page after a payload change; mirror it in
+-- the view after both a full rebuild and an in-place body swap.
+function TodosView:_sync_page(model)
+    local todos_model = model and model.todos
+    if todos_model and todos_model.page then
+        self.todos_page = todos_model.page
+    end
+end
+
+function TodosView:show(opts)
+    opts = opts or {}
+    local state = self:_state_for_show(opts)
+    local signature = self:_signature(state)
+
+    if self.widget and not opts.force_full then
+        if self._painted_signature == signature then return end
+        if self._build_model then self.model = self._build_model(nil) end
+        self.widget:update_body()
+        self:_sync_page(self.model)
+        self._painted_signature = self:_signature(state)
+        return
+    end
+
+    self:_teardown()
+
     local function build_model(rows)
-        return DashboardModel.build_todos(state, {
-            now = now,
+        local clock_24h = self.config and self.config:get("ui_clock_24h") == true
+        return DashboardModel.build_todos(self.last_state, {
+            now = os.time(),
             clock_24h = clock_24h,
             task_rows = rows,
             todos_page = self.todos_page,
@@ -762,7 +802,9 @@ function TodosView:show(opts)
             show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
         })
     end
+    self._build_model = build_model
     local model = build_model(nil)
+    self.model = model
     local current_model = model
 
     local shell = Shell:new{
@@ -770,7 +812,7 @@ function TodosView:show(opts)
         config = self.config,
         on_close = function() self:_shell_close() end,
         on_layout_change = function()
-            self:show({ state = self.last_state, allow_network = false })
+            self:show({ state = self.last_state, allow_network = false, force_full = true })
         end,
         header_factory = function(width, parent)
             return DashboardHeader:new{
@@ -783,7 +825,7 @@ function TodosView:show(opts)
             }
         end,
         body_factory = function(width, height, parent)
-            local body = TodosBody.build(model, self.config, width, height, {
+            local body = TodosBody.build(self.model, self.config, width, height, {
                 show_parent = parent,
                 plugin_dir = self.plugin_dir,
                 model_for = build_model,
@@ -814,9 +856,8 @@ function TodosView:show(opts)
     }
     self.widget = shell
     shell:show()
-    if current_model and current_model.todos and current_model.todos.page then
-        self.todos_page = current_model.todos.page
-    end
+    self:_sync_page(current_model)
+    self._painted_signature = self:_signature(state)
     Logger.info("todos_view", "shown", {
         tasks = current_model.todos and #current_model.todos.items or 0,
         tags = current_model.todos and #current_model.todos.tags or 0,

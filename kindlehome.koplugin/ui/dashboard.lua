@@ -9,6 +9,7 @@ local DashboardBody = require("ui/dashboard_body")
 local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
 local UiState = require("lib/ui_state")
+local UiSignature = require("lib/ui_signature")
 local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
 local Messages = require("ui/messages")
@@ -472,10 +473,19 @@ function Dashboard:_shell_close()
     end
 end
 
-function Dashboard:show(opts)
-    opts = opts or {}
-    self:_teardown()
+-- Everything that can change the painted dashboard is folded into one stable
+-- string. A refresh that leaves the rendered state untouched must not repaint;
+-- nor must a duplicate "Updating…" flag.
+function Dashboard:_signature(state)
+    return UiSignature.of({
+        state = state,
+        hn_page = self.hn_page,
+        clock_24h = self.config and self.config:get("ui_clock_24h") == true,
+        page_size = self.config and self.config:get("hn_items_per_page") or nil,
+    })
+end
 
+function Dashboard:_state_for_show(opts)
     local state
     if opts.state then
         state = {}
@@ -486,17 +496,46 @@ function Dashboard:show(opts)
     if opts.refreshing ~= nil then state.refreshing = opts.refreshing == true end
     self.refreshing = state.refreshing == true
     if opts.refresh_hint then state.refresh_hint = opts.refresh_hint end
+    self.last_state = state
+    return state
+end
 
-    local clock_24h = self.config and self.config:get("ui_clock_24h") == true
-    local now = os.time()
+-- The model clamps an out-of-range remembered page; keep the view and the
+-- persisted page in sync after either a full rebuild or an in-place swap.
+function Dashboard:_sync_page(model)
+    local hn_model = model and model.hn
+    if hn_model and (hn_model.pages or 0) > 0 then
+        self.hn_page = hn_model.page
+        self:_persist_hn_page()
+    end
+end
+
+function Dashboard:show(opts)
+    opts = opts or {}
+    local state = self:_state_for_show(opts)
+    local signature = self:_signature(state)
+
+    if self.widget and not opts.force_full then
+        if self._painted_signature == signature then return end
+        if self._build_model then self.model = self._build_model(nil) end
+        self.widget:update_body()
+        self:_sync_page(self.model)
+        self._painted_signature = self:_signature(state)
+        return
+    end
+
+    self:_teardown()
+
     local function build_model(page_size)
-        return DashboardModel.build(state, {
-            now = now,
+        local clock_24h = self.config and self.config:get("ui_clock_24h") == true
+        return DashboardModel.build(self.last_state, {
+            now = os.time(),
             page = self.hn_page,
             clock_24h = clock_24h,
             page_size = page_size,
         })
     end
+    self._build_model = build_model
     local model = build_model(nil)
     self.model = model
     local current_model = model
@@ -506,7 +545,7 @@ function Dashboard:show(opts)
         config = self.config,
         on_close = function() self:_shell_close() end,
         on_layout_change = function()
-            self:show({ state = self.last_state, allow_network = false })
+            self:show({ state = self.last_state, allow_network = false, force_full = true })
         end,
         header_factory = function(width, parent)
             return DashboardHeader:new{
@@ -519,7 +558,7 @@ function Dashboard:show(opts)
             }
         end,
         body_factory = function(width, height, parent)
-            local body = DashboardBody.build(model, self.config, width, height, {
+            local body = DashboardBody.build(self.model, self.config, width, height, {
                 show_parent = parent,
                 plugin_dir = self.plugin_dir,
                 model_for = build_model,
@@ -545,11 +584,8 @@ function Dashboard:show(opts)
     -- Keep the remembered page valid when the feed or page size changed (the
     -- model clamps out-of-range pages). An empty/offline feed reports pages=0
     -- and must not overwrite the page the user left on.
-    local hn_model = current_model and current_model.hn
-    if hn_model and (hn_model.pages or 0) > 0 then
-        self.hn_page = hn_model.page
-        self:_persist_hn_page()
-    end
+    self:_sync_page(current_model)
+    self._painted_signature = self:_signature(state)
     Logger.info("dashboard", "shown", {
         weather = state.weather and state.weather.status,
         hn_items = current_model.hn and #current_model.hn.items or 0,
