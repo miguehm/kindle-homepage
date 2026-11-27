@@ -8,6 +8,7 @@ local DashboardModel = require("lib/dashboard_model")
 local DashboardBody = require("ui/dashboard_body")
 local ArticleStore = require("lib/article_store")
 local Refresh = require("lib/refresh")
+local UiState = require("lib/ui_state")
 local WeatherState = require("lib/weather_state")
 local HnmdState = require("lib/hnmd_state")
 local Messages = require("ui/messages")
@@ -18,6 +19,10 @@ local Dashboard = {}
 
 function Dashboard:new(opts)
     opts = opts or {}
+    local ui_state = opts.ui_state
+    if not ui_state and opts.paths then
+        ui_state = UiState:new(opts.paths)
+    end
     local o = {
         config = opts.config,
         paths = opts.paths,
@@ -25,7 +30,8 @@ function Dashboard:new(opts)
         article_view = opts.article_view,
         plugin_dir = opts.plugin_dir,
         widget = nil,
-        hn_page = 1,
+        ui_state = ui_state,
+        hn_page = ui_state and ui_state:get_hn_page() or 1,
         article_store = opts.paths and ArticleStore:new(opts.paths) or nil,
         hn_state = nil,
         hn_items = {},
@@ -423,19 +429,31 @@ function Dashboard:_teardown()
     pcall(function() UIManager:close(widget) end)
 end
 
+function Dashboard:_persist_hn_page()
+    if not self.ui_state then return end
+    local ok, err = pcall(function()
+        return self.ui_state:set_hn_page(self.hn_page)
+    end)
+    if not ok then
+        Logger.warn("dashboard", "hn_page_persist_failed", { err = tostring(err) })
+    end
+end
+
 function Dashboard:set_hn_page(page)
     local n = tonumber(page) or 1
     if n < 1 then n = 1 end
     self.hn_page = n
+    self:_persist_hn_page()
     if self.last_state then
         self:show({ state = self.last_state, allow_network = false })
     end
 end
 
--- Session-only page reset (no disk persistence): used when the user changes
--- the page size, where the old page number no longer describes the same grid.
+-- Used when the page size changes, where the old page number no longer
+-- describes the same grid.
 function Dashboard:reset_hn_page()
     self.hn_page = 1
+    self:_persist_hn_page()
 end
 
 function Dashboard:set_refreshing(refreshing)
@@ -524,10 +542,13 @@ function Dashboard:show(opts)
     }
     self.widget = shell
     shell:show()
-    -- Keep the session page number valid when the feed or page size changed
-    -- (the model clamps out-of-range pages).
-    if current_model and current_model.hn and current_model.hn.page then
-        self.hn_page = current_model.hn.page
+    -- Keep the remembered page valid when the feed or page size changed (the
+    -- model clamps out-of-range pages). An empty/offline feed reports pages=0
+    -- and must not overwrite the page the user left on.
+    local hn_model = current_model and current_model.hn
+    if hn_model and (hn_model.pages or 0) > 0 then
+        self.hn_page = hn_model.page
+        self:_persist_hn_page()
     end
     Logger.info("dashboard", "shown", {
         weather = state.weather and state.weather.status,

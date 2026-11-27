@@ -264,7 +264,11 @@ function KindleHome:onKindlehomeShowDashboard()
     if self.config:get("refresh_on_open") then
         UIManager:scheduleIn(0.5, function()
             if Refresh.is_in_progress() then return end
-            self:request_dashboard_refresh({ user_initiated = true, allow_network = is_online() })
+            self:request_dashboard_refresh({
+                user_initiated = true,
+                allow_network = is_online(),
+                reset_page = false,
+            })
         end)
     end
     return true
