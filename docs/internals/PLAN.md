@@ -788,3 +788,201 @@ Cualquier cambio de estado (`refresh`, cambio de página, filtro, ajuste, indica
 | `./scripts/smoke_ui.sh` | PASS | **26 smokes**; nuevo `refresh_paint.lua` (7 `ui` regionales + 1 `full`, región `0/100/1200/1500`, open/close `full`); dashboard y TODO'S comprueban que un repintado idéntico cuesta cero y que paginar/filtrar reparte una actualización `ui` sin reabrir el Shell |
 
 Pendiente en PW5: contar flashes en refresco manual (2, ambos regionales), automático tras escritura (1), page/filtros (1) y 304 (0); comprobar que el `full` periódico limpia el ghosting y que el indicador `Updating…` sigue siendo visible antes del fetch; rotación con `force_full`; `crash.log` sin `Error when loading`.
+## 16) Fases 37–44 — rediseño de UI (planificado, 2026-11-27)
+
+Estado: **planificado**; ninguna fase implementada. Guía de estilos de implementación en `STYLES.md` (complementa `DESIGN.md`).
+
+### Contexto
+
+KindleHome (v2.19.0) ya es funcional, pero la UI tiene problemas visibles y de rendimiento:
+
+- **Coste de refresco alto.** Cada tap marca *todo* el Shell como sucio (`setDirty(self.show_parent, "ui")` sin región en `tap_row.lua:25`, `tap_icon.lua:39`, `bottom_nav.lua:89`, `action_bar.lua:91`, `tag_chips.lua:37`, `todos_card.lua:39`). Cada cambio reconstruye el body entero (hero + historias + nav). El modelo y la firma se calculan dos veces (`dashboard.lua:516-525`). Los bodies reemplazados nunca se liberan (`shell.lua:200`). Cambiar de pestaña cierra el Shell y abre otro con flash `full` (`main.lua:181-193`).
+- **No hay feedback al tocar**, aunque DESIGN.md exige una "inversión binaria instantánea".
+- **Paginación inestable.** El número de filas se mide con los títulos de la página actual (`dashboard_body.lua:102-180`), así que filas por página y total de páginas cambian al paginar.
+- **El reloj se congela.** No hay temporizador y al paginar se reutiliza `last_state` (`dashboard.lua:449`).
+- **Bugs visuales.** `Theme.space.md` no existe (`dashboard_header.lua:41`), así que entre ajustes y cerrar quedan ≈1 px. El área táctil del pager (20dp) es menor que el botón negro que dibuja (30dp, `stories_card.lua:120-134`).
+- **Objetivos táctiles de 18–28dp.** El checkbox es texto `[x]`, el pager de TODO'S son glifos `<`/`>` y no se usan las alturas de línea de DESIGN.md.
+- **Idioma mezclado.** Chips y estados vacíos de TODO'S están en español; menús y dashboard en inglés.
+- **Estados poco claros.** "HN unavailable" aparece en el arranque en frío. La hora de actualización se muestra en 3 sitios. Los errores son texto gris pegado al final de la tarjeta.
+
+**Resultado buscado:** una UI más clara, consistente y "editorial" según DESIGN.md, que además sea **más barata** de pintar en el PW5: menos reconstrucciones, regiones de refresco pequeñas y feedback inmediato con waveform rápida en la región tocada.
+
+**Decisiones del usuario:**
+- La pestaña STORE se queda como está.
+- Toda la UI pasa a **inglés**.
+- El feedback al tocar usa **`"fast"` solo en la región tocada**, seguido de `"ui"` en la región que cambia.
+
+### Principios de rendimiento (aplican a todas las fases)
+
+1. **Una reconstrucción por interacción, como máximo.** La búsqueda binaria de filas se hace solo cuando cambia la *clave de layout*: tamaño de pantalla, rotación, escala de fuente, filas preferidas, secciones visibles. No se repite en cada página.
+2. **Refresco por sección.** Cada sección (hero, historias, tarjeta de tareas, nav) expone su `dimen`. Se marca sucia solo la sección que cambió. Se mantiene la promoción a `full` cada `UI_UPDATES_BEFORE_FULL = 8`.
+3. **Firmas baratas.** La firma se calcula una vez por `show`, sobre los campos *renderizados* del modelo de cada sección, y no sobre los payloads completos.
+4. **Liberar lo reemplazado.** Se llama a `:free()` en los bodies o secciones viejos.
+5. **Sin trabajo en idle.** El temporizador del reloj solo corre si la vista está arriba. Se para en suspend, close y cuando se abre un diálogo o el reader.
+6. **Instrumentación solo en debug.** Se añade `logger.timing(tag, ms)` en `lib/logger.lua`, estructurado y sin secretos, para medir build/paint en el dispositivo.
+
+---
+
+### Fase 37 — Fundaciones: tokens, bugs y objetivos táctiles
+
+**Archivos:** `lib/render/theme.lua`, `ui/widget/*.lua`, `ui/dashboard_body.lua`
+
+- Completar `Theme.space` con `md = 12` y alinear todo a la rejilla de 4px. Esto corrige el gap del header.
+- Centralizar en `Theme.size` los valores que hoy están hardcodeados:
+  - `header_h = 52`, `nav_h = 52`
+  - `icon = 24`, `icon_sm = 20`
+  - `card_pad = 12`, `rank_col = 32`
+  - `hit_min = 48`
+  - `SECTION_GAP`
+
+  Hay que eliminar los literales 10/3/5/14/22/30 de `hero_weather`, `stories_card`, `todos_card`, `action_bar` y `battery_glyph`.
+- Usar un solo `DEFAULT_PAGE_SIZE`, definido en `theme.lua` y consumido desde `dashboard_model.lua`, `dashboard_body.lua` y `main.lua`. Se conserva el literal `DEFAULT_PAGE_SIZE = 4` en `dashboard_body.lua`, que exige `check_invariants.sh`.
+- Hairline `#E5E5E5`: usar `Blitbuffer.gray` con el valor exacto en lugar de `GRAY_E`.
+- Alturas de línea: pasar `line_height` de DESIGN.md a los `TextBoxWidget` mediante el helper `design_text.lua` (titulares 1.3, cuerpo 1.45).
+- `ActionBar` debe usar `Theme.face` en lugar de `Font:getFace("cfont", 12)` (`action_bar.lua:48`).
+- **Objetivos táctiles.** `tap_icon.lua` gana un parámetro `hit_size` (por defecto `Theme.size.hit_min`). El icono se dibuja a su tamaño visual, pero el `dimen` táctil es de 48dp, centrado. Así se corrige el pager (todo el cuadro negro de 30dp pasa a ser táctil) y los iconos de 18–22dp.
+
+### Fase 38 — Motor de render barato (sin cambio visual)
+
+**Archivos:** `ui/shell.lua`, `ui/dashboard.lua`, `ui/dashboard_body.lua`, `ui/todos.lua`, `ui/todos_body.lua`, `lib/ui_signature.lua`
+
+- `Dashboard:show` construye el modelo **una sola vez** y se lo pasa a `body_factory`, en lugar de `model_for` dos veces. Lo mismo para la firma (`dashboard.lua:516/523`).
+- `UiSignature` firma por sección: `hero`, `stories`, `nav` y `todos_card`, usando solo los campos del modelo que se pintan (strings ya formateados). `refreshed_at` entra solo como el texto que se muestra ("3 min ago"), así que un refresh con contenido idéntico no repinta.
+- **Clave de layout y filas estables.** `dashboard_body` cachea `rows_per_page` por clave de layout. La medición usa el **peor caso**: los títulos más largos del payload completo, no solo los de la página actual. Así filas y páginas son constantes al paginar y se respeta la regla "same physical area across page turns" de DESIGN.md. Se mantiene el flujo exigido por los invariantes: medir antes de hacer scroll, `if not chosen then`, `ScrollableContainer` como último recurso y `body.fits = scroll == nil`.
+- **Sustitución por sección.** `Shell:update_body(region)` acepta una lista de regiones. `dashboard_body` reemplaza solo el subárbol cuya firma cambió. Por ejemplo, al paginar se reconstruye solo `StoriesCard`, y hero y nav se reutilizan. Cada región se marca con `UIManager:setDirty(self, "ui", region)`. Se conserva el literal que exige el script.
+- `:free()` en los subárboles reemplazados (`shell.lua:200`).
+- **Cambio de pestaña sin flash.** `main.lua` reutiliza el Shell y cambia el header y el body (`_adopt_body`). Se repinta con un único `"ui"` de pantalla completa en lugar de cerrar con `full` y abrir con `full`. El estado de cada vista se conserva en memoria, sin recargar caches del disco, porque `build_state` se cachea y solo se invalida si cambian `fetched_at` o la config.
+- Actualizar `smoke/refresh_paint.lua` y `smoke/todos.lua`:
+  - paginar produce 1 `ui` cuya región es igual a la de `StoriesCard`;
+  - una firma idéntica produce 0 updates;
+  - el cambio de pestaña produce 1 `ui` y 0 `full`.
+
+### Fase 39 — Feedback de toque e interacción
+
+**Archivos:** `ui/widget/tap_row.lua`, `tap_icon.lua`, `bottom_nav.lua`, `action_bar.lua`, `tag_chips.lua`, `todos_card.lua`, más un helper nuevo `ui/widget/press_feedback.lua`
+
+- `PressFeedback.run(widget, callback)` sigue el patrón *highlight-then-act* de KOReader (`Button` con `invert`):
+  1. Invierte el `dimen` del control (`invert = true`) y hace `setDirty(show_parent, "fast", widget.dimen)`.
+  2. Llama a `UIManager:forceRePaint()`.
+  3. Ejecuta el callback mediante `UIManager:nextTick`.
+  4. Si el control sigue en pantalla, quita la inversión con `"ui"` en su región.
+
+  Este helper sustituye los 6 `setDirty(self.show_parent, "ui")` sin región.
+- Las filas de historias y tareas se invierten completas al tocarlas. En los iconos se invierte solo el cuadro de 48dp.
+- **Gestos:** swipe east/west sobre la tarjeta de historias o de tareas para paginar. Se reutiliza el umbral del pager de artículos (`article_html_pager.lua:62`). El swipe south en el header sigue cerrando.
+- Smoke: un tap genera exactamente 1 `fast` con región igual al `dimen` del control, y después la actualización de la sección.
+
+### Fase 40 — Rediseño visual del Dashboard
+
+**Archivos:** `ui/widget/hero_weather.lua`, `stories_card.lua`, `dashboard_header.lua`, `battery_glyph.lua`, `lib/dashboard_model.lua`
+
+- **Header.** Título y estado del sistema en una sola banda de 52dp: título a la izquierda; wifi, batería y ajustes/cerrar a la derecha (iconos con gap `md`). Así el hero ya no necesita su propia línea de estado.
+- **Hero rebalanceado.**
+  - Columna izquierda: reloj `display` + AM/PM y la fecha completa debajo.
+  - Columna derecha, compacta en 3 líneas:
+    - icono 32 + temperatura y condición;
+    - `H 21° · L 12°  ·  Wind 12 km/h`;
+    - `Tomorrow ☀ 18°/11°`.
+  - Se eliminan las etiquetas "Wind:/Humidity:" con aspecto de debug y el doble espacio (`hero_weather.lua:131`).
+  - Las dos columnas quedan con alturas similares, lo que libera espacio vertical para historias.
+- **Una sola línea de frescura.** Se muestra "Updated 3 min ago" en el header de Top Stories. Se quita de las otras ubicaciones y de la caja hint cuando sea redundante, lo que simplifica `redundant_notice`.
+- **Filas de historias.**
+  - Título en `headline_sm` (18) con 2 líneas como máximo y elipsis.
+  - Meta compacta `domain · 342 pts · 3h` en `label_md` gris.
+  - Rango en una columna fija de 32dp.
+  - Marcador `■` si el artículo ya está descargado en local. `article_store` ya sabe si existe el `.md`.
+  - Divisores hairline.
+- **Pager unificado.** "Page 1 of 3" con botones prev/next de 48dp táctiles, anclados abajo y compartidos con TODO'S.
+- **Reloj vivo.**
+  - `scheduleIn` alineado al siguiente minuto, activo solo mientras el dashboard es la ventana superior.
+  - Actualiza únicamente el widget del reloj: se reemplaza el `TextWidget` y se hace `setDirty(shell, "ui", clock.dimen)`, sin reconstruir el body.
+  - Se cancela en `onCloseWidget`, `onSuspend`, al abrir un diálogo, menú o reader, y se reprograma en `onResume`.
+  - La fecha y "N min ago" salen del mismo `os.time()` del tick.
+
+### Fase 41 — Rediseño visual de TODO'S
+
+**Archivos:** `ui/widget/todos_card.lua`, `tag_chips.lua`, `ui/todos_body.lua`, `ui/todos.lua`, un widget nuevo `ui/widget/checkbox.lua`
+
+- **Checkbox real** según DESIGN.md: un cuadrado de 16dp con borde de 1px y relleno de 10dp si está marcado, dibujado con `paintRect` (barato). Su área táctil es de 48dp.
+- **Fila de tarea.** Checkbox, luego título y meta (`#tag · Due 27 Nov`), y a la derecha los iconos eye, edit y delete, cada uno con 48dp táctiles. El `x` de texto se sustituye por un SVG de borrar.
+  - Tocar el cuerpo de la fila abre el editor.
+  - El icono edit se mantiene, porque los smoke y REVIEW.md lo piden.
+- **Chips** según la especificación:
+  - sin seleccionar: texto `#666` y borde hairline;
+  - seleccionado: relleno negro y borde negro.
+
+  Las etiquetas pasan a inglés: Open, Done, All, Due soon, Overdue, No filter, Untagged. Se conserva el formato `chip.label .. ": "`.
+- **Descubribilidad.** La acción de documento por etiqueta (hoy solo con long-press) también aparece en un menú: un tap en el chip ya activo abre un `ButtonDialog` con "Filter" y "Read as document". El long-press se mantiene.
+- Pager con los mismos botones SVG que historias, en lugar de `<`/`>`.
+
+### Fase 42 — Estados, mensajes e idioma (inglés)
+
+**Archivos:** `ui/messages.lua`, `lib/dashboard_model.lua`, `ui/todos.lua`, `main.lua`, `ui/menus.lua`
+
+- Pasar **todas** las cadenas visibles a inglés en `ui/messages.lua`: chips, estados vacíos, "Vence", textos de documento por etiqueta (`todos.lua:568-572`) y toasts.
+- **Arranque en frío.** "Not loaded yet — tap ↻" en lugar de "HN unavailable." (`dashboard_model.lua:254`).
+- **Componente `notice_box`** con un solo estilo: borde negro de 1px, icono y texto `body_sm`, más una acción opcional "Retry". Sirve para error, offline y stale. Sustituye a los mensajes grises pegados al final de las tarjetas.
+- **Indicador de carga.** Un badge invertido "Updating…" en el header de la tarjeta que se refresca. Se pinta como región pequeña, sin rebuild del body. La regla de `main.lua` se mantiene: `show_indicator` / `indicator = false` para el auto-refresh.
+- Toasts: mantener `InfoMessage` con timeout, con textos breves y accionables.
+
+### Fase 43 — Lectura de artículos
+
+**Archivos:** `lib/render/md_to_html.lua`, `ui/article_html_pager.lua`, `ui/article_view.lua`
+
+- **Cabecera limpia.** Un solo `<h1>` y una línea de byline `domain · date · N pts`. Se elimina el bloque "Title/Source/ID/Status" (`md_to_html.lua:224-268`). Se sube el marcador de meta a `kh-meta-v3` para regenerar el HTML derivado.
+- **CSS.** `line-height: 1.45`; márgenes de párrafo y encabezados en em; `pre` con `white-space: pre-wrap`; listas anidadas por indentación (mejora del parser, `md_to_html.lua:114-222`).
+- **Fallback pager.**
+  - Zonas de toque: tercio izquierdo para atrás, dos tercios derechos para adelante. Los enlaces tienen prioridad: primero se comprueba la caja del link.
+  - Los enlaces http copian la URL al portapapeles con un toast (F14.4).
+  - Se persiste la página por id de artículo en el cache JSON mediante `lib/cache.lua`.
+
+### Fase 44 — Ajustes más claros
+
+**Archivo:** `ui/menus.lua` (se mantienen TouchMenu, CenterContainer, PathChooser y reset que exigen los invariantes)
+
+- Nuevo submenú "Account & server" con la API key (enmascarada), el estado del servidor y la nota de permisos. Hoy la API key está escondida bajo Hacker News y también controla TODO'S.
+- Fusionar "enabled" y "show section" en un único radio *Off / Fetch only / Show*.
+- TTL, filas preferidas y tamaño de texto pasan a radio items con valores predefinidos (más "Custom…" con el `prompt_text` actual), en lugar de texto libre.
+- "Server status": mostrar `InfoMessage` "Checking…" + `forceRePaint` antes de la llamada bloqueante.
+- El modo de almacenamiento pasa a radio con la descripción visible, en lugar de un ciclo silencioso.
+- Las notas informativas pasan a `help_text` de los items, en lugar de ser items sueltos.
+
+---
+
+### Orden y dependencias
+
+37 → 38 → 39 → (40 ∥ 41) → 42 → 43 ∥ 44.
+
+- La 38 va antes que lo visual para que el rediseño ya se pinte por secciones.
+- Cada fase es un release menor (2.20.0 …) con commits convencionales y su entrada en `CHANGELOG.md`.
+- Cada fase se registra en `docs/internals/PLAN.md` como §16 y siguientes, con ledger de verificación y deuda.
+- Hay que actualizar `DESIGN.md` donde el diseño cambie: hero, header con estado, checkbox, press feedback.
+
+### Invariantes a respetar o actualizar explícitamente
+
+- **Sin cambios:** sin `ScrollHtmlWidget`; sin `radius =`; HTTP solo vía `lib/http.lua`; sin `os.remove`/`os.rename` en `ui/`; Lua 5.1 (sin `//`, `goto`, bitwise ni `table.unpack`).
+- **Cambios que exigen ajustar `scripts/check_invariants.sh` en el mismo commit**, justificándolo en el registro de desviaciones:
+  - nuevos widgets (`press_feedback`, `checkbox`, `notice_box`);
+  - cambio de pestaña sin `full`;
+  - cadenas en inglés.
+- Smoke: cada widget nuevo de KOReader que se use (p. ej. `ButtonDialog` en chips) necesita su stub en los `scripts/smoke/*.lua` que lo carguen. Las aserciones que dependen de etiquetas en español ("Pendientes", "Vence") pasan a las cadenas en inglés.
+
+### Verificación
+
+1. **Gates en cada fase:** `./scripts/check_lua51.sh`, `./scripts/check_invariants.sh` y `./scripts/smoke_ui.sh` (con `lua5.1`/`luajit`, nunca con el `luac` del sistema).
+2. **Nuevas aserciones de smoke** (presupuesto de refresco):
+   - un tap produce 1 `fast` con región igual al control;
+   - paginar produce 1 `ui` con región igual a la tarjeta y 0 rebuilds de hero/nav;
+   - un tick del reloj produce 1 `ui` con región igual al reloj y 0 rebuilds del body;
+   - el cambio de pestaña produce 0 `full` (salvo la promoción cada 8);
+   - las filas por página son constantes en todas las páginas;
+   - todos los `TapIcon` tienen un `dimen` táctil ≥ 48dp escalados;
+   - no queda ninguna cadena en español (grep sobre `ui/`).
+3. **Escritorio (KOReader emulator):** capturas antes/después del dashboard, TODO'S y artículo, comparadas con `dashboard.png`.
+4. **Kindle PW5** (matriz pendiente de F34–F36, ahora ampliada):
+   - escalas de fuente S–XL y landscape;
+   - 100+ tareas;
+   - `logger.timing` de build y paint (objetivo: paginar < 300 ms, tick de reloj < 50 ms);
+   - ghosting tras 20 taps (la promoción a `full` cada 8 debe limpiarlo);
+   - `crash.log` sin `WARN Error when loading`;
+   - suspend/resume con el reloj activo, sin wakeups extra.
