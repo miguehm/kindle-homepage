@@ -190,6 +190,20 @@ end
 package.preload["logger"] = function()
     return { dbg = function() end, info = function() end, warn = function() end, err = function() end }
 end
+package.preload["rapidjson"] = function()
+    return {
+        encode = function(value)
+            return string.format('{"schema_version":%d,"hn_page":%d}',
+                tonumber(value.schema_version) or 0, tonumber(value.hn_page) or 0)
+        end,
+        decode = function(text)
+            local schema = tonumber(tostring(text):match('"schema_version"%s*:%s*(%-?%d+)'))
+            if not schema then error("invalid json") end
+            local page = tonumber(tostring(text):match('"hn_page"%s*:%s*(%-?%d+)'))
+            return { schema_version = schema, hn_page = page }
+        end,
+    }
+end
 package.preload["ui/widget/infomessage"] = function()
     local M = {}
     function M:new(o) notices[#notices + 1] = o.text; return o end
@@ -487,12 +501,23 @@ local article_view_stub = {
     will_open_in_reader = function(_, doc) return not not doc.html_path end,
     show = function(_, doc) last_shown_doc = doc end,
 }
+local ui_state = { page = 1, writes = {} }
+function ui_state:get_hn_page() return self.page end
+function ui_state:set_hn_page(page)
+    self.page = page
+    table.insert(self.writes, page)
+    return true
+end
+local function last_ui_write()
+    return ui_state.writes[#ui_state.writes]
+end
 local d = Dashboard:new{
     config = cfg_instance,
     paths = setmetatable({}, { __index = function() return function() return nil end end }),
     actions = actions,
     article_view = article_view_stub,
     plugin_dir = "/mnt/us/koreader/plugins/kindlehome.koplugin",
+    ui_state = ui_state,
 }
 d.article_store = {
     is_local = function() return true end,
@@ -501,6 +526,17 @@ d.article_store = {
     end,
     load_md = function() return "md" end,
 }
+
+local restored_state = { page = 3 }
+function restored_state:get_hn_page() return self.page end
+function restored_state:set_hn_page(page) self.page = page end
+local d_restored = Dashboard:new{ config = cfg_instance, ui_state = restored_state }
+assert(d_restored.hn_page == 3, "constructor must restore the persisted page")
+local d_default = Dashboard:new{
+    config = cfg_instance,
+    paths = setmetatable({}, { __index = function() return function() return nil end end }),
+}
+assert(d_default.hn_page == 1, "missing ui state must default to page 1")
 
 d:show({ allow_network = false })
 assert(captured_shell, "no shell captured")
@@ -667,19 +703,34 @@ assert(d.widget == nil, "fallback must close the dashboard shell")
 
 d:show({ allow_network = false })
 d:set_hn_page(2)
-assert(d.hn_page == 2, "page change must update session memory")
+assert(d.hn_page == 2, "page change must update the page")
+assert(last_ui_write() == 2, "page change must persist to ui state")
 d:show({ allow_network = false })
 assert(d.hn_page == 2 and d.model.hn.page == 2,
-    "re-show must keep the session page without refetching")
+    "re-show must keep the page without refetching")
 d:refresh({ allow_network = false })
-assert(d.hn_page == 2, "normal refresh must keep the session page")
+assert(d.hn_page == 2, "normal refresh must keep the page")
 d:refresh({ allow_network = false, reset_page = true })
 assert(d.hn_page == 1, "explicit refresh must reset pagination")
+assert(last_ui_write() == 1, "explicit refresh must persist page 1")
 d.hn_page = 99
 d:show({ allow_network = false })
 assert(d.hn_page == 3 and d.model.hn.page == 3,
-    "out-of-range session page must clamp to the last page")
-assert(cfg_sets == 0, "session page memory must not write to config")
+    "out-of-range page must clamp to the last page")
+assert(last_ui_write() == 3, "clamped page must be persisted")
+local offline_state = fixture_state()
+offline_state.hn.items = {}
+offline_state.hn.status = "error"
+offline_state.hn.line = "HN unavailable."
+d:set_hn_page(2)
+d:show({ state = offline_state, allow_network = false })
+assert(d.hn_page == 2 and d.model.hn.pages == 0,
+    "an empty/offline feed must not overwrite the remembered page")
+assert(last_ui_write() == 2, "an empty/offline feed must not persist page 1")
+d:show({ allow_network = false })
+assert(d.hn_page == 2 and d.model.hn.page == 2,
+    "the remembered page must return when the feed is available again")
+assert(cfg_sets == 0, "page memory must not write to config")
 captured_shell.on_close()
 assert(dispatched[#dispatched].id == "close", "shell close should exit dashboard")
 

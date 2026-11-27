@@ -276,14 +276,20 @@ if ! grep -q 'on_prev_page' kindlehome.koplugin/ui/widget/stories_card.lua \
     fail=1
 fi
 
-# 8) Top Stories rows are configurable (1-10, default 4) and only explicit
-#    user refreshes reset the session page; automatic/settings repaints keep it.
-if ! grep -q 'hn_items_per_page' kindlehome.koplugin/lib/config.lua \
+# 8) Top Stories rows are configurable (1-10, default 4) and the page persists
+#    across restarts; only explicit user refreshes reset it.
+if [ ! -f kindlehome.koplugin/lib/ui_state.lua ] \
+        || ! grep -q 'atomic_write' kindlehome.koplugin/lib/ui_state.lua \
+        || ! grep -q 'ui_state' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'get_hn_page' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'set_hn_page' kindlehome.koplugin/ui/dashboard.lua \
+        || ! grep -q 'hn_items_per_page' kindlehome.koplugin/lib/config.lua \
         || ! grep -q 'hn_items_per_page' kindlehome.koplugin/ui/menus.lua \
         || ! grep -q 'reset_hn_page' kindlehome.koplugin/ui/dashboard.lua \
         || ! grep -q 'reset_page' kindlehome.koplugin/ui/dashboard.lua \
-        || ! grep -q 'reset_page' kindlehome.koplugin/main.lua; then
-    echo "FAIL: Top Stories rows must be configurable and explicit refreshes must reset the session page"
+        || ! grep -q 'reset_page' kindlehome.koplugin/main.lua \
+        || ! grep -q 'reset_page = false' kindlehome.koplugin/main.lua; then
+    echo "FAIL: Top Stories rows must be configurable and the page must persist; only explicit refreshes reset it"
     fail=1
 fi
 
@@ -375,6 +381,6 @@ if grep -rn 'Http\.' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and session page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details)"
 fi
 exit "$fail"
