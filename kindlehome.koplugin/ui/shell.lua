@@ -40,8 +40,12 @@ local Shell = InputContainer:extend{
     fullscreen = true,
     show_title_bar = true,
     header_factory = nil, -- function(width, shell) -> custom header widget
+    on_suspend = nil,
+    on_resume = nil,
     _closing = false,
     _ui_updates = 0,
+    _body_generation = 0, -- bumped on every in-place repaint (press feedback)
+    _last_regions = nil,  -- screen regions refreshed by the last update
 }
 
 -- UIManager:setDirty only flags top-level widgets, so each child that can
@@ -174,6 +178,89 @@ function Shell:show()
     Logger.info("shell", "shown", { fullscreen = self.covers_fullscreen })
 end
 
+-- Count one in-place update. Every UI_UPDATES_BEFORE_FULL-th is promoted to a
+-- flashing full refresh to clear accumulated e-ink ghosting.
+function Shell:_count_update()
+    self._body_generation = (self._body_generation or 0) + 1
+    self._ui_updates = (self._ui_updates or 0) + 1
+    if self._ui_updates >= UI_UPDATES_BEFORE_FULL then
+        self._ui_updates = 0
+        self._last_regions = { self.dimen }
+        UIManager:setDirty(self, "full")
+        Logger.info("shell", "update_full", { after = UI_UPDATES_BEFORE_FULL })
+        return true
+    end
+    return false
+end
+
+-- True when the last in-place update refreshed a region containing `rect`.
+function Shell:region_repainted(rect)
+    if not rect or not self._last_regions then return false end
+    for _, r in ipairs(self._last_regions) do
+        if r.x <= rect.x and r.y <= rect.y
+                and r.x + r.w >= rect.x + rect.w and r.y + r.h >= rect.y + rect.h then
+            return true
+        end
+    end
+    return false
+end
+
+-- Repaint body-relative regions after one or more sections were swapped in
+-- place (BodyWrapper:replace_section). One "ui" refresh per region, never the
+-- whole body.
+function Shell:update_regions(regions)
+    if not regions or #regions == 0 then return false end
+    if self:_count_update() then return true end
+    local screen_regions = {}
+    for _, r in ipairs(regions) do
+        local region = Geom:new{
+            x = r.x or 0,
+            y = (r.y or 0) + (self.header_height or 0),
+            w = r.w,
+            h = r.h,
+        }
+        screen_regions[#screen_regions + 1] = region
+        UIManager:setDirty(self, "ui", region)
+    end
+    self._last_regions = screen_regions
+    return true
+end
+
+-- Replace the header and the body together (tab switch) without closing the
+-- Shell: one "ui" refresh of the whole screen instead of two full flashes.
+function Shell:swap_content(opts)
+    opts = opts or {}
+    local group = self[1]
+    if not group then return false end
+    if opts.header_factory then
+        local header = opts.header_factory(Screen:getWidth(), self)
+        if not header or header:getSize().h ~= self.header_height then return false end
+        header.show_parent = self
+        if self.title_bar and type(self.title_bar.free) == "function" then self.title_bar:free() end
+        self.title_bar = header
+        self.header_factory = opts.header_factory
+        group[1] = header
+    end
+    if opts.body_factory then self.body_factory = opts.body_factory end
+    for _, key in ipairs({ "title", "on_close", "on_layout_change", "on_suspend", "on_resume" }) do
+        if opts[key] ~= nil then self[key] = opts[key] end
+    end
+    local body = self.body_factory(Screen:getWidth(),
+        self.body_height or math.max(1, Screen:getHeight() - self.header_height), self)
+    if not body then return false end
+    local old = self.body
+    group[self.body_index or (#group)] = body
+    self.body = body
+    self:_adopt_body()
+    if old and type(old.free) == "function" then old:free() end
+    if type(group.resetLayout) == "function" then group:resetLayout() end
+    self._body_generation = (self._body_generation or 0) + 1
+    self._ui_updates = 0
+    self._last_regions = { self.dimen }
+    UIManager:setDirty(self, "ui", self.dimen)
+    return true
+end
+
 -- State changes that leave the layout alone (paging, filters, refresh result,
 -- refresh indicator) only need the body repainted. Reuse the open Shell and
 -- refresh just that framebuffer slice instead of closing and recreating it.
@@ -197,19 +284,14 @@ function Shell:update_body(opts)
         if not index then index = #group + 1 end
         self.body_index = index
     end
+    local old = self.body
     group[index] = body
     self.body = body
     self:_adopt_body()
+    if old and old ~= body and type(old.free) == "function" then old:free() end
     if type(group.resetLayout) == "function" then group:resetLayout() end
 
-    self._ui_updates = (self._ui_updates or 0) + 1
-    local promote = self._ui_updates >= UI_UPDATES_BEFORE_FULL
-    if promote then
-        self._ui_updates = 0
-        UIManager:setDirty(self, "full")
-        Logger.info("shell", "update_full", { after = UI_UPDATES_BEFORE_FULL })
-        return true
-    end
+    if self:_count_update() then return true end
 
     local region = nil
     if type(body.getCropRegion) == "function" then
@@ -223,6 +305,7 @@ function Shell:update_body(opts)
             }
         end
     end
+    self._last_regions = { region or self.dimen }
     UIManager:setDirty(self, "ui", region)
     return true
 end
@@ -273,6 +356,15 @@ end
 
 function Shell:onScreenResize()
     return self:onSetRotationMode()
+end
+
+-- Device sleep: stop timers (the clock) and pick up again on wake-up.
+function Shell:onSuspend()
+    if type(self.on_suspend) == "function" then self.on_suspend() end
+end
+
+function Shell:onResume()
+    if type(self.on_resume) == "function" then self.on_resume() end
 end
 
 function Shell:onCloseWidget()

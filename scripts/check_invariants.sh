@@ -167,7 +167,8 @@ if ! grep -q 'DashboardHeader' kindlehome.koplugin/ui/dashboard.lua \
     || ! grep -q 'BottomNav' kindlehome.koplugin/ui/dashboard_body.lua \
     || ! grep -q 'HeroWeather' kindlehome.koplugin/ui/dashboard_body.lua \
     || ! grep -q 'StoriesCard' kindlehome.koplugin/ui/dashboard_body.lua \
-    || ! grep -q 'getCropRegion' kindlehome.koplugin/ui/dashboard_body.lua; then
+    || ! grep -q 'BodyWrapper' kindlehome.koplugin/ui/dashboard_body.lua \
+    || ! grep -q 'function BodyWrapper:getCropRegion' kindlehome.koplugin/ui/widget/body_wrapper.lua; then
     echo "FAIL: dashboard must wire the custom header, fixed nav, hero, stories and crop region"
     fail=1
 fi
@@ -255,7 +256,7 @@ if [ -f kindlehome.koplugin/ui/widget/modal_panel.lua ] \
     fail=1
 fi
 if ! grep -q 'alpha = self.alpha' kindlehome.koplugin/ui/widget/tap_icon.lua \
-    || ! grep -q 'alpha = true' kindlehome.koplugin/ui/widget/stories_card.lua \
+    || ! grep -q 'alpha = true' kindlehome.koplugin/ui/widget/pager.lua \
     || ! grep -q 'alpha = self.active' kindlehome.koplugin/ui/widget/bottom_nav.lua; then
     echo "FAIL: inverse icon assets must keep alpha or they flatten to white and vanish"
     fail=1

@@ -25,11 +25,18 @@ local function classify_due(due, today, limit)
     return nil
 end
 
+local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+
+-- "27 Nov 2026" (no locale dependency: os.date month names follow the C
+-- locale on device, which may not be English).
 local function format_due(due)
     if type(due) ~= "string" then return nil end
     local y, m, d = due:match(DUE_PATTERN)
     if not y then return due end
-    return d .. "-" .. m .. "-" .. y
+    local month = MONTHS[tonumber(m)]
+    if not month then return due end
+    return tostring(tonumber(d)) .. " " .. month .. " " .. y
 end
 
 local function fmt_temp(value)
@@ -106,24 +113,13 @@ local function fmt_age(published_at, now)
     return math.floor(hours / 24) .. "d"
 end
 
-local function fmt_relative(ts, now)
-    if type(ts) ~= "number" then return nil end
-    local delta = (now or os.time()) - ts
-    if delta < 0 then delta = 0 end
-    if delta < 60 then return "just now" end
-    local minutes = math.floor(delta / 60)
-    if minutes < 60 then return minutes .. " min ago" end
-    local hours = math.floor(minutes / 60)
-    if hours < 24 then return hours .. " h ago" end
-    return math.floor(hours / 24) .. " d ago"
-end
-
+-- One compact line: domain · points · comments · age, plus availability.
+-- The author is left out to keep the line short enough for a single row.
 local function hn_meta_line(item, now)
     local parts = {}
     if non_empty(item.domain) then table.insert(parts, item.domain) end
     if tonumber(item.score) then table.insert(parts, tostring(item.score) .. " pts") end
     if tonumber(item.descendants) then table.insert(parts, tostring(item.descendants) .. " comments") end
-    if non_empty(item.by) then table.insert(parts, "by " .. item.by) end
     local age = fmt_age(item.published_at, now)
     if age then table.insert(parts, age) end
     if item.url == nil then table.insert(parts, "Ask HN") end
@@ -150,13 +146,24 @@ local function clock_with_meridiem(clock, use_24h)
     return string.format("%d:%s", display, minute), suffix
 end
 
+local function fmt_clock(ts, use_24h)
+    if type(ts) ~= "number" then return nil end
+    local ok, value = pcall(os.date, "%H:%M", ts)
+    if not ok or not value then return nil end
+    local clock, meridiem = clock_with_meridiem(value, use_24h)
+    return meridiem and (clock .. " " .. meridiem) or clock
+end
+
+-- Absolute refresh time ("Updated 10:40"). Unlike "5 min ago" it does not
+-- change every minute, so the stories card is not repainted on clock ticks.
+local function freshness_label(state, use_24h)
+    local clock = fmt_clock(state.refreshed_at, use_24h)
+    if not clock then return nil end
+    return (state.refreshed_stale and "Cached " or "Updated ") .. clock
+end
+
 local function build_shared(state, now, opts)
     local clock, meridiem = clock_with_meridiem(state.time, opts.clock_24h == true)
-    local updated_clock = nil
-    if type(state.refreshed_at) == "number" then
-        local ok, value = pcall(os.date, "%H:%M", state.refreshed_at)
-        if ok then updated_clock = value end
-    end
     local battery = tostring(state.battery or "")
     local network = tostring(state.network or "")
     local charging = false
@@ -167,7 +174,6 @@ local function build_shared(state, now, opts)
         clock = clock,
         meridiem = meridiem,
         date_short = short_date(now),
-        updated_clock = updated_clock,
         battery_pct = tonumber(battery:match("(%d+)%%")),
         charging = charging,
         wifi = network:find("connected", 1, true) and true or false,
@@ -185,6 +191,10 @@ function DashboardModel.build(state, opts)
     local page_size = tonumber(opts.page_size) or PAGE_SIZE
 
     local hero, hint = build_shared(state, now, opts)
+    -- The Top Stories header carries the refresh indicator; the hero shows it
+    -- only when that card is hidden. Keeping the flag off otherwise means a
+    -- refresh toggle does not repaint the hero.
+    hero.refreshing = hero.refreshing and state.show_hn == false
 
     local weather = nil
     if state.show_weather ~= false then
@@ -222,18 +232,18 @@ function DashboardModel.build(state, opts)
         for index, item in ipairs(h.items or {}) do
             local id = item.id ~= nil and tostring(item.id) or nil
             if id == "" then id = nil end
+            local meta = hn_meta_line(item, now)
+            if item.saved then meta = meta .. (meta ~= "" and " · " or "") .. "Saved" end
             table.insert(items, {
                 id = id,
                 rank = tonumber(item.rank) or index,
                 title = tostring(item.title or "(untitled)"),
-                meta = hn_meta_line(item, now),
+                meta = meta,
+                saved = item.saved == true,
                 unavailable = item.content_status ~= nil and item.content_status ~= "ok",
             })
         end
-        local refreshed = nil
-        if type(state.refreshed_at) == "number" then
-            refreshed = fmt_relative(state.refreshed_at, now)
-        end
+        local refreshed = freshness_label(state, opts.clock_24h == true)
         local hn_message = non_empty(h.message)
         if redundant_notice(hn_message, hint) then hn_message = nil end
         local pages = math.ceil(#items / page_size)
@@ -241,9 +251,31 @@ function DashboardModel.build(state, opts)
         if page < 1 then page = 1 end
         if pages > 0 and page > pages then page = pages end
         local visible = {}
-        local first = (page - 1) * page_size + 1
-        local last = math.min(#items, first + page_size - 1)
-        for i = first, last do visible[#visible + 1] = items[i] end
+        if opts.worst_case then
+            -- Layout probe: the rows with the longest titles, so the row
+            -- count measured on them fits every page of the feed.
+            local sorted = {}
+            for i, item in ipairs(items) do sorted[i] = item end
+            table.sort(sorted, function(a, b)
+                if #a.title ~= #b.title then return #a.title > #b.title end
+                return #a.meta > #b.meta
+            end)
+            for i = 1, math.min(page_size, #sorted) do visible[i] = sorted[i] end
+        else
+            local first = (page - 1) * page_size + 1
+            local last = math.min(#items, first + page_size - 1)
+            for i = first, last do visible[#visible + 1] = items[i] end
+        end
+        local empty, empty_kind = nil, nil
+        if #items == 0 then
+            -- Nothing cached and no fetch attempted yet (cache-first open
+            -- while offline): say so instead of claiming HN is down.
+            if type(h.fetched_at) ~= "number" and not h.error_kind then
+                empty, empty_kind = "Not loaded yet. Tap refresh to load stories.", "not_loaded"
+            else
+                empty, empty_kind = tostring(h.line or "HN unavailable."), "error"
+            end
+        end
         hn = {
             badge = "Y/HN",
             title = "TOP STORIES",
@@ -251,9 +283,17 @@ function DashboardModel.build(state, opts)
             page = pages > 0 and page or 1,
             pages = pages,
             page_size = page_size,
-            empty = #items == 0 and tostring(h.line or "HN unavailable.") or nil,
+            empty = empty,
+            empty_kind = empty_kind,
             message = hn_message,
             refreshed = refreshed,
+            refreshing = state.refreshing == true,
+            longest_title = (function()
+                local n = 0
+                for _, item in ipairs(items) do if #item.title > n then n = #item.title end end
+                return n
+            end)(),
+            total = #items,
         }
     end
 
@@ -315,11 +355,11 @@ local function status_count(counts, status)
 end
 
 local function status_word(status)
-    if status == "open" then return "pendientes" end
-    if status == "done" then return "terminadas" end
-    if status == "due_soon" then return "por vencer" end
-    if status == "overdue" then return "vencidas" end
-    return "tareas"
+    if status == "open" then return "open tasks" end
+    if status == "done" then return "done tasks" end
+    if status == "due_soon" then return "tasks due soon" end
+    if status == "overdue" then return "overdue tasks" end
+    return "tasks"
 end
 
 function DashboardModel.build_todos(state, opts)
@@ -344,53 +384,62 @@ function DashboardModel.build_todos(state, opts)
     for _, task in ipairs(payload.items or {}) do
         if #(task.tags or {}) == 0 then
             untagged.total = untagged.total + 1
-            local class = task.done and nil or classify_due(task.due_date, today, limit)
+            local class = (not task.done) and classify_due(task.due_date, today, limit) or nil
             if task.done then untagged.done = untagged.done + 1 else untagged.open = untagged.open + 1 end
             if class == "due_soon" then untagged.due_soon = untagged.due_soon + 1
             elseif class == "overdue" then untagged.overdue = untagged.overdue + 1 end
         end
     end
 
+    local function task_row(task)
+        local parts = {}
+        local tag_parts = {}
+        for _, tag in ipairs(task.tags or {}) do
+            table.insert(tag_parts, "#" .. tostring(tag))
+        end
+        if #tag_parts > 0 then table.insert(parts, table.concat(tag_parts, " ")) end
+        local due_label = format_due(task.due_date)
+        if due_label then
+            local class = (not task.done) and classify_due(task.due_date, today, limit) or nil
+            table.insert(parts, (class == "overdue" and "Overdue " or "Due ") .. due_label)
+        end
+        local details = tostring(task.details or "")
+        return {
+            id = tostring(task.id),
+            title = tostring(task.title or ""),
+            done = task.done == true,
+            due_date = task.due_date,
+            meta = #parts > 0 and table.concat(parts, " · ") or "—",
+            details = details,
+            detail_preview = detail_preview(details),
+            has_details = details ~= "",
+        }
+    end
+
     local tasks = {}
     for _, task in ipairs(payload.items or {}) do
         if matches_tag(task, filter) and matches_status(task, status_filter, today, limit) then
-            local tag_parts = {}
-            for _, tag in ipairs(task.tags or {}) do
-                table.insert(tag_parts, "#" .. tostring(tag))
-            end
-            local due_label = format_due(task.due_date)
-            if due_label then table.insert(tag_parts, "Vence: " .. due_label) end
-            local details = tostring(task.details or "")
-            table.insert(tasks, {
-                id = tostring(task.id),
-                title = tostring(task.title or ""),
-                done = task.done == true,
-                due_date = task.due_date,
-                meta = #tag_parts > 0 and table.concat(tag_parts, " ") or "—",
-                details = details,
-                detail_preview = detail_preview(details),
-                has_details = details ~= "",
-            })
+            table.insert(tasks, task_row(task))
         end
     end
 
     local status_chips = {
-        { kind = "status", value = "open", label = "Pendientes",
+        { kind = "status", value = "open", label = "Open",
           count = status_count(counts, "open"), active = status_filter == "open" },
-        { kind = "status", value = "done", label = "Terminadas",
+        { kind = "status", value = "done", label = "Done",
           count = status_count(counts, "done"), active = status_filter == "done" },
-        { kind = "status", value = "all", label = "Todas",
+        { kind = "status", value = "all", label = "All",
           count = status_count(counts, "total"), active = status_filter == "all" },
-        { kind = "status", value = "due_soon", label = "Por vencer",
+        { kind = "status", value = "due_soon", label = "Due soon",
           count = status_count(counts, "due_soon"), active = status_filter == "due_soon" },
-        { kind = "status", value = "overdue", label = "Vencidas",
+        { kind = "status", value = "overdue", label = "Overdue",
           count = status_count(counts, "overdue"), active = status_filter == "overdue" },
     }
 
     local chips = {}
     if opts.show_tags ~= false then
         table.insert(chips, {
-            tag = "all", label = "Sin filtro", count = status_count(counts, status_filter),
+            tag = "all", label = "No filter", count = status_count(counts, status_filter),
             active = filter == "", can_open = false,
         })
         for _, entry in ipairs(payload.tags or {}) do
@@ -406,7 +455,7 @@ function DashboardModel.build_todos(state, opts)
         local untagged_count = status_count(untagged, status_filter)
         if untagged_count > 0 then
             table.insert(chips, {
-                tag = UNTAGGED_FILTER, label = "Sin etiqueta", count = untagged_count,
+                tag = UNTAGGED_FILTER, label = "Untagged", count = untagged_count,
                 active = filter == UNTAGGED_FILTER, can_open = false,
             })
         end
@@ -418,27 +467,43 @@ function DashboardModel.build_todos(state, opts)
     local pages = math.ceil(#tasks / page_size)
     local page = clamp_page(opts.todos_page, pages)
     local visible = {}
-    local first = (page - 1) * page_size + 1
-    local last = math.min(#tasks, first + page_size - 1)
-    for i = first, last do visible[#visible + 1] = tasks[i] end
+    local longest = 0
+    local all_rows = {}
+    for _, task in ipairs(payload.items or {}) do
+        local row = task_row(task)
+        all_rows[#all_rows + 1] = row
+        local weight = #row.title + #(row.detail_preview or "")
+        if weight > longest then longest = weight end
+    end
+    if opts.worst_case then
+        -- Layout probe over every task (not only the filtered ones), so the
+        -- row count fits every page under every filter.
+        table.sort(all_rows, function(a, b)
+            local wa = #a.title + #(a.detail_preview or "")
+            local wb = #b.title + #(b.detail_preview or "")
+            if wa ~= wb then return wa > wb end
+            return #a.meta > #b.meta
+        end)
+        for i = 1, math.min(page_size, #all_rows) do visible[i] = all_rows[i] end
+    else
+        local first = (page - 1) * page_size + 1
+        local last = math.min(#tasks, first + page_size - 1)
+        for i = first, last do visible[#visible + 1] = tasks[i] end
+    end
 
     local todos_message = non_empty(todos_state.message)
     if redundant_notice(todos_message, hint) then todos_message = nil end
-    local refreshed = nil
-    if type(state.refreshed_at) == "number" then
-        refreshed = fmt_relative(state.refreshed_at, now)
-    end
     local empty = nil
     if #tasks == 0 then
         local line = tostring(todos_state.line or "")
         if filter == "" and #(payload.items or {}) == 0 and line:find("unavailable", 1, true) then
             empty = line
         elseif filter == UNTAGGED_FILTER then
-            empty = "No hay tareas " .. status_word(status_filter) .. " sin etiqueta."
+            empty = "No untagged " .. status_word(status_filter) .. "."
         elseif filter ~= "" then
-            empty = "No hay tareas " .. status_word(status_filter) .. " con #" .. filter .. "."
+            empty = "No " .. status_word(status_filter) .. " tagged #" .. filter .. "."
         else
-            empty = "No hay tareas " .. status_word(status_filter) .. "."
+            empty = "No " .. status_word(status_filter) .. "."
         end
     end
     -- Compact date + time line for the TASKS card header. The dashboard keeps
@@ -449,7 +514,6 @@ function DashboardModel.build_todos(state, opts)
         clock_line = clock_line .. (clock_line ~= "" and " · " or "") .. hero.clock
         if hero.meridiem then clock_line = clock_line .. " " .. hero.meridiem end
     end
-    if hero.refreshing then clock_line = clock_line .. " · Updating…" end
 
     local todos_model = {
         badge = "TODO",
@@ -463,10 +527,12 @@ function DashboardModel.build_todos(state, opts)
         message = todos_message,
         counts = { open = counts.open or 0, done = counts.done or 0,
                    due_soon = counts.due_soon or 0, overdue = counts.overdue or 0 },
-        refreshed = refreshed,
         truncated = payload.truncated and true or false,
         partial = payload.partial and true or false,
         visible_count = #tasks,
+        refreshing = hero.refreshing == true,
+        total = #all_rows,
+        longest = longest,
         tags = chips,
         status_chips = status_chips,
         active_tag = filter,

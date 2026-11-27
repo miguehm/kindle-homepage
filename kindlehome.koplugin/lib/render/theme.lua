@@ -31,6 +31,8 @@ Theme.color = {
     canvas = Blitbuffer.COLOR_WHITE,
     fg = Blitbuffer.COLOR_BLACK,
     muted = Blitbuffer.COLOR_GRAY_6,       -- #666666 secondary metadata
+    -- #E5E5E5 is not one of the 16 discrete e-ink levels (0x00, 0x11 … 0xFF);
+    -- an off-level gray gets dithered, so the nearest level is used instead.
     hairline = Blitbuffer.COLOR_GRAY_E,    -- #EEEEEE (nearest discrete #E5E5E5)
     inverse_bg = Blitbuffer.COLOR_BLACK,
     inverse_fg = Blitbuffer.COLOR_WHITE,
@@ -51,9 +53,19 @@ Theme.type = {
     label_sm = 10,
 }
 
+-- Extra leading (TextBoxWidget `line_height`, in em) per role. DESIGN.md asks
+-- for deliberately tall body lines; headlines and labels keep KOReader's 0.3.
+Theme.line_height = {
+    body_lg = 0.5,
+    body_md = 0.45,
+    body_sm = 0.4,
+}
+
+-- Spacing on the 4dp sub-grid.
 Theme.space = {
     xs = 4,
     sm = 8,
+    md = 12,
     gutter = 16,
     margin = 20,
     lg = 24,
@@ -67,6 +79,27 @@ Theme.faces = {
     serif_bold = "NotoSerif-Bold.ttf",
     sans = "NotoSans-Regular.ttf",
     sans_bold = "NotoSans-Bold.ttf",
+}
+
+-- Component sizes in design dp. Widgets read these instead of literals so the
+-- whole UI stays on the 4dp grid and scales with ui_font_scale.
+Theme.size = {
+    header_h = 52,      -- dashboard/TODO'S header band
+    nav_h = 52,         -- bottom navigation cells
+    icon = 24,          -- standard glyph
+    icon_sm = 20,       -- in-row glyphs
+    icon_lg = 32,       -- hero weather glyph
+    hit_min = 48,       -- minimum touch target (both axes)
+    card_pad = 12,      -- card inner padding
+    badge_pad = 4,      -- inverted badge padding
+    chip_pad = 8,       -- chip horizontal padding
+    rank_col = 32,      -- story rank column
+    section_gap = 8,    -- vertical gap between body sections
+    battery_w = 28,
+    battery_h = 12,
+    check = 16,         -- checkbox square
+    check_fill = 10,    -- checked inner square
+    action_h = 56,      -- article fallback action bar
 }
 
 Theme.STORY_PAGE_SIZE = 4
@@ -117,6 +150,16 @@ end
 -- One physical pixel at the design grid, rounded up so it survives scaling.
 function Theme.hairline(config)
     return math.max(1, Theme.native_size(config, 1))
+end
+
+function Theme.px(config, name)
+    return Theme.native_size(config, Theme.size[name])
+end
+
+-- Touch targets never shrink below 48dp, even at the smallest text scale.
+function Theme.hit_size(config)
+    return math.max(Theme.native_size(config, Theme.size.hit_min),
+        Theme.native_size(nil, Theme.size.hit_min))
 end
 
 function Theme.margin(config)

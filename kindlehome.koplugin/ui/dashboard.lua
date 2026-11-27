@@ -178,6 +178,12 @@ function Dashboard:load_hn(opts)
         if item and item.id ~= nil then
             self.hn_item_index[tostring(item.id)] = item
         end
+        -- One stat per item per state build (not per paint): marks stories
+        -- already downloaded to the content folder.
+        if item and self.article_store and self.paths and type(self.paths.article_md_path) == "function" then
+            local ok, md_path = pcall(function() return self.paths:article_md_path(item) end)
+            item.saved = ok and md_path ~= nil and self.article_store:is_local(md_path) == true or nil
+        end
     end
     if res and res.status ~= "hidden" and res.status ~= "disabled" then
         local msg = Messages.hn(res.error_kind, res.status, #self.hn_items > 0)
@@ -420,6 +426,7 @@ function Dashboard:handle_link(uri)
 end
 
 function Dashboard:_teardown()
+    self:_cancel_tick()
     local widget = self.widget
     if not widget then return end
     self.widget = nil
@@ -467,22 +474,49 @@ function Dashboard:set_refreshing(refreshing)
 end
 
 function Dashboard:_shell_close()
+    self:_cancel_tick()
     self.widget = nil
     if self.actions then
         self.actions:dispatch("close", { source = "dashboard", dashboard = self })
     end
 end
 
--- Everything that can change the painted dashboard is folded into one stable
--- string. A refresh that leaves the rendered state untouched must not repaint;
--- nor must a duplicate "Updating…" flag.
-function Dashboard:_signature(state)
-    return UiSignature.of({
-        state = state,
-        hn_page = self.hn_page,
-        clock_24h = self.config and self.config:get("ui_clock_24h") == true,
-        page_size = self.config and self.config:get("hn_items_per_page") or nil,
+-- Model for the current state. `page_size` is the row count the body chose
+-- (nil before the first layout); `worst_case` asks for the layout probe rows.
+function Dashboard:_build_model(page_size, worst_case)
+    local clock_24h = self.config and self.config:get("ui_clock_24h") == true
+    return DashboardModel.build(self.last_state, {
+        now = os.time(),
+        page = self.hn_page,
+        clock_24h = clock_24h,
+        page_size = page_size,
+        worst_case = worst_case,
     })
+end
+
+-- Per-section signatures over what is actually painted (formatted strings),
+-- not over the raw payloads. Equal signatures mean identical pixels.
+function Dashboard:_section_signatures(model)
+    local hn = model.hn
+    return {
+        hero = UiSignature.of({ hero = model.hero, weather = model.weather }),
+        hint = model.hint or "",
+        stories = UiSignature.of(hn),
+        -- Anything that can change which row count fits forces a relayout.
+        stories_layout = hn and table.concat({ hn.total or 0, hn.longest_title or 0,
+            hn.message and 1 or 0 }, ":") or "",
+        nav = UiSignature.of(model.nav),
+        page_size = tostring(self.config and self.config:get("hn_items_per_page") or ""),
+    }
+end
+
+function Dashboard:_signature(sections)
+    return UiSignature.of(sections)
+end
+
+function Dashboard:_record_paint()
+    self._painted_sections = self:_section_signatures(self.model)
+    self._painted_signature = self:_signature(self._painted_sections)
 end
 
 function Dashboard:_state_for_show(opts)
@@ -490,6 +524,13 @@ function Dashboard:_state_for_show(opts)
     if opts.state then
         state = {}
         for k, v in pairs(opts.state) do state[k] = v end
+    elseif opts.reuse_state and self.last_state then
+        -- Returning from another tab: the caches have not changed, only the
+        -- clock has. Skip reloading them from disk.
+        state = {}
+        for k, v in pairs(self.last_state) do state[k] = v end
+        self:_refresh_clock_state(state)
+        state.refresh_hint = nil
     else
         state = self:build_state(opts)
     end
@@ -504,49 +545,79 @@ end
 -- persisted page in sync after either a full rebuild or an in-place swap.
 function Dashboard:_sync_page(model)
     local hn_model = model and model.hn
-    if hn_model and (hn_model.pages or 0) > 0 then
+    if hn_model and (hn_model.pages or 0) > 0 and hn_model.page ~= self.hn_page then
         self.hn_page = hn_model.page
         self:_persist_hn_page()
     end
 end
 
-function Dashboard:show(opts)
-    opts = opts or {}
-    local state = self:_state_for_show(opts)
-    local signature = self:_signature(state)
+function Dashboard:_page_by(delta)
+    local pages = self.model and self.model.hn and self.model.hn.pages or 0
+    if pages < 2 then return end
+    self:set_hn_page(((self.hn_page - 1 + delta) % pages) + 1)
+end
 
-    if self.widget and not opts.force_full then
-        if self._painted_signature == signature then return end
-        if self._build_model then self.model = self._build_model(nil) end
-        self.widget:update_body()
-        self:_sync_page(self.model)
-        self._painted_signature = self:_signature(state)
-        return
+function Dashboard:_body_callbacks(parent)
+    return {
+        show_parent = parent,
+        plugin_dir = self.plugin_dir,
+        model_for = function(page_size, worst_case) return self:_build_model(page_size, worst_case) end,
+        on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
+        on_refresh = function() self:handle_link("kh:refresh") end,
+        on_next_page = function() self:_page_by(1) end,
+        on_prev_page = function() self:_page_by(-1) end,
+        on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
+    }
+end
+
+-- Swap only the sections whose signature changed and refresh just their
+-- rectangles. Returns false when the layout itself must change (new hint,
+-- different row count, section height change, scroll fallback); the caller
+-- then rebuilds the body.
+function Dashboard:_update_sections(model, sections)
+    local painted = self._painted_sections
+    local body = self.widget and self.widget.body
+    if not painted or not body or body.scroll or type(body.replace_section) ~= "function" then
+        return false
     end
-
-    self:_teardown()
-
-    local function build_model(page_size)
-        local clock_24h = self.config and self.config:get("ui_clock_24h") == true
-        return DashboardModel.build(self.last_state, {
-            now = os.time(),
-            page = self.hn_page,
-            clock_24h = clock_24h,
-            page_size = page_size,
-        })
+    if sections.hint ~= painted.hint or sections.nav ~= painted.nav
+            or sections.page_size ~= painted.page_size
+            or sections.stories_layout ~= painted.stories_layout then
+        return false
     end
-    self._build_model = build_model
-    local model = build_model(nil)
+    local callbacks = self:_body_callbacks(self.widget)
+    local regions = {}
+    if sections.hero ~= painted.hero then
+        local hero = DashboardBody.build_hero(model, self.config, body.content_width, callbacks)
+        local region = body:replace_section("hero", hero)
+        if not region then return false end
+        regions[#regions + 1] = region
+    end
+    if sections.stories ~= painted.stories then
+        local old = body:section("stories")
+        if not old or not model.hn then return false end
+        local card = DashboardBody.build_card(model, self.config, body.content_width, callbacks,
+            old:getSize().h)
+        local region = body:replace_section("stories", card)
+        if not region then return false end
+        regions[#regions + 1] = region
+    end
+    body.model = model
     self.model = model
-    local current_model = model
+    if #regions > 0 then self.widget:update_regions(regions) end
+    return true
+end
 
-    local shell = Shell:new{
+function Dashboard:_shell_options()
+    return {
         title = "Kindle Home",
         config = self.config,
         on_close = function() self:_shell_close() end,
         on_layout_change = function()
             self:show({ state = self.last_state, allow_network = false, force_full = true })
         end,
+        on_suspend = function() self:_cancel_tick() end,
+        on_resume = function() self:_on_tick() end,
         header_factory = function(width, parent)
             return DashboardHeader:new{
                 title = "Kindle Home",
@@ -558,41 +629,117 @@ function Dashboard:show(opts)
             }
         end,
         body_factory = function(width, height, parent)
-            local body = DashboardBody.build(self.model, self.config, width, height, {
-                show_parent = parent,
-                plugin_dir = self.plugin_dir,
-                model_for = build_model,
-                on_open_hn = function(id) self:handle_link("kh:hn:" .. id) end,
-                on_refresh = function() self:handle_link("kh:refresh") end,
-                on_next_page = function()
-                    local pages = current_model.hn and current_model.hn.pages or 0
-                    self:set_hn_page((self.hn_page % math.max(pages, 1)) + 1)
-                end,
-                on_prev_page = function()
-                    local pages = current_model.hn and current_model.hn.pages or 0
-                    self:set_hn_page(((self.hn_page - 2) % math.max(pages, 1)) + 1)
-                end,
-                on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
-            })
-            current_model = body.model or model
-            self.model = current_model
+            local callbacks = self:_body_callbacks(parent)
+            callbacks.layout = self._layout
+            local body = DashboardBody.build(self.model, self.config, width, height, callbacks)
+            self._layout = body.layout
+            self._page_size = body.page_size
+            self.model = body.model or self.model
             return body
         end,
     }
-    self.widget = shell
-    shell:show()
+end
+
+function Dashboard:show(opts)
+    opts = opts or {}
+    self:_state_for_show(opts)
+    if opts.force_full then self._layout = nil end
+    local model = self:_build_model(self._page_size)
+    local sections = self:_section_signatures(model)
+    local signature = self:_signature(sections)
+
+    if self.widget and not opts.force_full and not opts.shell then
+        if self._painted_signature == signature then return end
+        if not self:_update_sections(model, sections) then
+            self.model = model
+            self.widget:update_body()
+        end
+        self:_sync_page(self.model)
+        self:_record_paint()
+        return
+    end
+
+    self.model = model
+    local shell_opts = self:_shell_options()
+    if opts.shell and opts.shell:swap_content(shell_opts) then
+        self.widget = opts.shell
+    else
+        if opts.shell then
+            -- The handed-over Shell could not be reused: close it quietly.
+            self.widget = opts.shell
+        end
+        self:_teardown()
+        self.widget = Shell:new(shell_opts)
+        self.widget:show()
+    end
     -- Keep the remembered page valid when the feed or page size changed (the
     -- model clamps out-of-range pages). An empty/offline feed reports pages=0
     -- and must not overwrite the page the user left on.
-    self:_sync_page(current_model)
-    self._painted_signature = self:_signature(state)
+    self:_sync_page(self.model)
+    self:_record_paint()
+    self:_schedule_tick()
     Logger.info("dashboard", "shown", {
-        weather = state.weather and state.weather.status,
-        hn_items = current_model.hn and #current_model.hn.items or 0,
-        hn_page = current_model.hn and current_model.hn.page or nil,
-        page_size = current_model.hn and current_model.hn.page_size or nil,
+        hn_items = self.model.hn and #self.model.hn.items or 0,
+        hn_page = self.model.hn and self.model.hn.page or nil,
+        page_size = self.model.hn and self.model.hn.page_size or nil,
         native = true,
     })
+end
+
+-- Hand the open Shell to another view (tab switch) without closing it.
+function Dashboard:release()
+    local widget = self.widget
+    self:_cancel_tick()
+    self.widget = nil
+    return widget
+end
+
+-- ---- Live clock -----------------------------------------------------------
+-- One timer aligned to the next minute, alive only while the dashboard is
+-- shown. A tick rebuilds and refreshes the hero card only.
+
+function Dashboard:_refresh_clock_state(state)
+    state = state or self.last_state
+    if not state then return end
+    state.date, state.time = get_clock_state()
+    state.battery = get_battery_state(self.config)
+end
+
+function Dashboard:_cancel_tick()
+    if self._tick_fn then
+        if type(UIManager.unschedule) == "function" then UIManager:unschedule(self._tick_fn) end
+        self._tick_fn = nil
+    end
+end
+
+function Dashboard:_schedule_tick()
+    self:_cancel_tick()
+    if not self.widget or type(UIManager.scheduleIn) ~= "function" then return end
+    local fn
+    fn = function()
+        if self._tick_fn ~= fn then return end
+        self._tick_fn = nil
+        self:_on_tick()
+    end
+    self._tick_fn = fn
+    UIManager:scheduleIn(60 - (os.time() % 60) + 1, fn)
+end
+
+function Dashboard:_is_on_top()
+    if type(UIManager.getTopmostVisibleWidget) ~= "function" then return true end
+    local ok, top = pcall(function() return UIManager:getTopmostVisibleWidget() end)
+    if not ok or top == nil then return true end
+    return top == self.widget
+end
+
+function Dashboard:_on_tick()
+    if not self.widget or self.widget._closing then return end
+    -- Under a dialog, menu or the reader: keep time, paint nothing.
+    if self.last_state and self:_is_on_top() then
+        self:_refresh_clock_state()
+        self:show({ state = self.last_state, allow_network = false })
+    end
+    self:_schedule_tick()
 end
 
 function Dashboard:refresh(opts)

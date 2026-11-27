@@ -180,12 +180,14 @@ function KindleHome:registerActions()
     end)
     self.actions:register("nav", function(ctx, _, arg)
         local tab = arg or (ctx and ctx.tab)
+        -- Tab switches reuse the open Shell (one "ui" refresh, no flash) and
+        -- each view's in-memory state (no cache reload from disk).
         if tab == "todos" then
-            if self.dashboard and self.dashboard.widget then self.dashboard:close() end
-            self:getTodos():show({ allow_network = false })
+            local shell = self.dashboard and self.dashboard:release() or nil
+            self:getTodos():show({ allow_network = false, reuse_state = true, shell = shell })
         elseif tab == "dashboard" then
-            if self.todos_view and self.todos_view.widget then self.todos_view:close() end
-            self:getDashboard():show({ allow_network = false })
+            local shell = self.todos_view and self.todos_view:release() or nil
+            self:getDashboard():show({ allow_network = false, reuse_state = true, shell = shell })
         else
             UIManager:show(InfoMessage:new{
                 text = Messages.for_kind("coming_soon", "Coming soon."), timeout = 4,

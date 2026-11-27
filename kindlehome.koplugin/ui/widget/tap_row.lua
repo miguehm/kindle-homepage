@@ -1,9 +1,11 @@
 -- SPDX-License-Identifier: MIT
 -- Full-width native tap row with bottom hairline handled by the caller.
+-- The whole row inverts while its action runs (see press_feedback.lua).
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local UIManager = require("ui/uimanager")
+
+local PressFeedback = require("ui/widget/press_feedback")
 
 local TapRow = InputContainer:extend{
     content_group = nil,
@@ -21,10 +23,14 @@ function TapRow:init()
     }
 end
 
+function TapRow:paintTo(bb, x, y)
+    InputContainer.paintTo(self, bb, x, y)
+    PressFeedback.paint(self, bb, x, y)
+end
+
 function TapRow:onTapRow()
-    UIManager:setDirty(self.show_parent, "ui")
-    if type(self.on_tap) == "function" then self.on_tap() end
-    return true
+    if type(self.on_tap) ~= "function" then return true end
+    return PressFeedback.run(self, self.on_tap)
 end
 
 return TapRow

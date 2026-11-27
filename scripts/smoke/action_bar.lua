@@ -28,8 +28,15 @@ package.preload["ui/size"] = function()
     return { border = { button = 2 } }
 end
 package.preload["ui/uimanager"] = function()
-    local state = { dirty = 0 }
-    local M = { setDirty = function() state.dirty = state.dirty + 1 end, _state = state }
+    local state = { dirty = 0, modes = {}, regions = {} }
+    local M = {
+        setDirty = function(_, _, mode, region)
+            state.dirty = state.dirty + 1
+            state.modes[#state.modes + 1] = mode
+            state.regions[#state.regions + 1] = region
+        end,
+        _state = state,
+    }
     return M
 end
 package.preload["lib/logger"] = function()
@@ -105,6 +112,11 @@ assert(total <= 1200, "buttons must fit the screen width")
 assert(buttons[1].label == "Refresh" and buttons[2].label == "Exit", "labels wired")
 buttons[2]:onTapActionButton()
 assert(tapped[2] == true and not tapped[1], "tap should invoke only its own callback")
-assert(require("ui/uimanager")._state.dirty == 1, "tap should trigger a repaint")
+local ui_state = require("ui/uimanager")._state
+assert(ui_state.dirty == 2 and ui_state.modes[1] == "fast" and ui_state.modes[2] == "ui",
+    "tap must invert with one fast refresh and restore with one ui refresh")
+assert(ui_state.regions[1] and ui_state.regions[1].w == buttons[2].width
+    and ui_state.regions[2] and ui_state.regions[2].w == buttons[2].width,
+    "press refreshes must be limited to the tapped button")
 
 print("OK action_bar smoke: buttons=" .. #buttons .. " width=" .. total)

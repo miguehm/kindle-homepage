@@ -565,11 +565,11 @@ function TodosView:open_tag(tag)
     if status ~= "open" and status ~= "done" and status ~= "due_soon" and status ~= "overdue" then
         status = "all"
     end
-    local count_key, noun = "total", "tareas"
-    if status == "open" then count_key, noun = "open", "abiertas" end
-    if status == "done" then count_key, noun = "done", "terminadas" end
-    if status == "due_soon" then count_key, noun = "due_soon", "por vencer" end
-    if status == "overdue" then count_key, noun = "overdue", "vencidas" end
+    local count_key, noun = "total", "tasks"
+    if status == "open" then count_key, noun = "open", "open" end
+    if status == "done" then count_key, noun = "done", "done" end
+    if status == "due_soon" then count_key, noun = "due_soon", "due soon" end
+    if status == "overdue" then count_key, noun = "overdue", "overdue" end
     local content_url = "/v1/todos/tags/" .. tag .. ".md?status=" .. status
     if status == "due_soon" and self.config then
         content_url = content_url .. "&due_days=" .. tostring(self.config:get("todos_due_soon_days"))
@@ -733,19 +733,50 @@ function TodosView:_shell_close()
     end
 end
 
--- As with the dashboard, fold everything that can change the painted TODO'S
--- card into one signature so unchanged refreshes cost no screen update at all.
-function TodosView:_signature(state)
-    return UiSignature.of({
-        state = state,
+-- Model for the current state. `rows` is the row count the body chose (nil
+-- before the first layout); `worst_case` asks for the layout probe rows.
+function TodosView:_build_model(rows, worst_case)
+    local clock_24h = self.config and self.config:get("ui_clock_24h") == true
+    return DashboardModel.build_todos(self.last_state, {
+        now = os.time(),
+        clock_24h = clock_24h,
+        task_rows = rows,
         todos_page = self.todos_page,
         tag_filter = self.tag_filter,
         status_filter = self.status_filter,
-        clock_24h = self.config and self.config:get("ui_clock_24h") == true,
-        include_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
         due_days = self.config and self.config:get("todos_due_soon_days") or nil,
-        timezone = self.config and self.config:get("todos_timezone") or "",
+        use_local = due_uses_local(self.config),
+        show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
+        worst_case = worst_case,
     })
+end
+
+-- As with the dashboard, signatures cover the painted (formatted) model per
+-- section, so unchanged refreshes cost no screen update and a page turn or a
+-- filter change repaints only the sections it touches.
+function TodosView:_section_signatures(model)
+    local todos = model.todos or {}
+    local card = {}
+    for k, v in pairs(todos) do
+        if k ~= "tags" and k ~= "status_chips" then card[k] = v end
+    end
+    return {
+        hint = model.hint or "",
+        filters = UiSignature.of({ tags = todos.tags, status = todos.status_chips }),
+        card = UiSignature.of(card),
+        layout = table.concat({ todos.total or 0, todos.longest or 0, todos.message and 1 or 0,
+            todos.truncated and 1 or 0, todos.partial and 1 or 0 }, ":"),
+        nav = UiSignature.of(model.nav),
+    }
+end
+
+function TodosView:_signature(sections)
+    return UiSignature.of(sections)
+end
+
+function TodosView:_record_paint()
+    self._painted_sections = self:_section_signatures(self.model)
+    self._painted_signature = self:_signature(self._painted_sections)
 end
 
 function TodosView:_state_for_show(opts)
@@ -753,6 +784,12 @@ function TodosView:_state_for_show(opts)
     if opts.state then
         state = {}
         for k, v in pairs(opts.state) do state[k] = v end
+    elseif opts.reuse_state and self.last_state then
+        -- Returning from another tab: only the clock line can have changed.
+        state = {}
+        for k, v in pairs(self.last_state) do state[k] = v end
+        state.date, state.time = get_clock_state()
+        state.refresh_hint = nil
     else
         state = self:build_state(opts)
     end
@@ -772,42 +809,68 @@ function TodosView:_sync_page(model)
     end
 end
 
-function TodosView:show(opts)
-    opts = opts or {}
-    local state = self:_state_for_show(opts)
-    local signature = self:_signature(state)
+function TodosView:_page_by(delta)
+    local pages = self.model and self.model.todos and self.model.todos.pages or 0
+    if pages < 2 then return end
+    self:set_todos_page(((self.todos_page - 1 + delta) % pages) + 1)
+end
 
-    if self.widget and not opts.force_full then
-        if self._painted_signature == signature then return end
-        if self._build_model then self.model = self._build_model(nil) end
-        self.widget:update_body()
-        self:_sync_page(self.model)
-        self._painted_signature = self:_signature(state)
-        return
+function TodosView:_body_callbacks(parent)
+    return {
+        show_parent = parent,
+        plugin_dir = self.plugin_dir,
+        model_for = function(rows, worst_case) return self:_build_model(rows, worst_case) end,
+        on_refresh = function() self:handle_link("kh:refresh") end,
+        on_add = function() self:handle_link("kh:todos:add") end,
+        on_toggle = function(id) self:handle_link("kh:todos:toggle:" .. id) end,
+        on_rename = function(id) self:handle_link("kh:todos:rename:" .. id) end,
+        on_delete = function(id) self:handle_link("kh:todos:delete:" .. id) end,
+        on_details = function(id) self:show_details(id) end,
+        on_edit_details = function(id) self:handle_link("kh:todos:details:" .. id) end,
+        on_tag = function(tag) self:handle_link("kh:todos:tag:" .. tag) end,
+        on_status = function(status) self:handle_link("kh:todos:status:" .. status) end,
+        on_tag_doc = function(tag) self:handle_link("kh:todos:tagdoc:" .. tag) end,
+        on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
+        on_next_page = function() self:_page_by(1) end,
+        on_prev_page = function() self:_page_by(-1) end,
+    }
+end
+
+function TodosView:_update_sections(model, sections)
+    local painted = self._painted_sections
+    local body = self.widget and self.widget.body
+    if not painted or not body or body.scroll or type(body.replace_section) ~= "function" then
+        return false
     end
-
-    self:_teardown()
-
-    local function build_model(rows)
-        local clock_24h = self.config and self.config:get("ui_clock_24h") == true
-        return DashboardModel.build_todos(self.last_state, {
-            now = os.time(),
-            clock_24h = clock_24h,
-            task_rows = rows,
-            todos_page = self.todos_page,
-            tag_filter = self.tag_filter,
-            status_filter = self.status_filter,
-            due_days = self.config and self.config:get("todos_due_soon_days") or nil,
-            use_local = due_uses_local(self.config),
-            show_tags = (not self.config) or self.config:get("todos_include_tags") ~= false,
-        })
+    if sections.hint ~= painted.hint or sections.nav ~= painted.nav
+            or sections.layout ~= painted.layout then
+        return false
     end
-    self._build_model = build_model
-    local model = build_model(nil)
+    local callbacks = self:_body_callbacks(self.widget)
+    local regions = {}
+    if sections.filters ~= painted.filters then
+        local filters = TodosBody.build_filters(model, self.config, body.content_width, callbacks)
+        local region = body:replace_section("filters", filters)
+        if not region then return false end
+        regions[#regions + 1] = region
+    end
+    if sections.card ~= painted.card then
+        local old = body:section("card")
+        if not old then return false end
+        local card = TodosBody.build_card(model, self.config, body.content_width, callbacks,
+            old:getSize().h)
+        local region = body:replace_section("card", card)
+        if not region then return false end
+        regions[#regions + 1] = region
+    end
+    body.model = model
     self.model = model
-    local current_model = model
+    if #regions > 0 then self.widget:update_regions(regions) end
+    return true
+end
 
-    local shell = Shell:new{
+function TodosView:_shell_options()
+    return {
         title = "TODO'S",
         config = self.config,
         on_close = function() self:_shell_close() end,
@@ -825,47 +888,66 @@ function TodosView:show(opts)
             }
         end,
         body_factory = function(width, height, parent)
-            local body = TodosBody.build(self.model, self.config, width, height, {
-                show_parent = parent,
-                plugin_dir = self.plugin_dir,
-                model_for = build_model,
-                on_refresh = function() self:handle_link("kh:refresh") end,
-                on_add = function() self:handle_link("kh:todos:add") end,
-                on_toggle = function(id) self:handle_link("kh:todos:toggle:" .. id) end,
-                on_rename = function(id) self:handle_link("kh:todos:rename:" .. id) end,
-                on_delete = function(id) self:handle_link("kh:todos:delete:" .. id) end,
-                on_details = function(id) self:show_details(id) end,
-                on_edit_details = function(id) self:handle_link("kh:todos:details:" .. id) end,
-                on_tag = function(tag) self:handle_link("kh:todos:tag:" .. tag) end,
-                on_status = function(status) self:handle_link("kh:todos:status:" .. status) end,
-                on_tag_doc = function(tag) self:handle_link("kh:todos:tagdoc:" .. tag) end,
-                on_nav = function(name) self:handle_link("kh:nav:" .. name) end,
-                on_next_page = function()
-                    local pages = current_model.todos and current_model.todos.pages or 0
-                    self:set_todos_page((self.todos_page % math.max(pages, 1)) + 1)
-                end,
-                on_prev_page = function()
-                    local pages = current_model.todos and current_model.todos.pages or 0
-                    self:set_todos_page(((self.todos_page - 2) % math.max(pages, 1)) + 1)
-                end,
-            })
-            current_model = body.model or model
-            self.model = current_model
+            local callbacks = self:_body_callbacks(parent)
+            callbacks.layout = self._layout
+            local body = TodosBody.build(self.model, self.config, width, height, callbacks)
+            self._layout = body.layout
+            self._rows = body.rows
+            self.model = body.model or self.model
             return body
         end,
     }
-    self.widget = shell
-    shell:show()
-    self:_sync_page(current_model)
-    self._painted_signature = self:_signature(state)
+end
+
+function TodosView:show(opts)
+    opts = opts or {}
+    self:_state_for_show(opts)
+    if opts.force_full then self._layout = nil end
+    local model = self:_build_model(self._rows)
+    local sections = self:_section_signatures(model)
+    local signature = self:_signature(sections)
+
+    if self.widget and not opts.force_full and not opts.shell then
+        if self._painted_signature == signature then return end
+        if not self:_update_sections(model, sections) then
+            self.model = model
+            self.widget:update_body()
+        end
+        self:_sync_page(self.model)
+        self:_record_paint()
+        return
+    end
+
+    self.model = model
+    local shell_opts = self:_shell_options()
+    if opts.shell and opts.shell:swap_content(shell_opts) then
+        self.widget = opts.shell
+    else
+        if opts.shell then
+            -- The handed-over Shell could not be reused: close it quietly.
+            self.widget = opts.shell
+        end
+        self:_teardown()
+        self.widget = Shell:new(shell_opts)
+        self.widget:show()
+    end
+    self:_sync_page(self.model)
+    self:_record_paint()
     Logger.info("todos_view", "shown", {
-        tasks = current_model.todos and #current_model.todos.items or 0,
-        tags = current_model.todos and #current_model.todos.tags or 0,
-        filter = current_model.todos and current_model.todos.active_tag or nil,
-        status = current_model.todos and current_model.todos.active_status or nil,
-        rows = current_model.todos and current_model.todos.page_size or nil,
+        tasks = self.model.todos and #self.model.todos.items or 0,
+        tags = self.model.todos and #self.model.todos.tags or 0,
+        filter = self.model.todos and self.model.todos.active_tag or nil,
+        status = self.model.todos and self.model.todos.active_status or nil,
+        rows = self.model.todos and self.model.todos.page_size or nil,
         native = true,
     })
+end
+
+-- Hand the open Shell to another view (tab switch) without closing it.
+function TodosView:release()
+    local widget = self.widget
+    self.widget = nil
+    return widget
 end
 
 function TodosView:refresh(opts)

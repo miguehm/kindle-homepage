@@ -77,7 +77,7 @@ assert(model.hero.clock == "10:42" and model.hero.meridiem == "AM", "12h clock m
 assert(model.hero.date_short ~= "" and model.hero.date_short:upper() == model.hero.date_short, "short date missing")
 assert(model.hero.battery_pct == 90 and model.hero.charging == false, "battery missing")
 assert(model.hero.wifi == true, "wifi status missing")
-assert(model.hero.updated_clock, "updated clock missing")
+assert(model.hero.updated_clock == nil, "freshness belongs to the stories header only")
 assert(model.hint == "Offline. Turn on WiFi and refresh.", "hint missing")
 assert(model.weather.temp == "12°C" and model.weather.condition == "Cloudy", "weather missing")
 assert(model.weather.icon == "cloud" and model.weather.wind == "12 km/h", "weather icon/wind missing")
@@ -89,9 +89,23 @@ assert(model.hn.items[1].rank == 1 and model.hn.items[4].rank == 4, "page 1 rank
 assert(model.hn.items[1].meta:find("example.com", 1, true), "domain missing")
 assert(model.hn.items[1].meta:find("10 pts", 1, true), "score missing")
 assert(model.hn.items[1].meta:find("3 comments", 1, true), "comments missing")
-assert(model.hn.items[1].meta:find("by user1", 1, true), "author missing")
+assert(not model.hn.items[1].meta:find("by user1", 1, true), "author must stay out of the compact meta line")
 assert(model.hn.items[1].meta:find("1h", 1, true), "age missing")
-assert(model.hn.refreshed == "5 min ago", "compact refreshed label missing")
+local function clock12(ts)
+    local h, m = os.date("%H:%M", ts):match("^(%d+):(%d+)")
+    h = tonumber(h)
+    local display = h % 12
+    if display == 0 then display = 12 end
+    return string.format("%d:%s %s", display, m, h < 12 and "AM" or "PM")
+end
+assert(model.hn.refreshed == "Cached " .. clock12(NOW - 300),
+    "absolute freshness label missing: " .. tostring(model.hn.refreshed))
+local fresh_state = fixture_state()
+fresh_state.refreshed_stale = false
+assert(DashboardModel.build(fresh_state, { now = NOW }).hn.refreshed == "Updated " .. clock12(NOW - 300),
+    "fresh data must read Updated")
+assert(DashboardModel.build(state, { now = NOW + 600 }).hn.refreshed == model.hn.refreshed,
+    "freshness label must not change as time passes (no per-minute card repaint)")
 assert(model.last_refreshed == nil, "obsolete footer model field must be gone")
 local notice_state = fixture_state()
 notice_state.weather = {
@@ -115,8 +129,14 @@ assert(model.digest == nil and model.footer == nil, "obsolete model fields must 
 assert(model.hero.refreshing == false, "hero must not claim to be refreshing by default")
 local refreshing_state = fixture_state()
 refreshing_state.refreshing = true
+local refreshing_model = DashboardModel.build(refreshing_state, { now = NOW })
+assert(refreshing_model.hn.refreshing == true,
+    "refreshing state must reach the stories header")
+assert(refreshing_model.hero.refreshing == false,
+    "the hero must not repaint for the indicator while the stories card shows it")
+refreshing_state.show_hn = false
 assert(DashboardModel.build(refreshing_state, { now = NOW }).hero.refreshing == true,
-    "refreshing state must reach the hero model")
+    "without a stories card the hero carries the indicator")
 
 local page2 = DashboardModel.build(state, { now = NOW, page = 2 })
 assert(page2.hn.page == 2 and page2.hn.items[1].rank == 5 and #page2.hn.items == 4, "page 2 wrong")
@@ -135,7 +155,25 @@ assert(hidden_model.hero.show_battery == false and hidden_model.hero.show_networ
 local empty = fixture_state()
 empty.hn.items = {}
 local empty_model = DashboardModel.build(empty, { now = NOW })
-assert(empty_model.hn.pages == 0 and empty_model.hn.empty == "HN unavailable.", "empty HN wrong")
+assert(empty_model.hn.pages == 0 and empty_model.hn.empty == "HN unavailable."
+    and empty_model.hn.empty_kind == "error", "empty HN wrong")
+local cold = fixture_state()
+cold.hn = { status = "error", items = {}, line = "HN unavailable." }
+local cold_model = DashboardModel.build(cold, { now = NOW })
+assert(cold_model.hn.empty_kind == "not_loaded" and cold_model.hn.empty:find("Not loaded yet", 1, true),
+    "a cold start without cache must not claim HN is down")
+local worst = DashboardModel.build((function()
+    local st = fixture_state()
+    st.hn.items[7].title = "A much longer headline that wraps onto a second line easily"
+    return st
+end)(), { now = NOW, page_size = 2, worst_case = true })
+assert(worst.hn.items[1].title:find("much longer", 1, true) and #worst.hn.items == 2,
+    "worst-case probe must use the longest titles")
+local saved_state = fixture_state()
+saved_state.hn.items[1].saved = true
+local saved_model = DashboardModel.build(saved_state, { now = NOW })
+assert(saved_model.hn.items[1].saved and saved_model.hn.items[1].meta:find("Saved", 1, true),
+    "downloaded stories must be marked")
 local bad_time = DashboardModel.parse_time("not-a-time")
 assert(bad_time == nil, "invalid timestamp must be omitted")
 
@@ -143,6 +181,7 @@ assert(bad_time == nil, "invalid timestamp must be omitted")
 local captured, captured_shell, shell_instance, shown, dispatched = nil, nil, nil, 0, {}
 local inputs, tap_icons, notices = {}, {}, {}
 local dirty_calls, body_updates, UIManager = {}, 0, nil
+local region_updates = {}
 
 local function geom(o)
     o = o or {}
@@ -421,7 +460,15 @@ package.preload["ui/shell"] = function()
                 shell_instance.cropping_widget = body
             end
             o.body = body
+            shell_instance.body = body
             return body
+        end
+        shell_instance.update_regions = function(_, regions)
+            region_updates[#region_updates + 1] = regions
+            for _, region in ipairs(regions) do
+                UIManager.setDirty(nil, shell_instance, "ui", region)
+            end
+            return true
         end
         shell_instance.update_body = function()
             body_updates = body_updates + 1
@@ -617,12 +664,23 @@ d:show({ state = d.last_state, allow_network = false })
 assert(#dirty_calls == repaints_before and body_updates == updates_before,
     "an unchanged refresh must not repaint the screen")
 
-local rows, nav_cells = {}, {}
-for _, input in ipairs(inputs) do
-    if input.is_row then rows[#rows + 1] = input end
-    if input.name then nav_cells[#nav_cells + 1] = input end
+-- Walk the painted body only: layout probes build throwaway cards too.
+local function collect(widget, pred, out)
+    out = out or {}
+    if type(widget) ~= "table" then return out end
+    if pred(widget) then out[#out + 1] = widget end
+    for i = 1, #widget do collect(widget[i], pred, out) end
+    return out
 end
+local rows = collect(body, function(w) return w.is_row and w.content_group ~= nil and w.on_tap ~= nil
+    and w.content_group[1] and w.content_group[1][2] ~= nil end)
+local nav_cells = collect(body, function(w) return w.name ~= nil and w.onTapNavCell ~= nil end)
 assert(#rows == 4, "expected 4 stories, got " .. tostring(#rows))
+assert(body.probes == 1 and d._layout and d._layout.size == 4,
+    "the chosen row count must be cached for the layout")
+local cached_body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
+assert(cached_body.probes == 0 and cached_body.page_size == 4,
+    "a rebuild with the same layout must reuse the cached row count without probing")
 assert(#nav_cells == 3, "expected 3 nav tabs, got " .. tostring(#nav_cells))
 for _, cell in ipairs(nav_cells) do
     assert(type(cell.on_tap) == "function" and cell.show_parent == shell_instance, "nav cell wiring wrong")
@@ -678,9 +736,19 @@ assert(next_icon and type(next_icon.on_tap) == "function", "next-page control mi
 assert(prev_icon and type(prev_icon.on_tap) == "function", "previous-page control missing")
 assert(next_icon.alpha == true and prev_icon.alpha == true,
     "inverse pager icons must keep their alpha or they flatten to white and vanish")
+local body_updates_before_page = body_updates
+local region_updates_before_page = #region_updates
+local hero_before_page = shell_instance.body:section("hero")
 next_icon.on_tap()
-assert(d.hn_page == 2 and body_updates > 0 and shown == 1,
-    "next page must repaint in place without refetch or reopening")
+assert(d.hn_page == 2 and shown == 1, "next page must repaint in place without refetch or reopening")
+assert(body_updates == body_updates_before_page and #region_updates == region_updates_before_page + 1,
+    "a page turn must swap one section, not rebuild the body")
+local page_regions = region_updates[#region_updates]
+assert(#page_regions == 1 and shell_instance.body:section("hero") == hero_before_page,
+    "a page turn must repaint only the stories card and keep the hero")
+local stories_card = shell_instance.body:section("stories")
+assert(page_regions[1].h == size_of(stories_card).h and page_regions[1].y > 0,
+    "the page-turn region must be the stories card rectangle")
 assert(dirty_calls[#dirty_calls].widget == shell_instance
     and dirty_calls[#dirty_calls].mode == "ui" and dirty_calls[#dirty_calls].region ~= nil,
     "in-place updates must use a regional ui refresh on the top-level shell")
@@ -694,11 +762,28 @@ d:set_hn_page(1)
 
 d:set_refreshing(true)
 assert(d.refreshing == true, "refreshing flag missing")
-local refreshing_body = captured_shell.body_factory(SCREEN_W, 1400, shell_instance)
-assert(has_text(refreshing_body, tostring(d.model.hero.updated_clock) .. " · Updating…"),
-    "refresh indicator missing from hero")
+assert(has_text(shell_instance.body:section("stories"), "Updating…"),
+    "refresh indicator missing from the stories header")
+assert(#region_updates[#region_updates] == 1,
+    "the refresh indicator must repaint only the stories card")
 d:set_refreshing(false)
 assert(d.refreshing == false, "refreshing flag must clear")
+
+-- Live clock: a tick repaints the hero card only.
+d.last_state.time = "00:00"
+d:show({ state = d.last_state, allow_network = false })
+local ticks_before = #region_updates
+local stories_before_tick = shell_instance.body:section("stories")
+d:_on_tick()
+assert(#region_updates == ticks_before + 1 and #region_updates[#region_updates] == 1,
+    "a clock tick must repaint exactly one region")
+assert(shell_instance.body:section("stories") == stories_before_tick,
+    "a clock tick must not rebuild the stories card")
+assert(region_updates[#region_updates][1].h == size_of(shell_instance.body:section("hero")).h,
+    "the clock tick region must be the hero card")
+local dirty_before_tick = #dirty_calls
+d:_on_tick()
+assert(#dirty_calls == dirty_before_tick, "a tick within the same minute must not repaint")
 
 local one_page_state = fixture_state()
 one_page_state.hn.items = { one_page_state.hn.items[1], one_page_state.hn.items[2],

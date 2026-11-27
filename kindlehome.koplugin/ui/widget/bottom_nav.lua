@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT
--- Fixed three-tab bottom navigation. TODO'S and STORE are visual placeholders:
--- they report "Coming soon" and never change the active tab.
+-- Fixed bottom navigation. DASHBOARD and TODO'S switch views; STORE is still
+-- a placeholder that reports "Coming soon" and never changes the active tab.
 local Device = require("device")
 local Blitbuffer = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -12,11 +12,11 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local LineWidget = require("ui/widget/linewidget")
 local TextWidget = require("ui/widget/textwidget")
-local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 
 local Theme = require("lib/render/theme")
+local PressFeedback = require("ui/widget/press_feedback")
 
 local Screen = Device.screen
 
@@ -44,7 +44,7 @@ local NavCell = InputContainer:extend{
 function NavCell:init()
     self.show_parent = self.show_parent or self
     local config = self.config
-    local icon_size = Theme.native_size(config, 24)
+    local icon_size = Theme.px(config, "icon")
     local icon = IconWidget:new{
         icon = FALLBACK_ICONS[self.name],
         file = Theme.icon_file(self.plugin_dir, "nav", self.name, self.active),
@@ -61,7 +61,7 @@ function NavCell:init()
     }
     local group = VerticalGroup:new{ align = "center" }
     table.insert(group, icon)
-    table.insert(group, VerticalSpan:new{ width = Theme.native_size(config, 4) })
+    table.insert(group, VerticalSpan:new{ width = Theme.native_size(config, Theme.space.xs) })
     table.insert(group, label)
 
     local frame = FrameContainer:new{
@@ -85,10 +85,16 @@ function NavCell:init()
     }
 end
 
+function NavCell:paintTo(bb, x, y)
+    InputContainer.paintTo(self, bb, x, y)
+    PressFeedback.paint(self, bb, x, y)
+end
+
 function NavCell:onTapNavCell()
-    UIManager:setDirty(self.show_parent, "ui")
-    if type(self.on_tap) == "function" then self.on_tap(self.name) end
-    return true
+    if type(self.on_tap) ~= "function" then return true end
+    -- The active tab is already on screen: no flash, no work.
+    if self.active then return true end
+    return PressFeedback.run(self, self.on_tap, self.name)
 end
 
 local BottomNav = InputContainer:extend{
@@ -106,7 +112,7 @@ function BottomNav:init()
     local tabs = self.tabs or { "dashboard", "todos", "store" }
     local width = Screen:getWidth()
     local hairline = Theme.hairline(config)
-    local height = Theme.native_size(config, 52)
+    local height = Theme.px(config, "nav_h")
     local cell_width = math.floor(width / math.max(#tabs, 1))
 
     local row = HorizontalGroup:new{ align = "center" }

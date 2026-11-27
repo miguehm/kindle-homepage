@@ -5,18 +5,18 @@ local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 
 local Theme = require("lib/render/theme")
 local DesignText = require("ui/widget/design_text")
+local PressFeedback = require("ui/widget/press_feedback")
 
 local TagChips = {}
 
+-- The whole chip frame (not only its label) is the touch target. A tap
+-- inverts it while the filter runs; a long press opens the tag document.
 local TapChip = InputContainer:extend{
-    text = nil,
-    config = nil,
-    fgcolor = nil,
+    frame = nil,
     on_tap = nil,
     on_hold = nil,
     show_parent = nil,
@@ -24,8 +24,8 @@ local TapChip = InputContainer:extend{
 
 function TapChip:init()
     self.show_parent = self.show_parent or self
-    self[1] = DesignText.line(self.text or "", self.config, "label_sm", true, self.fgcolor)
-    local size = self[1]:getSize()
+    self[1] = self.frame
+    local size = self.frame:getSize()
     self.dimen = Geom:new{ x = 0, y = 0, w = size.w, h = size.h }
     self.ges_events = {
         TapChip = { GestureRange:new{ ges = "tap", range = self.dimen } },
@@ -33,10 +33,14 @@ function TapChip:init()
     }
 end
 
+function TapChip:paintTo(bb, x, y)
+    InputContainer.paintTo(self, bb, x, y)
+    PressFeedback.paint(self, bb, x, y)
+end
+
 function TapChip:onTapChip()
-    UIManager:setDirty(self.show_parent, "ui")
-    if type(self.on_tap) == "function" then self.on_tap() end
-    return true
+    if type(self.on_tap) ~= "function" then return true end
+    return PressFeedback.run(self, self.on_tap)
 end
 
 function TapChip:onHoldChip()
@@ -45,8 +49,10 @@ function TapChip:onHoldChip()
     return true
 end
 
+-- DESIGN.md chips: unselected = white, hairline border, muted label;
+-- selected = black fill, black border, white label.
 local function chip_frame(chip, config, callbacks, show_parent)
-    local fgcolor = chip.active and Theme.color.inverse_fg or Theme.color.fg
+    local fgcolor = chip.active and Theme.color.inverse_fg or Theme.color.muted
     local on_tap
     local on_hold = nil
     if chip.kind == "status" then
@@ -58,33 +64,32 @@ local function chip_frame(chip, config, callbacks, show_parent)
             on_hold = function() callbacks.on_tag_doc(chip.tag) end
         end
     end
-    local label = TapChip:new{
-        text = chip.label .. ": " .. tostring(chip.count),
-        config = config,
-        fgcolor = fgcolor,
+    local text = chip.label .. ": " .. tostring(chip.count)
+    local label = DesignText.line(text, config, "label_md", true, fgcolor)
+    local border = Theme.hairline(config)
+    local padding = Theme.px(config, "chip_pad")
+    local frame = FrameContainer:new{
+        margin = 0,
+        padding = padding,
+        bordersize = border,
+        color = chip.active and Theme.color.fg or Theme.color.hairline,
+        background = chip.active and Theme.color.inverse_bg or Theme.color.canvas,
+        label,
+    }
+    local chip_widget = TapChip:new{
+        frame = frame,
+        text = text,
         show_parent = show_parent,
         on_tap = on_tap,
         on_hold = on_hold,
     }
-    local group = HorizontalGroup:new{ align = "center" }
-    table.insert(group, label)
-    local border = Theme.hairline(config)
-    local padding = Theme.native_size(config, 5)
-    local width = label:getSize().w + 2 * (border + padding)
-    return FrameContainer:new{
-        margin = 0,
-        padding = padding,
-        bordersize = border,
-        color = Theme.color.hairline,
-        background = chip.active and Theme.color.inverse_bg or Theme.color.canvas,
-        group,
-    }, width
+    return chip_widget, chip_widget:getSize().w
 end
 
 local function layout(chips, config, content_w, callbacks)
     if #chips == 0 then return nil end
     local show_parent = callbacks.show_parent
-    local gap = Theme.native_size(config, Theme.space.xs)
+    local gap = Theme.native_size(config, Theme.space.sm)
     local root = VerticalGroup:new{ align = "left" }
     local row = HorizontalGroup:new{ align = "center" }
     local used = 0
@@ -94,7 +99,7 @@ local function layout(chips, config, content_w, callbacks)
         local frame, width = chip_frame(chip, config, callbacks, show_parent)
         if used > 0 and used + width > content_w then
             if row_count > 0 then
-                table.insert(root, DesignText.span(config, Theme.space.xs))
+                table.insert(root, DesignText.span(config, Theme.space.sm))
             end
             table.insert(root, row)
             row_count = row_count + 1
@@ -105,7 +110,7 @@ local function layout(chips, config, content_w, callbacks)
         table.insert(row, frame)
         used = used + width + gap
     end
-    if row_count > 0 then table.insert(root, DesignText.span(config, Theme.space.xs)) end
+    if row_count > 0 then table.insert(root, DesignText.span(config, Theme.space.sm)) end
     table.insert(root, row)
     return root
 end

@@ -9,7 +9,6 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
-local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
@@ -19,11 +18,11 @@ local IconWidget = require("ui/widget/iconwidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local Size = require("ui/size")
 local TextWidget = require("ui/widget/textwidget")
-local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 
 local Theme = require("lib/render/theme")
+local PressFeedback = require("ui/widget/press_feedback")
 
 local Screen = Device.screen
 
@@ -40,12 +39,12 @@ local ActionButton = InputContainer:extend{
 
 function ActionButton:init()
     self.show_parent = self.show_parent or self
-    self.height = self.height or Theme.native_size(self.config, 58)
+    self.height = self.height or Theme.px(self.config, "action_h")
     self.width = self.width or Screen:getWidth()
 
-    local padding = Theme.native_size(self.config, 6)
-    local icon_size = Theme.native_size(self.config, 24)
-    local face = Font:getFace("cfont", Theme.native_font_size(self.config, 12))
+    local padding = Theme.native_size(self.config, Theme.space.xs)
+    local icon_size = Theme.px(self.config, "icon")
+    local face = Theme.face(self.config, "label_md", true)
 
     local group = VerticalGroup:new{ align = "center" }
     table.insert(group, IconWidget:new{
@@ -54,7 +53,7 @@ function ActionButton:init()
         height = icon_size,
         dim = not self.enabled,
     })
-    table.insert(group, VerticalSpan:new{ width = Theme.native_size(self.config, 3) })
+    table.insert(group, VerticalSpan:new{ width = Theme.native_size(self.config, Theme.space.xs) })
     table.insert(group, TextWidget:new{
         text = self.label or "",
         face = face,
@@ -86,11 +85,14 @@ function ActionButton:init()
     }
 end
 
+function ActionButton:paintTo(bb, x, y)
+    InputContainer.paintTo(self, bb, x, y)
+    PressFeedback.paint(self, bb, x, y)
+end
+
 function ActionButton:onTapActionButton()
     if self.enabled == false then return true end
-    UIManager:setDirty(self.show_parent, "ui")
-    if type(self.callback) == "function" then self.callback() end
-    return true
+    return PressFeedback.run(self, self.callback)
 end
 
 local ActionBar = InputContainer:extend{
@@ -105,8 +107,8 @@ function ActionBar:init()
     local specs = self.buttons or {}
     local count = #specs
 
-    local outer = Theme.native_size(self.config, 8)
-    local gap = Theme.native_size(self.config, 6)
+    local outer = Theme.native_size(self.config, Theme.space.sm)
+    local gap = Theme.native_size(self.config, Theme.space.sm)
     local width = math.floor((Screen:getWidth() - 2 * outer - gap * (count - 1)) / math.max(count, 1))
 
     local row = HorizontalGroup:new{ align = "center" }

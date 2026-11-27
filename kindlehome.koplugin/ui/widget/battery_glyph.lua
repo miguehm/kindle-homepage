@@ -20,8 +20,8 @@ function BatteryGlyph:init()
     self.capacity = tonumber(self.capacity) or 0
     if self.capacity < 0 then self.capacity = 0 end
     if self.capacity > 100 then self.capacity = 100 end
-    self.width = Theme.native_size(config, 30)
-    self.height = Theme.native_size(config, 14)
+    self.width = Theme.px(config, "battery_w")
+    self.height = Theme.px(config, "battery_h")
     self.thickness = Theme.hairline(config)
     self.dimen = Geom:new{ x = 0, y = 0, w = self.width + self.thickness * 2, h = self.height }
 end

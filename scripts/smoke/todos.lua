@@ -207,6 +207,7 @@ package.preload["ui/widget/container/scrollablecontainer"] = function()
     end
     return M
 end
+local region_updates = {}
 package.preload["ui/shell"] = function()
     local M = {}
     function M:new(o)
@@ -225,7 +226,15 @@ package.preload["ui/shell"] = function()
             o.body = factory(w, h, parent or instance)
             o.body.dialog = instance
             o.body.show_parent = instance
+            instance.body = o.body
             return o.body
+        end
+        instance.update_regions = function(_, regions)
+            region_updates[#region_updates + 1] = regions
+            for _, region in ipairs(regions) do
+                UIManager.setDirty(nil, instance, "ui", region)
+            end
+            return true
         end
         if factory then o.body_factory(SCREEN_W, SCREEN_H - 100, instance) end
         instance.update_body = function()
@@ -489,7 +498,7 @@ assert(model.nav.active == "todos" and #model.nav.tabs == 3, "todos nav model wr
 assert(model.todos.items[1].title == "Comprar leche" and model.todos.counts.open == 2, "todos model rows wrong")
 assert(model.todos.items[1].details == "Llamar a la tienda", "details lost in model")
 assert(#model.todos.tags == 4 and model.todos.tags[1].tag == "all"
-    and model.todos.tags[1].label == "Sin filtro", "tag chips missing")
+    and model.todos.tags[1].label == "No filter", "tag chips missing")
 assert(model.docs == nil, "the TASK LISTS card must be gone")
 assert(model.todos.clock_line and model.todos.clock_line:find("2:00 PM", 1, true),
     "todos model must expose a small 12h date/time line")
@@ -500,8 +509,9 @@ local updating_state = {}
 for key, value in pairs(raw_state) do updating_state[key] = value end
 updating_state.refreshing = true
 local updating_model = DashboardModel.build_todos(updating_state, { clock_24h = true })
-assert(updating_model.todos.clock_line:find("Updating", 1, true) ~= nil,
-    "clock line must show the refresh state")
+assert(updating_model.todos.refreshing == true
+    and updating_model.todos.clock_line:find("Updating", 1, true) == nil,
+    "the refresh state must reach the card header badge, not the clock line")
 local filtered = DashboardModel.build_todos(raw_state, { task_rows = 6, tag_filter = "casa" })
 assert(#filtered.todos.items == 1 and filtered.todos.items[1].title == "Comprar leche", "local tag filter failed")
 local untagged = DashboardModel.build_todos(raw_state, { task_rows = 6, tag_filter = "__untagged__" })
@@ -528,9 +538,17 @@ assert(#soon_model.todos.items == 1 and soon_model.todos.items[1].id == "a1",
 local overdue_model = DashboardModel.build_todos(raw_state, { task_rows = 6, status_filter = "overdue" })
 assert(#overdue_model.todos.items == 1 and overdue_model.todos.items[1].id == "b2",
     "overdue filter failed")
-local due_label = os.date("!%d-%m-%Y", os.time())
-assert(soon_model.todos.items[1].meta:find("Vence: " .. due_label, 1, true) ~= nil,
-    "due date must be rendered as DD-MM-YYYY in the row meta")
+local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+local today_t = os.date("!*t", os.time())
+local due_label = tostring(today_t.day) .. " " .. MONTHS[today_t.month] .. " " .. tostring(today_t.year)
+assert(soon_model.todos.items[1].meta:find("Due " .. due_label, 1, true) ~= nil,
+    "due date must be rendered as 'Due D Mon YYYY' in the row meta: " .. soon_model.todos.items[1].meta)
+assert(overdue_model.todos.items[1].meta:find("Overdue ", 1, true) ~= nil,
+    "overdue tasks must say so in the row meta")
+local worst_model = DashboardModel.build_todos(raw_state, { task_rows = 1, status_filter = "done",
+    worst_case = true })
+assert(#worst_model.todos.items == 1 and worst_model.todos.longest > 0,
+    "worst-case probe must measure across every task, not only the filtered ones")
 local both_model = DashboardModel.build_todos(raw_state, {
     task_rows = 6, status_filter = "open", tag_filter = "casa",
 })
@@ -574,13 +592,14 @@ assert(captured_shell.body.filler == nil or (captured_shell.body.filler.width or
     "todos card must absorb the leftover viewport height")
 local TodosCard = require("ui/widget/todos_card")
 local pager_content = {
-    { tag = "header" }, { tag = "divider" }, { tag = "spacer" }, { tag = "pager" },
+    { tag = "header" }, { tag = "row" }, { tag = "divider" }, { tag = "pager" },
     getSize = function() return { w = 10, h = 100 } end,
 }
 local pager_card = { fill_info = { border = 1, padding = 2, has_pager = true }, [1] = pager_content }
 TodosCard.apply_fill(pager_card, 120)
-assert(#pager_content == 5 and pager_content[4].width == 14 and pager_content[5].tag == "pager"
-    and pager_card.fill_info == nil, "pager must stay bottom-anchored inside the filled card")
+assert(#pager_content == 5 and pager_content[3].width == 14 and pager_content[4].tag == "divider"
+    and pager_content[5].tag == "pager" and pager_card.fill_info == nil,
+    "divider + pager must stay bottom-anchored inside the filled card")
 assert(#captured_shell.body.model.todos.status_chips == 5, "shell must show all five status chips")
 assert(type(captured_shell.body.getCropRegion) == "function", "crop region missing")
 assert(captured_shell.body.dialog and captured_shell.body.show_parent, "dialog wiring missing")
@@ -612,6 +631,16 @@ end
 local function icon(name)
     for _, widget in ipairs(tap_icons) do
         if widget.icon == name then return widget end
+        if type(widget.file) == "string" and widget.file:find("/" .. name .. ".svg", 1, true) then
+            return widget
+        end
+    end
+    return nil
+end
+
+local function checkbox_for(checked)
+    for _, input in ipairs(inputs) do
+        if input.onTapCheckbox and input.checked == checked then return input end
     end
     return nil
 end
@@ -645,37 +674,44 @@ for _, widget in ipairs(tap_icons) do
 end
 assert(eye and type(eye.on_tap) == "function", "eye details icon missing")
 
-local status_done = chip("Terminadas: 1")
+local status_done = chip("Done: 1")
 assert(status_done and type(status_done.on_tap) == "function", "done status chip missing")
 status_done:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1
     and captured_shell.body.model.todos.active_status == "done", "done filter failed")
-chip("Todas: 3"):onTapChip()
-assert(#captured_shell.body.model.todos.items == 3, "Todas status chip must show every task")
-chip("Pendientes: 2"):onTapChip()
-assert(#captured_shell.body.model.todos.items == 2, "Pendientes status chip must reset to open")
-chip("Por vencer: 1"):onTapChip()
+chip("All: 3"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 3, "All status chip must show every task")
+chip("Open: 2"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 2, "Open status chip must reset to open")
+chip("Due soon: 1"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 1
     and captured_shell.body.model.todos.active_status == "due_soon", "due soon chip failed")
-chip("Vencidas: 1"):onTapChip()
+chip("Overdue: 1"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 1
     and captured_shell.body.model.todos.active_status == "overdue", "overdue chip failed")
-chip("Pendientes: 2"):onTapChip()
+chip("Open: 2"):onTapChip()
 
 local casa_chip = chip("#casa: 1")
 assert(casa_chip and type(casa_chip.on_tap) == "function", "tag chip missing")
 assert(type(casa_chip.on_hold) == "function", "tag chip must support long press")
 local updates_before_filter = body_updates
+local regions_before_filter = #region_updates
 casa_chip:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1, "chip must filter the task list")
 assert(captured_shell.body.model.todos.active_tag == "casa", "chip must set the active tag")
-assert(body_updates == updates_before_filter + 1 and shown == 1,
-    "filter changes must repaint in place without reopening")
+assert(body_updates == updates_before_filter and shown == 1
+    and #region_updates == regions_before_filter + 1,
+    "filter changes must swap sections in place without rebuilding the body or reopening")
+local filter_regions = region_updates[#region_updates]
+assert(#filter_regions == 2, "a tag filter repaints the chips and the card, nothing else")
+for _, region in ipairs(filter_regions) do
+    assert(region.h > 0 and region.h < SCREEN_H - 100, "filter regions must be section rectangles")
+end
 assert(dirty_calls[#dirty_calls].widget == view.widget
     and dirty_calls[#dirty_calls].mode == "ui" and dirty_calls[#dirty_calls].region ~= nil,
     "filter changes must use a regional ui refresh")
-chip("Sin filtro: 2"):onTapChip()
-assert(#captured_shell.body.model.todos.items == 2, "Sin filtro must clear the tag filter")
+chip("No filter: 2"):onTapChip()
+assert(#captured_shell.body.model.todos.items == 2, "No filter must clear the tag filter")
 
 local plus = nil
 for _, widget in ipairs(tap_icons) do
@@ -729,13 +765,14 @@ assert(#dispatched == before_auto + 1 and dispatched[#dispatched].id == "refresh
     and dispatched[#dispatched].ctx.allow_network == true,
     "create must auto-refresh the TODO'S counters from the server")
 
-local checkbox = glyph("[ ]")
+local checkbox = checkbox_for(false)
 assert(checkbox, "open-task checkbox missing")
-checkbox:onTapGlyph()
+assert(checkbox.dimen.w >= 96 and checkbox.dimen.h >= 96, "checkbox touch slot must be at least 48dp")
+checkbox:onTapCheckbox()
 assert(writes[#writes].kind == "update" and writes[#writes].patch.done == true, "toggle failed")
-local done_checkbox = glyph("[x]")
+local done_checkbox = checkbox_for(true)
 assert(done_checkbox, "done-task checkbox missing")
-done_checkbox:onTapGlyph()
+done_checkbox:onTapCheckbox()
 assert(writes[#writes].patch.done == false, "untoggle failed")
 
 local rows = {}
@@ -745,7 +782,9 @@ end
 assert(#rows >= 3, "task rows missing")
 local edit_icons = {}
 for _, widget in ipairs(tap_icons) do
-    if widget.icon == "edit" then edit_icons[#edit_icons + 1] = widget end
+    if type(widget.file) == "string" and widget.file:find("/edit.svg", 1, true) then
+        edit_icons[#edit_icons + 1] = widget
+    end
 end
 assert(#edit_icons >= #rows, "edit details must be available on every row, even without details")
 assert(eye, "view details icon missing on every row")
@@ -783,9 +822,10 @@ assert(type(writes[#writes].patch.tags) == "table" and #writes[#writes].patch.ta
 assert(writes[#writes].patch.text == nil and writes[#writes].patch.details == nil,
     "clearing tags must not touch text or details")
 
-local del = glyph("x")
+local del = icon("delete")
 assert(del, "delete button missing")
-del:onTapGlyph()
+assert(del.dimen.w >= 96, "delete touch slot must be at least 48dp")
+del:onTapIcon()
 assert(confirms[#confirms] and type(confirms[#confirms].ok_callback) == "function", "delete confirmation missing")
 confirms[#confirms].ok_callback()
 assert(writes[#writes].kind == "delete" and writes[#writes].id == "a1", "delete failed")

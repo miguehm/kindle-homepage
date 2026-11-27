@@ -37,12 +37,13 @@ function DashboardHeader:init()
     local width = Screen:getWidth()
     local margin = Theme.margin(config)
     local hairline = Theme.hairline(config)
-    local icon_size = Theme.native_size(config, 28)
-    local icon_gap = Theme.native_size(config, Theme.space.md)
-    local height = Theme.native_size(config, 52)
+    local icon_size = Theme.px(config, "icon")
+    local slot = Theme.hit_size(config)
+    local icon_gap = Theme.native_size(config, Theme.space.xs)
+    local height = math.max(Theme.px(config, "header_h"), slot)
     local title_gap = Theme.native_size(config, Theme.space.sm)
 
-    local title_limit = math.max(1, width - 2 * margin - 2 * icon_size - icon_gap)
+    local title_limit = math.max(1, width - 2 * margin - 2 * slot - icon_gap)
     local title = TextWidget:new{
         text = self.title or "Kindle Home",
         face = Theme.face(config, "headline_md", true),
@@ -51,27 +52,30 @@ function DashboardHeader:init()
         max_width = title_limit,
         truncate_with_ellipsis = true,
     }
-    local filler = math.max(0, width - 2 * margin - title:getSize().w - 2 * icon_size - icon_gap)
 
     local settings_file = Theme.icon_file(self.plugin_dir, "header", "settings", false)
     local close_file = Theme.icon_file(self.plugin_dir, "header", "close", false)
 
     self.settings_button = TapIcon:new{
-        icon = settings_file and nil or "appbar.settings",
+        icon = (not settings_file) and "appbar.settings" or nil,
         file = settings_file,
         width = icon_size,
         height = icon_size,
+        config = config,
         show_parent = self.show_parent or self,
         on_tap = self.on_settings,
     }
     self.close_button = TapIcon:new{
-        icon = close_file and nil or "close",
+        icon = (not close_file) and "close" or nil,
         file = close_file,
         width = icon_size,
         height = icon_size,
+        config = config,
         show_parent = self.show_parent or self,
         on_tap = self.on_close,
     }
+    local filler = math.max(0, width - 2 * margin - title:getSize().w
+        - self.settings_button:getSize().w - self.close_button:getSize().w - icon_gap)
 
     local row = HorizontalGroup:new{ align = "center" }
     table.insert(row, HorizontalSpan:new{ width = margin })
