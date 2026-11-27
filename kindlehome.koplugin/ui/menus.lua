@@ -218,7 +218,12 @@ function Menus:edit_todos_timezone(config, on_done)
 end
 
 function Menus:show_hnmd_status(config)
+    -- The status call blocks: show it is running before the request starts.
+    local checking = InfoMessage:new{ text = _("Checking server…") }
+    UIManager:show(checking)
+    pcall(function() UIManager:forceRePaint() end)
     local res = Hnmd.fetch_status(config)
+    UIManager:close(checking)
     if not res.ok then
         show_info(Messages.for_kind(res.error_kind, _("Server status unavailable.")), 5)
         return
@@ -294,6 +299,77 @@ function Menus:reset_custom_content_dir(config, paths, on_done)
     apply_custom_content_dir(config, paths, "", on_done, "path_reset")
 end
 
+-- One switch per source: a hidden section is never fetched, so "enabled"
+-- and "show" move together.
+local function source_toggle(config, label, keys, on_done)
+    return {
+        text = label,
+        keep_menu_open = true,
+        checked_func = function()
+            for _, key in ipairs(keys) do
+                if not config:get(key) then return false end
+            end
+            return true
+        end,
+        callback = function()
+            local value = not config:get(keys[1])
+            for _, key in ipairs(keys) do config:set(key, value) end
+            config:flush()
+            if on_done then on_done() end
+        end,
+    }
+end
+
+-- Radio list of common values plus "Custom…" (free numeric entry).
+local function preset_menu(config, key, label_fn, presets, value_label, on_custom, on_done)
+    local items = {}
+    for _, value in ipairs(presets) do
+        table.insert(items, {
+            text = value_label(value),
+            radio = true,
+            checked_func = function() return tonumber(config:get(key)) == value end,
+            callback = function()
+                config:set(key, value)
+                config:flush()
+                if on_done then on_done() end
+            end,
+        })
+    end
+    table.insert(items, {
+        text = _("Custom…"),
+        keep_menu_open = true,
+        checked_func = function()
+            local current = tonumber(config:get(key))
+            for _, value in ipairs(presets) do
+                if current == value then return false end
+            end
+            return true
+        end,
+        callback = on_custom,
+    })
+    return {
+        text_func = label_fn,
+        sub_item_table = items,
+    }
+end
+
+local function minutes_label(value)
+    if value < 60 then return tostring(value) .. " min" end
+    local hours = value / 60
+    return (hours == math.floor(hours) and tostring(hours) or string.format("%.1f", hours)) .. " h"
+end
+
+local function rows_label(value)
+    return tostring(value) .. (value == 1 and _(" story") or _(" stories"))
+end
+
+local STORAGE_MODES = {
+    { value = "documents", label = _("Documents folder"),
+      help = _("Articles are saved as Markdown under the Kindle documents folder, visible in the library.") },
+    { value = "datadir", label = _("KOReader data folder"),
+      help = _("Articles are saved inside KOReader's data folder, hidden from the library.") },
+}
+
 function Menus:settings_items(main_instance)
     local config = main_instance.config
     local paths = main_instance.paths
@@ -302,22 +378,8 @@ function Menus:settings_items(main_instance)
             {
                 text = _("Weather"),
                 sub_item_table = {
-                    {
-                        text_func = function() return _("Weather enabled: ") .. bool_text(config:get("weather_enabled")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("weather_enabled") and true or false end,
-                        callback = function()
-                            config:set("weather_enabled", not config:get("weather_enabled")); config:flush(); refresh_dashboard(main_instance)
-                        end,
-                    },
-                    {
-                        text_func = function() return _("Show weather section: ") .. bool_text(config:get("show_weather")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("show_weather") and true or false end,
-                        callback = function()
-                            config:set("show_weather", not config:get("show_weather")); config:flush(); refresh_dashboard(main_instance)
-                        end,
-                    },
+                    source_toggle(config, _("Show weather"), { "weather_enabled", "show_weather" },
+                        function() refresh_dashboard(main_instance) end),
                     {
                         text = _("Set location (search)"),
                         keep_menu_open = true,
@@ -336,74 +398,64 @@ function Menus:settings_items(main_instance)
                             show_info(_("Weather location cleared.")); refresh_dashboard(main_instance)
                         end,
                     },
-                    {
-                        text_func = function() return _("Weather TTL (minutes): ") .. tostring(config:get("weather_ttl_minutes")) end,
-                        keep_menu_open = true,
-                        callback = function() Menus:edit_int(config, "weather_ttl_minutes", _("Weather TTL (minutes)"), "60", 1, 10080, _("Weather TTL"), function() refresh_dashboard(main_instance) end) end,
-                    },
+                    preset_menu(config, "weather_ttl_minutes",
+                        function() return _("Update every: ") .. minutes_label(tonumber(config:get("weather_ttl_minutes")) or 60) end,
+                        { 30, 60, 180, 360 }, minutes_label,
+                        function() Menus:edit_int(config, "weather_ttl_minutes", _("Weather TTL (minutes)"), "60", 1, 10080, _("Weather TTL"), function() refresh_dashboard(main_instance) end) end,
+                        function() refresh_dashboard(main_instance) end),
                 },
             },
             {
                 text = _("Hacker News"),
                 sub_item_table = {
+                    source_toggle(config, _("Show Top Stories"), { "hnmd_enabled", "show_hn" },
+                        function() refresh_dashboard(main_instance) end),
                     {
-                        text_func = function() return _("HN enabled: ") .. bool_text(config:get("hnmd_enabled")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("hnmd_enabled") and true or false end,
-                        callback = function()
-                            config:set("hnmd_enabled", not config:get("hnmd_enabled")); config:flush(); refresh_dashboard(main_instance)
-                        end,
-                    },
-                    {
-                        text_func = function() return _("Show HN section: ") .. bool_text(config:get("show_hn")) end,
-                        keep_menu_open = true,
-                        checked_func = function() return config:get("show_hn") and true or false end,
-                        callback = function()
-                            config:set("show_hn", not config:get("show_hn")); config:flush(); refresh_dashboard(main_instance)
-                        end,
-                    },
-                    {
-                        text_func = function() return _("Base URL: ") .. tostring(config:get("hnmd_base_url")) end,
-                        keep_menu_open = true,
-                        callback = function() Menus:edit_hnmd_base_url(config, function() refresh_dashboard(main_instance) end) end,
-                    },
-                    {
-                        text_func = function() return _("API key: ") .. mask_key(config:get("hnmd_api_key")) end,
-                        keep_menu_open = true,
-                        callback = function() Menus:edit_hnmd_api_key(config, function() refresh_dashboard(main_instance) end) end,
-                    },
-                    {
-                        text_func = function() return _("Max items: ") .. tostring(config:get("hnmd_max_items")) end,
+                        text_func = function() return _("Stories to keep: ") .. tostring(config:get("hnmd_max_items")) end,
                         keep_menu_open = true,
                         callback = function() Menus:edit_int(config, "hnmd_max_items", _("HN max items (1-20)"), "10", 1, 20, _("HN max items"), function() refresh_dashboard(main_instance) end) end,
                     },
-                    {
-                        text_func = function() return _("Items per page: ") .. tostring(config:get("hn_items_per_page")) end,
-                        keep_menu_open = true,
-                        callback = function()
+                    preset_menu(config, "hn_items_per_page",
+                        function() return _("Items per page: ") .. tostring(config:get("hn_items_per_page")) end,
+                        { 2, 3, 4, 5, 6, 8 }, rows_label,
+                        function()
                             Menus:edit_int(config, "hn_items_per_page", _("HN items per page (1-10)"), "4", 1, 10, _("HN items per page"), function()
                                 local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
                                 if d and d.reset_hn_page then d:reset_hn_page() end
                                 refresh_dashboard(main_instance)
                             end)
                         end,
-                    },
+                        function()
+                            local d = main_instance and main_instance.getDashboard and main_instance:getDashboard()
+                            if d and d.reset_hn_page then d:reset_hn_page() end
+                            refresh_dashboard(main_instance)
+                        end),
+                    preset_menu(config, "hnmd_ttl_minutes",
+                        function() return _("Update every: ") .. minutes_label(tonumber(config:get("hnmd_ttl_minutes")) or 30) end,
+                        { 15, 30, 60, 120 }, minutes_label,
+                        function() Menus:edit_int(config, "hnmd_ttl_minutes", _("HN TTL (minutes)"), "30", 1, 10080, _("HN TTL"), function() refresh_dashboard(main_instance) end) end,
+                        function() refresh_dashboard(main_instance) end),
+                },
+            },
+            {
+                text = _("Account & server"),
+                sub_item_table = {
                     {
-                        text_func = function() return _("HN TTL (minutes): ") .. tostring(config:get("hnmd_ttl_minutes")) end,
+                        text_func = function() return _("Base URL: ") .. tostring(config:get("hnmd_base_url")) end,
                         keep_menu_open = true,
-                        callback = function() Menus:edit_int(config, "hnmd_ttl_minutes", _("HN TTL (minutes)"), "30", 1, 10080, _("HN TTL"), function() refresh_dashboard(main_instance) end) end,
+                        help_text = _("Address of your hnmd server. Also editable in settings/kindlehome.lua."),
+                        callback = function() Menus:edit_hnmd_base_url(config, function() refresh_dashboard(main_instance) end) end,
                     },
                     {
-                        text = _("Server status"),
+                        text_func = function() return _("API key: ") .. mask_key(config:get("hnmd_api_key")) end,
+                        keep_menu_open = true,
+                        help_text = _("Used for Top Stories and to add or update tasks. The server must allow writes (API_KEYS or TODO_ALLOW_INSECURE_WRITES). Also editable in settings/kindlehome.lua."),
+                        callback = function() Menus:edit_hnmd_api_key(config, function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text = _("Check server status"),
                         keep_menu_open = true,
                         callback = function() Menus:show_hnmd_status(config) end,
-                    },
-                    {
-                        text = _("Manual config note"),
-                        keep_menu_open = true,
-                        callback = function()
-                            show_info(_("API key/base URL can also be edited in settings/kindlehome.lua."), 5)
-                        end,
                     },
                 },
             },
@@ -426,11 +478,11 @@ function Menus:settings_items(main_instance)
                             config:set("todos_include_tags", not config:get("todos_include_tags")); config:flush(); refresh_dashboard(main_instance)
                         end,
                     },
-                    {
-                        text_func = function() return _("TODO'S TTL (minutes): ") .. tostring(config:get("todos_ttl_minutes")) end,
-                        keep_menu_open = true,
-                        callback = function() Menus:edit_int(config, "todos_ttl_minutes", _("TODO'S TTL (minutes)"), "5", 1, 10080, _("TODO'S TTL"), function() refresh_dashboard(main_instance) end) end,
-                    },
+                    preset_menu(config, "todos_ttl_minutes",
+                        function() return _("Update every: ") .. minutes_label(tonumber(config:get("todos_ttl_minutes")) or 5) end,
+                        { 1, 5, 15, 60 }, minutes_label,
+                        function() Menus:edit_int(config, "todos_ttl_minutes", _("TODO'S TTL (minutes)"), "5", 1, 10080, _("TODO'S TTL"), function() refresh_dashboard(main_instance) end) end,
+                        function() refresh_dashboard(main_instance) end),
                     {
                         text_func = function() return _("Due soon window (days): ") .. tostring(config:get("todos_due_soon_days")) end,
                         keep_menu_open = true,
@@ -442,22 +494,9 @@ function Menus:settings_items(main_instance)
                             return _("TODO'S timezone: ") .. (tz == "" and _("server (UTC)") or tz)
                         end,
                         keep_menu_open = true,
+                        help_text = _("Set the Kindle clock to the same timezone so due-date presets and counters match the server."),
                         callback = function()
                             Menus:edit_todos_timezone(config, function() refresh_dashboard(main_instance) end)
-                        end,
-                    },
-                    {
-                        text = _("Timezone note"),
-                        keep_menu_open = true,
-                        callback = function()
-                            show_info(_("Set the Kindle clock to the same timezone as TODO'S timezone so due-date presets and counters match the server."), 8)
-                        end,
-                    },
-                    {
-                        text = _("Write permissions"),
-                        keep_menu_open = true,
-                        callback = function()
-                            show_info(_("Adding and updating tasks uses the HN API key. The server must allow writes (API_KEYS or TODO_ALLOW_INSECURE_WRITES)."), 7)
                         end,
                     },
                 },
@@ -568,16 +607,31 @@ function Menus:settings_items(main_instance)
                     {
                         text_func = function()
                             local suffix = custom_folder_active(config) and _(" (fallback)") or ""
-                            return _("Storage mode: ") .. tostring(config:get("storage_mode")) .. suffix
-                        end,
-                        keep_menu_open = true,
-                        callback = function()
                             local current = config:get("storage_mode")
-                            config:set("storage_mode", current == "documents" and "datadir" or "documents")
-                            config:flush()
-                            show_info(_("Storage mode: ") .. tostring(config:get("storage_mode")))
-                            refresh_dashboard(main_instance)
+                            local label = tostring(current)
+                            for _, mode in ipairs(STORAGE_MODES) do
+                                if mode.value == current then label = mode.label end
+                            end
+                            return _("Save articles in: ") .. label .. suffix
                         end,
+                        help_text = _("A custom content folder, when set, takes precedence over this choice."),
+                        sub_item_table = (function()
+                            local modes = {}
+                            for _, mode in ipairs(STORAGE_MODES) do
+                                table.insert(modes, {
+                                    text = mode.label,
+                                    radio = true,
+                                    help_text = mode.help,
+                                    checked_func = function() return config:get("storage_mode") == mode.value end,
+                                    callback = function()
+                                        config:set("storage_mode", mode.value)
+                                        config:flush()
+                                        refresh_dashboard(main_instance)
+                                    end,
+                                })
+                            end
+                            return modes
+                        end)(),
                     },
                     {
                         text_func = function()

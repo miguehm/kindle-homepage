@@ -362,15 +362,47 @@ for _, item in ipairs(hn_menu) do
         page_entry = item
     end
 end
-assert(page_entry and page_entry.keep_menu_open, "items-per-page entry missing")
-page_entry.callback()
-local page_dialog = last_dialog()
-page_dialog.input = "6"
-click(page_dialog, 2)
-assert(values.hn_items_per_page == 6, "items-per-page setting not saved")
+assert(page_entry and page_entry.sub_item_table, "items-per-page presets missing")
+local preset_six, custom_entry
+for _, item in ipairs(page_entry.sub_item_table) do
+    if item.text == "6 stories" then preset_six = item end
+    if item.text == "Custom…" then custom_entry = item end
+end
+assert(preset_six and preset_six.radio and custom_entry, "items-per-page must offer presets and Custom…")
+preset_six.callback()
+assert(values.hn_items_per_page == 6 and preset_six.checked_func() == true,
+    "items-per-page preset not saved")
 assert(reset_page_calls == 1, "changing the page size must reset the session page")
+custom_entry.callback()
+local page_dialog = last_dialog()
+page_dialog.input = "7"
+click(page_dialog, 2)
+assert(values.hn_items_per_page == 7 and custom_entry.checked_func() == true,
+    "Custom… must accept a free value")
+assert(reset_page_calls == 2, "a custom page size must also reset the session page")
 assert(refresh_calls == 1 and main_instance.dashboard_refresh_pending == true,
     "page-size changes must defer the dashboard repaint while the menu is open")
+
+local account_menu
+for _, item in ipairs(tab) do
+    if item.text == "Account & server" then account_menu = item.sub_item_table end
+end
+assert(account_menu, "Account & server settings missing")
+local key_entry
+for _, item in ipairs(account_menu) do
+    if type(item.text_func) == "function" and item.text_func():match("^API key:") then key_entry = item end
+end
+assert(key_entry and key_entry.help_text, "the API key must live under Account & server with help text")
+for _, item in ipairs(hn_menu) do
+    local label = item.text or (item.text_func and item.text_func()) or ""
+    assert(not label:match("^API key") and label ~= "Manual config note",
+        "the API key and notes must not be scattered under Hacker News")
+end
+local weather_toggle = weather_menu[1]
+values.weather_enabled, values.show_weather = true, true
+weather_toggle.callback()
+assert(values.weather_enabled == false and values.show_weather == false,
+    "one switch must hide and stop fetching the weather")
 local closed_before = #closed
 settings_menu.close_callback()
 assert(#closed == closed_before + 1 and closed[#closed] == modal,
