@@ -102,7 +102,6 @@ Theme.size = {
     action_h = 56,      -- article fallback action bar
 }
 
-Theme.STORY_PAGE_SIZE = 4
 
 local function clamp(v, lo, hi)
     if v < lo then return lo end

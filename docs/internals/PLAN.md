@@ -788,9 +788,9 @@ Cualquier cambio de estado (`refresh`, cambio de página, filtro, ajuste, indica
 | `./scripts/smoke_ui.sh` | PASS | **26 smokes**; nuevo `refresh_paint.lua` (7 `ui` regionales + 1 `full`, región `0/100/1200/1500`, open/close `full`); dashboard y TODO'S comprueban que un repintado idéntico cuesta cero y que paginar/filtrar reparte una actualización `ui` sin reabrir el Shell |
 
 Pendiente en PW5: contar flashes en refresco manual (2, ambos regionales), automático tras escritura (1), page/filtros (1) y 304 (0); comprobar que el `full` periódico limpia el ghosting y que el indicador `Updating…` sigue siendo visible antes del fetch; rotación con `force_full`; `crash.log` sin `Error when loading`.
-## 16) Fases 37–44 — rediseño de UI (planificado, 2026-11-27)
+## 16) Fases 37–44 — rediseño de UI (release 2.20.0)
 
-Estado: **planificado**; ninguna fase implementada. Guía de estilos de implementación en `STYLES.md` (complementa `DESIGN.md`).
+Estado: **repo PASS (2026-11-27)**; matriz en Kindle PW5 pendiente. Guía de estilos de implementación en `STYLES.md` (complementa `DESIGN.md`).
 
 ### Contexto
 
@@ -986,3 +986,26 @@ KindleHome (v2.19.0) ya es funcional, pero la UI tiene problemas visibles y de r
    - ghosting tras 20 taps (la promoción a `full` cada 8 debe limpiarlo);
    - `crash.log` sin `WARN Error when loading`;
    - suspend/resume con el reloj activo, sin wakeups extra.
+
+### Desviaciones registradas (2026-11-27)
+- Las fases 37, 38, 39, 40, 41 y 42 se entregaron en un solo commit (`feat(ui): sectioned repaints…`): tocan los mismos widgets y los estados intermedios no pasaban los smoke tests. Las fases 43 y 44 van en commits propios.
+- Hairline: se mantiene `#EEEEEE`. `#E5E5E5` no es uno de los 16 niveles discretos del panel (0x00, 0x11 … 0xFF) y se dibujaría con dithering, que DESIGN.md prohíbe.
+- Wifi y batería siguen en el hero, no en el header. El header se construye una vez por Shell; moverlos obligaría a repintarlo.
+- El tick del reloj repinta la tarjeta hero completa (no solo el `TextWidget` del reloj). Es una región pequeña y evita mantener un subárbol aparte; el smoke comprueba la región del hero.
+- La frescura pasa de "Updated 3 min ago" a "Updated 10:40" (absoluta). La relativa cambiaba cada minuto y habría repintado la tarjeta de historias en cada tick.
+- Ajustes: un solo interruptor por fuente en lugar de *Off / Fetch only / Show*. Una sección oculta nunca se descarga, así que "Fetch only" no tenía efecto.
+- La página del pager de respaldo se recuerda solo durante la sesión (en memoria): el lector nativo ya guarda su propio progreso y así se evita una escritura a disco por página.
+- Chips: unos 32dp de alto en lugar de 48dp (filas que envuelven); toda la caja es táctil, con separación `space.sm`.
+- `DEFAULT_PAGE_SIZE = 4` sigue duplicado en `dashboard_body.lua` y `PAGE_SIZE = 4` en `dashboard_model.lua`: los literales los exige `check_invariants.sh` y el modelo se carga en los smoke antes que los stubs de KOReader (no puede requerir `theme.lua`).
+- Una reconstrucción completa hace 2 builds de la tarjeta (sonda del peor caso + página real) en vez de 1, pero el hero y la nav se construyen una sola vez y el resultado queda cacheado por clave de layout: las reconstrucciones siguientes hacen 0 sondas y paginar hace 1 build de la tarjeta.
+- `check_invariants.sh`: la comprobación de `alpha = true` pasa de `stories_card.lua` a `pager.lua`; la de `getCropRegion` pasa a `body_wrapper.lua` (con `BodyWrapper` en `dashboard_body.lua`).
+- Bugs previos corregidos de paso: el idiom `x and nil or y` siempre devolvía `y` (iconos de respaldo siempre activos y tareas terminadas sin etiqueta contadas como por vencer/vencidas).
+
+### Verificación (2026-11-27, Linux dev, `luac5.1` / `lua5.1`)
+| Gate | Resultado | Evidencia |
+| --- | --- | --- |
+| `./scripts/check_lua51.sh` | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)` |
+| `./scripts/check_invariants.sh` | PASS | Guards actualizados para `pager.lua` y `body_wrapper.lua` |
+| `./scripts/smoke_ui.sh` | PASS | 25 smokes. Nuevos: paginar = 1 región (la tarjeta) sin reconstruir el hero; tick del reloj = 1 región (el hero); cache de filas = 0 sondas; filtro de TODO'S = 2 regiones (chips + tarjeta); toque = 1 `fast` + 1 `ui` del control; sin restauración si la sección ya se repintó; cambio de pestaña = 1 `ui` sin `full`; slots táctiles ≥ 48dp; byline limpio; listas anidadas; zonas de toque y enlaces del pager; copia de enlaces |
+
+Pendiente en PW5: escalas S–XL y apaisado; 100+ tareas; `logger` con tiempos de build/paint (objetivo: paginar < 300 ms); ghosting tras 20 toques con la inversión `fast`; tick del reloj bajo diálogos y tras suspend/resume; cambio de pestaña sin flash; `crash.log` sin `Error when loading`.

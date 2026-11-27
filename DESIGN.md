@@ -138,7 +138,7 @@ The palette adheres strictly to a 4-tier monochrome scale optimized for electrop
 
 - **Primary (`#000000`)**: Deep Carbon. Applied to primary text, active tap targets, high-emphasis icons, and structural 1px borders. Ensures 100% black pigment orientation for max reflectance delta.
 - **Secondary (`#666666`)**: Mineral Gray. Formulated strictly for secondary metadata, timestamps, author bylines, and inactive toggles. Preserves WCAG AAA contrast against pure white backgrounds on reflective E-Ink stacks.
-- **Hairline / Neutral (`#E5E5E5`)**: Ash White. Reserved for 1px hairline segmentations, structural card outlines, and inactive track indicators.
+- **Hairline / Neutral (`#E5E5E5`, rendered `#EEEEEE`)**: Ash White. On device the nearest of the panel's 16 discrete levels is used, since an off-level gray would be dithered. Reserved for 1px hairline segmentations, structural card outlines, and inactive track indicators.
 - **Surface Canvas (`#FFFFFF`)**: Pure White. The primary canvas substrate mirroring reflective micro-capsule paper.
 
 Never introduce intermediate alpha channels, transparencies, or colored tints; all color steps must be discrete hex values to minimize display waveform processing overhead.
@@ -162,6 +162,10 @@ The dashboard header follows the same grid as the content: the title starts at t
 
 Top Stories is sized by the space it occupies, not by its current row count. Rows start at the top of the card and the pager is anchored to its bottom edge, so a short final page leaves white space above the controls instead of moving them upward. This keeps repeated taps on the same physical area across page turns — critical on an e-ink panel where layout shifts force full refreshes. The preferred row count is user-configurable (1–10, default 4) and acts as a maximum: the dashboard measures the preferred size first and, if it overflows, degrades to the largest count that fits before resorting to the native scroll container. The current page is persisted in the plugin cache and restored after a dashboard reopen or a KOReader restart; only an explicit refresh returns to page 1.
 
+Rows are measured on the longest titles of the feed and titles are capped at two lines, so the row count is the same on every page and paging never moves the pager. Freshness appears once, as an absolute time (`Updated 10:40`) in the Top Stories header; while an explicit refresh runs it becomes an inverted `Updating…` badge. The clock/weather card shows the clock, date and device status on the left and a compact weather summary on the right; it is the only region repainted when the clock ticks each minute. Both cards share one pager: `Page N of M` with inverted prev/next buttons whose whole 48dp square is tappable, and a horizontal swipe pages the list.
+
+Every touch target is at least 48dp on both axes: icons are drawn at 20–32dp and centered in that slot. Filter chips are the exception (about 32dp tall, wrapping in rows), and their whole frame is tappable.
+
 ## Elevation & Depth
 
 This design system avoids all raster shadows, layered blurs, and pseudo-3D lighting models. Depth is achieved exclusively through **structural containment** and **binary inversion**:
@@ -169,7 +173,7 @@ This design system avoids all raster shadows, layered blurs, and pseudo-3D light
 1. **Base Tier (0dp)**: Surface canvas in `#FFFFFF`.
 2. **Contained Tier (1dp)**: Surfaces outlined with crisp, non-anti-aliased `1px solid #E5E5E5` hairline borders or delineated by single horizontal dividers.
 3. **Modal & Floating Chrome Tier (2dp)**: Flyouts, context menus, and dictionary popups use a pure `#FFFFFF` background bound by a crisp `1px solid #000000` perimeter border. A 1px `#FFFFFF` inset separates content from the black edge.
-4. **Active State / Selection**: Full binary inversion—background transitions to `#000000` with foreground text and icons switching instantly to `#FFFFFF`.
+4. **Active State / Selection**: Full binary inversion—background transitions to `#000000` with foreground text and icons switching instantly to `#FFFFFF`. A pressed control is inverted with a fast refresh limited to its own rectangle while its action runs, then restored; nothing else on the screen refreshes.
 
 ## Shapes
 

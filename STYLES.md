@@ -19,7 +19,7 @@ mágico** de tamaño, padding, color o fuente.
 | Espaciado | `Theme.space.*` | `xs 4` · `sm 8` · `md 12` · `gutter 16` · `margin 20` · `lg 24` · `xl 36` |
 | Tamaños | `Theme.size.*` | `header_h 52` · `nav_h 52` · `icon 24` · `icon_sm 20` · `card_pad 12` · `rank_col 32` · `hit_min 48` · `section_gap 8` |
 | Tipografía | `Theme.face(config, role)` | `display 32` · `headline_lg 26` · `headline_md 20` · `headline_sm 18` · `body_lg 17` · `body_md 15` · `body_sm 13` · `label_lg 14` · `label_md 12` · `label_sm 10` |
-| Color | `Theme.color.*` | `fg #000` · `muted #666` · `hairline #E5E5E5` · `canvas #FFF` · `inverse_bg #000` / `inverse_fg #FFF` |
+| Color | `Theme.color.*` | `fg #000` · `muted #666` · `hairline #EEE` (nivel discreto más cercano a `#E5E5E5`) · `canvas #FFF` · `inverse_bg #000` / `inverse_fg #FFF` |
 
 Reglas:
 - **Rejilla de 4px.** Todo espaciado y tamaño es múltiplo de 4. Nada de 3, 5, 10, 14, 22 o 30.
@@ -34,10 +34,10 @@ Reglas:
 
 ## 2. Color y forma
 
-- Solo cuatro tonos discretos: negro, `#666`, `#E5E5E5` y blanco. Sin alfa, sin gradientes, sin
+- Solo cuatro tonos discretos: negro, `#666`, `#EEE` y blanco. El panel tiene 16 niveles (0x00, 0x11 … 0xFF): un gris fuera de nivel se dibuja con dithering. Sin alfa, sin gradientes, sin
   grises intermedios inventados.
 - **Esquinas rectas.** `radius =` está prohibido (lo comprueba `check_invariants.sh`).
-- Bordes de 1px. Usa hairline `#E5E5E5` para contener y negro solo para modales, controles
+- Bordes de 1px. Usa hairline para contener y negro solo para modales, controles
   activos o avisos (`notice_box`).
 - La jerarquía se consigue con peso, tamaño y espacio en blanco, no con más color.
 - **Selección y presión = inversión binaria:** fondo negro y texto/icono blanco. Los iconos sobre
@@ -48,6 +48,7 @@ Reglas:
 - **Mínimo 48dp** (`Theme.size.hit_min`) por lado en todo control táctil. El dibujo puede ser
   más pequeño (icono de 20–24dp), pero el `dimen` del `TapIcon` es de 48dp y está centrado en él.
 - Las filas (historias, tareas, menús) son táctiles en todo el ancho.
+- Excepción: los chips miden unos 32dp de alto (envuelven en varias filas); toda la caja es táctil.
 - Deja al menos `Theme.space.sm` entre dos controles táctiles contiguos.
 - Lo que se dibuja como botón tiene que ser táctil en toda su superficie. Un cuadro negro de 30dp
   con un área táctil de 20dp es un bug.
@@ -60,7 +61,7 @@ Reglas:
 | --- | --- |
 | Tap en un control | 1 `"fast"` en `control.dimen` (inversión), luego el cambio de la sección |
 | Paginar historias o tareas | 1 rebuild de la tarjeta y 1 `"ui"` en la región de la tarjeta |
-| Tick del reloj (cada minuto) | 0 rebuilds del body y 1 `"ui"` en `clock.dimen` |
+| Tick del reloj (cada minuto) | 0 rebuilds del body y 1 `"ui"` en la tarjeta hero |
 | Refresh con contenido idéntico | 0 updates (la firma no cambia) |
 | Cambio de pestaña | 1 `"ui"` de pantalla completa, 0 `full` |
 | Abrir/cerrar la vista, rotación | `"full"` |
@@ -123,7 +124,7 @@ Cada sección resuelve sus cinco estados con el mismo patrón visual:
 | Error / offline | `notice_box` con la causa breve y "Retry". |
 | Desactualizado (stale) | El contenido se mantiene y `notice_box` indica la antigüedad ("Showing data from 2 h ago"). |
 
-La frescura ("Updated 3 min ago") aparece **en un solo lugar** por pantalla.
+La frescura ("Updated 10:40", absoluta para no repintar cada minuto) aparece **en un solo lugar** por pantalla.
 
 ## 8. Texto de interfaz (copy)
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.20.0] - 2026-11-27
+
+### Changed
+- **Cheaper repaints on e-ink.** Page turns, filters, the `Updating…` indicator and clock ticks swap only the section that changed and refresh only its rectangle; the hero and the bottom nav are no longer rebuilt on every page. Switching between DASHBOARD and TODO'S reuses the open screen (one non-flashing refresh instead of two full flashes) and the views' in-memory state.
+- **Stable pages.** Story and task rows are measured on the longest titles/tasks, so the row count never changes while paging; the chosen count is cached per layout. Titles are capped at two lines.
+- **Redesigned dashboard.** Balanced clock/weather card, freshness shown once as `Updated 10:40` in the Top Stories header, compact meta line and a `Saved` marker for downloaded stories.
+- **Redesigned TODO'S.** Real checkboxes, edit/delete icons, chips that follow the design spec, and the same pager as Top Stories.
+- **All visible text in English** (status chips, empty states, due dates such as `Due 27 Nov 2026`).
+- **Clearer settings.** One switch per source, presets with `Custom…` for update intervals and items per page, an *Account & server* submenu for the URL, API key and server status, and notes as help text.
+- **Cleaner reading view.** One title, a compact byline and two links (`Original article`, `HN discussion`); nested bullet lists.
+
+### Added
+- **Press feedback.** Tapped controls invert instantly with a fast refresh limited to the control.
+- **48dp touch targets** for every icon and full-frame tappable chips.
+- **Swipe left/right** to page Top Stories and TASKS.
+- **Live clock** on the dashboard, updated each minute while it is visible.
+- **Notice boxes with Retry** for offline and error states; a cold start says `Not loaded yet` instead of `HN unavailable`.
+- **Fallback reader:** links win over page turns, the page is remembered for the session, and external links are copied to the clipboard.
+
+### Fixed
+- The gap between the header's settings and close icons collapsed to 1 px.
+- Icon fallbacks were always used alongside the plugin's SVGs, and done untagged tasks were counted as due soon/overdue (`x and nil or y` always returned `y`).
+
 ## [2.19.0] - 2026-11-26
 
 ### Changed
