@@ -216,6 +216,11 @@ function TodosCard.build(model, config, inner_w, callbacks, fill_height)
         and Theme.icon_file(callbacks.plugin_dir, "action", "plus") or nil
     local content = VerticalGroup:new{ align = "left" }
     table.insert(content, build_header(model, config, content_w, callbacks, plus_file))
+    if model.clock_line and model.clock_line ~= "" then
+        table.insert(content, DesignText.span(config, Theme.space.xs))
+        table.insert(content, DesignText.line(model.clock_line, config, "label_sm", false,
+            Theme.color.muted))
+    end
     table.insert(content, DesignText.span(config, Theme.space.sm))
     table.insert(content, DesignText.divider(config, content_w))
 

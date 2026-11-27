@@ -6,13 +6,16 @@ local DUE_PATTERN = "^(%d%d%d%d)%-(%d%d)%-(%d%d)$"
 local DEFAULT_DUE_DAYS = 3
 
 -- Deadlines are canonical YYYY-MM-DD strings; comparing them lexicographically
--- is the same as comparing calendar dates. "Today" is UTC, matching the API.
-local function due_bounds(now, due_days)
+-- is the same as comparing calendar dates. With todos_timezone configured the
+-- device clock is expected to match that zone, so use the local day; otherwise
+-- both the plugin and the server use UTC.
+local function due_bounds(now, due_days, use_local)
     now = tonumber(now) or os.time()
     due_days = tonumber(due_days) or DEFAULT_DUE_DAYS
     if due_days < 1 then due_days = 1 end
     if due_days > 30 then due_days = 30 end
-    return os.date("!%Y-%m-%d", now), os.date("!%Y-%m-%d", now + due_days * 86400)
+    local fmt = use_local and "%Y-%m-%d" or "!%Y-%m-%d"
+    return os.date(fmt, now), os.date(fmt, now + due_days * 86400)
 end
 
 local function classify_due(due, today, limit)
@@ -335,7 +338,7 @@ function DashboardModel.build_todos(state, opts)
             and status_filter ~= "due_soon" and status_filter ~= "overdue" then
         status_filter = "all"
     end
-    local today, limit = due_bounds(now, opts.due_days)
+    local today, limit = due_bounds(now, opts.due_days, opts.use_local)
 
     local untagged = { open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
     for _, task in ipairs(payload.items or {}) do
@@ -438,9 +441,20 @@ function DashboardModel.build_todos(state, opts)
             empty = "No hay tareas " .. status_word(status_filter) .. "."
         end
     end
+    -- Compact date + time line for the TASKS card header. The dashboard keeps
+    -- its large hero clock; the TODO'S view gets the same information in small
+    -- muted type. No timer: it is rebuilt whenever the view is repainted.
+    local clock_line = hero.date_short or ""
+    if hero.clock and hero.clock ~= "" then
+        clock_line = clock_line .. (clock_line ~= "" and " · " or "") .. hero.clock
+        if hero.meridiem then clock_line = clock_line .. " " .. hero.meridiem end
+    end
+    if hero.refreshing then clock_line = clock_line .. " · Updating…" end
+
     local todos_model = {
         badge = "TODO",
         title = "TASKS",
+        clock_line = clock_line,
         items = visible,
         page = pages > 0 and page or 1,
         pages = pages,
