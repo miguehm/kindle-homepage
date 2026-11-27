@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.18.0] - 2026-11-26
+
+### Fixed
+- **False overdue counts after creating a task.** `Todos.merge_payload` no longer recomputes `due_soon`/`overdue` from the cached item window. The server's global counters stay authoritative; a local write only applies deterministic `open`/`done`/`total` deltas (and per-tag deltas), so a device clock whose day differs from `todos_timezone` can no longer turn today's tasks into false "Vencidas". Creating a task with an idempotent retry now replaces the stored task instead of double counting it.
+
+### Added
+- **Automatic refresh after every TODO'S write.** Create, edit, toggle and delete schedule a server refresh (coalesced, deferred outside the dialog callback, skipped while another refresh is in progress or offline). The local merge keeps the UI immediate and works as an offline fallback; the refresh then replaces all counters with the server's real values without resetting the current page or prompting for WiFi.
+- **Small clock/date line in the TASKS card.** Shows `THU, 26 NOV · 14:32` (12h/24h follows the existing setting) plus `· Updating…` while refreshing. It is rebuilt on repaint — no timer — and the adaptive row measurement keeps the card on one screen.
+- **Consistent due-date presets.** `Today` / `Tomorrow` / `+1 week` and the picker now follow the device's local day when `todos_timezone` is configured (UTC otherwise), matching the server's `tz` interpretation when the Kindle clock is set to the same zone. A settings note documents this requirement.
+
 ## [2.17.0] - 2026-11-26
 
 ### Changed

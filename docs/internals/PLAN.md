@@ -733,3 +733,29 @@ Estado: **repo PASS (2026-11-26)**; matriz en Kindle PW5 pendiente.
 | `./scripts/smoke_ui.sh` | PASS | **25 smokes**, incluidos `http_conditional.lua`, `todos_conflict.lua`, `todos_pagination.lua` y `hnmd_conditional.lua` |
 
 Pendiente en PW5: toggle/editar/borrar con revisión vigente, `412` simulado, >100 tareas, `/top` 304, key inválida en `/status`, `tz` configurado y escalas de fuente.
+
+## 14) Fase 35 — contadores del servidor y reloj en TODO'S (release 2.18.0)
+
+Estado: **repo PASS (2026-11-26)**; matriz en Kindle PW5 pendiente.
+
+### Motivo y causa raíz
+Tras crear una tarea aparecían números falsos en **Vencidas** que desaparecían al pulsar refresh. `Todos.merge_payload` recalculaba `counts.due_soon`/`overdue` desde `payload.items` usando `os.date` del dispositivo (`use_local` cuando `todos_timezone` está configurado), mientras el servidor clasifica con `tz`. Con el reloj del Kindle en UTC y `todos_timezone=America/Mexico_City`, una tarea que vence "hoy" para el servidor se contabilizaba como vencida en local. Reproducido con `TZ=UTC`: `overdue=0` → `merge_payload("create", ...)` → `overdue=1`.
+
+### Decisiones
+- Los `counts`/`tags` globales son del servidor. El merge local solo aplica deltas deterministas (`open`/`done`/`total` y por tag); **`due_soon`/`overdue` nunca se recalculan en local**.
+- Tras **cualquier** escritura exitosa se programa un refresh real (`UIManager:scheduleIn(0.2, ...)`), coalescido, con `ctx.auto=true` (sin reset de página, sin prompt WiFi, sin modal), omitido si hay un refresh en curso o si no hay red. El payload fusionado se persiste con TTL 0 para que el refresh siempre consulte al servidor y sirva de fallback offline.
+- Los presets de fecha y el filtro local usan el mismo criterio que el merge: día local del dispositivo si `todos_timezone` está configurado, UTC en caso contrario. Se documenta en ajustes que el reloj del Kindle debe estar en esa zona.
+- La cabecera de la tarjeta TASKS muestra una línea pequeña `fecha · hora` (`label_sm`, muted), con `· Updating…` durante el refresco; sin temporizador, se reconstruye al repintar.
+
+### Desviaciones registradas
+- El refresh automático añade un GET por escritura. Se mitigó difiriéndolo fuera del callback del diálogo, coalesciendo escrituras rápidas y omitiéndolo offline; el merge local ya dio respuesta inmediata.
+- Lua 5.1 no resuelve zonas IANA: no es posible convertir la fecha del dispositivo a `todos_timezone` sin la zona del sistema. La solución elimina la dependencia de los contadores y alinea presets/filtros con el día local; la exactitud sigue suponiendo que el reloj del Kindle está en la zona configurada.
+
+### Verificación (2026-11-26, Linux dev, `luac5.1` / `lua5.1`)
+| Gate | Resultado | Evidencia |
+| --- | --- | --- |
+| `./scripts/check_lua51.sh` | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)` |
+| `./scripts/check_invariants.sh` | PASS | Nuevos guards de `merge_payload` sin recálculo de vencimientos, `schedule_refresh_after_write`, `ctx.auto` y `clock_line` |
+| `./scripts/smoke_ui.sh` | PASS | **25 smokes**; `todos_client.lua` cubre deltas, preservación de contadores due y create idempotente; `todos.lua` cubre el refresh automático y la línea de reloj |
+
+Pendiente en PW5: crear con/sin vencimiento y comprobar que `Vencidas` no se dispara, toggle/editar/borrar con el refresh automático, offline tras escribir, 12/24 h, `tz` configurado y escalas S–XL/apaisado.
