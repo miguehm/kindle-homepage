@@ -357,6 +357,16 @@ if ! grep -q 'todos_due_soon_days' kindlehome.koplugin/lib/config.lua \
     echo "FAIL: TODO'S deadline support (config, client, model and modal) incomplete"
     fail=1
 fi
+# Server counters stay authoritative: a local merge must not recompute due
+# counters, and writes must trigger a deferred, non-intrusive refresh.
+if ! grep -q 'counts.due_soon and counts.overdue keep the server' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'schedule_refresh_after_write' kindlehome.koplugin/ui/todos.lua \
+        || ! grep -q 'ctx.auto == true' kindlehome.koplugin/main.lua \
+        || ! grep -q 'clock_line' kindlehome.koplugin/lib/dashboard_model.lua \
+        || ! grep -q 'model.clock_line' kindlehome.koplugin/ui/widget/todos_card.lua; then
+    echo "FAIL: TODO'S writes must refresh from the server and show the small clock/date line"
+    fail=1
+fi
 if ! grep -q 'chip.label .. ": "' kindlehome.koplugin/ui/widget/tag_chips.lua; then
     echo "FAIL: filter chips must show a colon before the count"
     fail=1
