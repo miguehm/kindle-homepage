@@ -92,19 +92,24 @@ plans = { { ok = false, status = 401, error_kind = "http_401" } }
 local denied = Todos.fetch_index(config, { status = "all" })
 assert(not denied.ok and denied.error_kind == "http_401", "first-page failure must propagate")
 
--- Local merges on a partial payload keep the server's global counters.
+-- Local merges on a partial payload preserve the server's global counters and
+-- apply only deterministic deltas; due counters are never recomputed locally.
 reset()
 local partial_payload = {
     counts = { open = 100, done = 5, total = 105, due_soon = 4, overdue = 2 },
-    tags = { { tag = "casa", open = 3, done = 0, total = 3 } },
+    tags = { { tag = "casa", open = 3, done = 0, total = 3, due_soon = 2, overdue = 1 } },
     partial = true,
     items = { { id = "a", title = "A", tags = {}, done = false, revision = 1 } },
 }
 local merged = Todos.merge_payload(partial_payload, "create", {
     id = "b", title = "B", tags = {}, done = false, revision = 1,
 })
-assert(merged.counts.total == 105 and merged.counts.open == 100,
-    "partial payload must not recompute global counters")
+assert(merged.counts.total == 106 and merged.counts.open == 101 and merged.counts.done == 5,
+    "partial payload must apply only the write delta to global counters")
+assert(merged.counts.due_soon == 4 and merged.counts.overdue == 2,
+    "partial payload must not recompute due counters")
+assert(merged.tags[1].due_soon == 2 and merged.tags[1].overdue == 1,
+    "partial payload must not recompute per-tag due counters")
 assert(merged.partial == true and #merged.items == 2, "partial flag must survive the merge")
 
 print("OK todos pagination smoke: next_offset, dedupe, byte trim, caps, partial merges")

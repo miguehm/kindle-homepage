@@ -237,81 +237,154 @@ local function sort_tasks(a, b)
     return tostring(a.id) < tostring(b.id)
 end
 
+local function clamp_count(value)
+    local n = math.floor(tonumber(value) or 0)
+    if n < 0 then return 0 end
+    return n
+end
+
+local function tag_counts_from_payload(payload)
+    local out = {}
+    for _, entry in ipairs(normalize_tag_counts(payload and payload.tags)) do
+        out[entry.tag] = entry
+    end
+    return out
+end
+
+local function adjust_tag(counts, tag, d_open, d_done)
+    local entry = counts[tag]
+    if not entry then
+        entry = { tag = tag, open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
+        counts[tag] = entry
+    end
+    entry.open = clamp_count(entry.open + d_open)
+    entry.done = clamp_count(entry.done + d_done)
+    entry.total = clamp_count(entry.total + d_open + d_done)
+end
+
+local function serialized_tag_counts(counts)
+    local names = {}
+    for name, entry in pairs(counts) do
+        if entry.total > 0 then table.insert(names, name) end
+    end
+    table.sort(names)
+    local out = {}
+    for _, name in ipairs(names) do table.insert(out, counts[name]) end
+    return out
+end
+
+local function task_tag_counts(task)
+    if task.done then return 0, 1 end
+    return 1, 0
+end
+
+local function tag_delta(counts, old_task, new_task, d_open, d_done)
+    local old_tags, new_tags = {}, {}
+    for _, tag in ipairs(old_task.tags or {}) do old_tags[tag] = true end
+    for _, tag in ipairs(new_task.tags or {}) do new_tags[tag] = true end
+    for tag in pairs(old_tags) do
+        local add_open, add_done
+        if new_tags[tag] then
+            -- Same tag, possibly flipped done: inherit the task's delta.
+            add_open, add_done = d_open, d_done
+        else
+            local open, done = task_tag_counts(old_task)
+            add_open, add_done = -open, -done
+        end
+        adjust_tag(counts, tag, add_open, add_done)
+    end
+    for tag in pairs(new_tags) do
+        if not old_tags[tag] then
+            local open, done = task_tag_counts(new_task)
+            adjust_tag(counts, tag, open, done)
+        end
+    end
+end
+
 -- Apply a local write to a cached todos payload. The server response is the
 -- authoritative task for create/update; delete needs only the id.
-function Todos.merge_payload(payload, action, task, id, opts)
-    opts = opts or {}
-    local today, limit = Todos.due_bounds(opts.now, opts.due_days, opts.use_local)
+--
+-- Global counters come from the server and stay authoritative. Only the
+-- deterministic deltas (open/done/total and per-tag open/done/total) are
+-- applied locally. `due_soon`/`overdue` are never recomputed from the cached
+-- item window: that window may be partial and the device's day can differ
+-- from the server's `tz`, which produced false overdue counts. The caller
+-- refreshes from the server right after a successful write.
+function Todos.merge_payload(payload, action, task, id)
     payload = payload or {}
     local partial = payload.partial and true or false
-    local items = {}
+    local items, by_id = {}, {}
     for _, raw in ipairs(payload.items or {}) do
         local normalized = normalize_task(raw)
-        if normalized then table.insert(items, normalized) end
+        if normalized then
+            table.insert(items, normalized)
+            by_id[normalized.id] = normalized
+        end
     end
+
+    local counts = normalize_counts(payload.counts)
+    local tag_counts = tag_counts_from_payload(payload)
     local changed = normalize_task(task)
-    if action == "create" then
-        if changed then table.insert(items, changed) end
-    elseif action == "update" then
-        if changed then
-            local found = false
-            for index, existing in ipairs(items) do
-                if existing.id == changed.id then
-                    items[index] = changed
-                    found = true
-                    break
-                end
+    local d_open, d_done = 0, 0
+
+    if action == "create" and changed then
+        local existing = by_id[changed.id]
+        if existing then
+            -- Idempotent retry: replace the stored task, never double count it.
+            for index, item in ipairs(items) do
+                if item.id == changed.id then items[index] = changed break end
             end
-            if not found then table.insert(items, changed) end
+            if existing.done ~= changed.done then
+                if changed.done then d_open, d_done = -1, 1 else d_open, d_done = 1, -1 end
+            end
+            tag_delta(tag_counts, existing, changed, d_open, d_done)
+        else
+            table.insert(items, changed)
+            if changed.done then d_done = 1 else d_open = 1 end
+            for _, tag in ipairs(changed.tags or {}) do
+                adjust_tag(tag_counts, tag, changed.done and 0 or 1, changed.done and 1 or 0)
+            end
+        end
+    elseif action == "update" and changed then
+        local existing = by_id[changed.id]
+        if existing then
+            for index, item in ipairs(items) do
+                if item.id == changed.id then items[index] = changed break end
+            end
+            if existing.done ~= changed.done then
+                if changed.done then d_open, d_done = -1, 1 else d_open, d_done = 1, -1 end
+            end
+            tag_delta(tag_counts, existing, changed, d_open, d_done)
+        else
+            -- Outside the cached window: no counter delta can be known locally.
+            table.insert(items, changed)
         end
     elseif action == "delete" then
-        local keep = {}
-        for _, existing in ipairs(items) do
-            if existing.id ~= tostring(id) then table.insert(keep, existing) end
-        end
-        items = keep
-    end
-    table.sort(items, sort_tasks)
-
-    local counts, tags
-    if partial then
-        -- The item list is only a window; server counters are global and must
-        -- not be recomputed from it after a local write.
-        counts = normalize_counts(payload.counts)
-        tags = normalize_tag_counts(payload.tags)
-    else
-        counts = { open = 0, done = 0, total = #items, due_soon = 0, overdue = 0 }
-        local by_tag = {}
-        for _, item in ipairs(items) do
-            local class = item.done and nil or Todos.classify_due(item.due_date, today, limit)
-            if item.done then counts.done = counts.done + 1 else counts.open = counts.open + 1 end
-            if class == "due_soon" then counts.due_soon = counts.due_soon + 1
-            elseif class == "overdue" then counts.overdue = counts.overdue + 1 end
-            for _, tag in ipairs(item.tags or {}) do
-                local entry = by_tag[tag]
-                if not entry then
-                    entry = { tag = tag, open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
-                    by_tag[tag] = entry
+        local target = tostring(id)
+        for index, item in ipairs(items) do
+            if item.id == target then
+                if item.done then d_done = -1 else d_open = -1 end
+                for _, tag in ipairs(item.tags or {}) do
+                    adjust_tag(tag_counts, tag, item.done and 0 or -1, item.done and -1 or 0)
                 end
-                if item.done then entry.done = entry.done + 1 else entry.open = entry.open + 1 end
-                if class == "due_soon" then entry.due_soon = entry.due_soon + 1
-                elseif class == "overdue" then entry.overdue = entry.overdue + 1 end
-                entry.total = entry.total + 1
+                table.remove(items, index)
+                break
             end
         end
-        local names = {}
-        for name in pairs(by_tag) do table.insert(names, name) end
-        table.sort(names)
-        tags = {}
-        for _, name in ipairs(names) do table.insert(tags, by_tag[name]) end
     end
+
+    table.sort(items, sort_tasks)
+    counts.open = clamp_count(counts.open + d_open)
+    counts.done = clamp_count(counts.done + d_done)
+    counts.total = clamp_count(counts.total + d_open + d_done)
+    -- counts.due_soon and counts.overdue keep the server's values on purpose.
 
     return {
         schema_version = payload.schema_version or Todos.API_VERSION,
         generated_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         filter = payload.filter or { status = "all" },
         counts = counts,
-        tags = tags,
+        tags = serialized_tag_counts(tag_counts),
         offset = payload.offset,
         limit = payload.limit,
         has_more = payload.has_more and true or false,

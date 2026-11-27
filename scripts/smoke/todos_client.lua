@@ -201,17 +201,24 @@ local payload = index.payload
 local after_create = Todos.merge_payload(payload, "create", {
     id = "new1", title = "Nueva", tags = { "casa" }, done = false,
 })
-assert(#after_create.items == 3 and after_create.counts.open == 2
-    and after_create.counts.done == 1 and after_create.counts.total == 3,
+assert(#after_create.items == 3 and after_create.counts.open == 3
+    and after_create.counts.done == 1 and after_create.counts.total == 4,
     "local create merge failed")
+assert(after_create.counts.due_soon == 1 and after_create.counts.overdue == 1,
+    "local merge must preserve the server's due counters")
 local after_update = Todos.merge_payload(after_create, "update", {
     id = "new1", title = "Nueva", tags = { "casa" }, done = true, done_at = "2026-11-22T15:00:00Z",
 })
 assert(#after_update.items == 3 and after_update.counts.done == 2
-    and after_update.counts.open == 1, "local update merge failed")
+    and after_update.counts.open == 2 and after_update.counts.total == 4,
+    "local update merge failed")
+local tagged = after_update.tags[1]
+assert(tagged.tag == "casa" and tagged.open == 1 and tagged.done == 1 and tagged.total == 2,
+    "tag counters must follow a done flip")
 local after_delete = Todos.merge_payload(after_update, "delete", nil, "new1")
 assert(#after_delete.items == 2 and after_delete.counts.done == 1
-    and after_delete.counts.open == 1, "local delete merge failed")
+    and after_delete.counts.open == 2 and after_delete.counts.total == 3,
+    "local delete merge failed")
 assert(#payload.items == 2, "merge must not mutate the source payload")
 
 assert(Todos.format_due("2026-11-30") == "30-11-2026", "DD-MM-YYYY formatting failed")
@@ -224,15 +231,31 @@ assert(Todos.classify_due("2000-01-01", today_iso, limit_iso) == "overdue",
 assert(Todos.classify_due(today_iso, today_iso, limit_iso) == "due_soon",
     "due soon classification failed")
 
-local due_payload = { counts = { open = 0, done = 0, total = 0 }, tags = {}, items = {} }
+-- Regression: the device's date must never fabricate due counters. Whatever
+-- the task's deadline is, the server's counts survive a local write; only
+-- deterministic open/done/total deltas are applied.
+local due_payload = { counts = { open = 0, done = 0, total = 0,
+                                 due_soon = 0, overdue = 0 }, tags = {}, items = {} }
 local merged_due = Todos.merge_payload(due_payload, "create", {
     id = "d1", title = "Pronto", tags = { "casa" }, due_date = today_iso, done = false,
-}, nil, { now = bounds_now, due_days = 3 })
-assert(merged_due.counts.due_soon == 1 and merged_due.counts.overdue == 0
-    and merged_due.tags[1].due_soon == 1, "local merge must recompute due counts")
+})
+assert(merged_due.counts.due_soon == 0 and merged_due.counts.overdue == 0,
+    "local merge must not invent due counters from the device date")
+assert(merged_due.counts.open == 1 and merged_due.counts.total == 1,
+    "local create delta must update open/total")
+assert(merged_due.tags[1].tag == "casa" and merged_due.tags[1].open == 1
+    and merged_due.tags[1].due_soon == 0, "tag delta must not invent due counters")
 local merged_late = Todos.merge_payload(due_payload, "create", {
     id = "d2", title = "Vencida", tags = {}, due_date = "2000-01-01", done = false,
-}, nil, { now = bounds_now, due_days = 3 })
-assert(merged_late.counts.overdue == 1, "local merge must recompute overdue counts")
+})
+assert(merged_late.counts.overdue == 0,
+    "a past due date must not create a local overdue count")
+assert(merged_late.counts.open == 1 and merged_late.counts.total == 1,
+    "second create delta must be independent of the due date")
+local recreated = Todos.merge_payload(merged_due, "create", {
+    id = "d1", title = "Pronto", tags = { "casa" }, due_date = today_iso, done = false,
+})
+assert(#recreated.items == 1 and recreated.counts.open == 1 and recreated.counts.total == 1,
+    "idempotent create must replace, not double count")
 
 print("OK todos client smoke: /todos JSON, due dates/filters, per-tag markdown URL, CRUD, details, tags, local merge, bearer, validation")
