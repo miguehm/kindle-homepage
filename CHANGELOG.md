@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.16.0] - 2026-11-26
+
+### Added
+- **Top Stories remembers its page across restarts.** The current HN page is stored in `<DataDir>/cache/kindlehome/ui_state.json` (versioned, atomic write) and restored when the dashboard opens again, including after restarting KOReader or reloading the plugin. Only the in-card refresh button (and an explicit refresh action from the Dispatcher/gesture) returns to page 1; `refresh_on_open` and settings repaints keep the page. Opening offline or with an empty feed no longer overwrites the remembered page with 1. A corrupt or incompatible state file is quarantined and the page falls back to 1 without crashing.
+
 ## [2.15.0] - 2026-11-26
 
 ### Changed

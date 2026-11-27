@@ -75,15 +75,18 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
   Markdown is persisted there; the HTML needed by the reader is rendered to
   `<DataDir>/cache/kindlehome/articles/` and deleted when the reader closes.
 - Cache: `<DataDir>/cache/kindlehome/*.json`, with a versioned envelope.
-  Corrupt or incompatible cache is quarantined and regenerated.
+  Corrupt or incompatible cache is quarantined and regenerated. The current
+  Top Stories page lives in `ui_state.json` in the same folder.
 
 ## Usage
 
 - Tap a headline to download (if needed) and open its Markdown article. If no
   body is available, a persistent link card opens with the HN discussion and
   source URLs so they can be copied or opened manually.
-- Top Stories keeps its page for the KOReader session; an explicit refresh
-  returns to page 1. Restarting KOReader also starts at page 1.
+- Top Stories remembers its page across dashboard reopens and KOReader
+  restarts. Only an explicit refresh (the in-card reload button or the
+  Dispatcher/gesture refresh action) returns to page 1; opening the dashboard,
+  `refresh_on_open` and settings repaints keep it.
 - HN and source URLs are real links in the document; Markdown images become
   clickable alt-text links and are never fetched implicitly.
 - The **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) can be
