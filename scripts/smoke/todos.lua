@@ -6,6 +6,7 @@ local SCREEN_W, SCREEN_H, SCROLLBAR = 1200, 1600, 12
 local captured_shell, shown, dispatched, notices, scheduled = nil, 0, {}, {}, {}
 local inputs, dialogs, confirms, viewers, tap_icons, datepickers = {}, {}, {}, {}, {}, {}
 local writes = {}
+local dirty_calls, body_updates, UIManager = {}, 0, nil
 
 local function geom(o)
     o = o or {}
@@ -38,13 +39,16 @@ package.preload["gettext"] = function()
     return function(text) return text end
 end
 package.preload["ui/uimanager"] = function()
-    return {
+    UIManager = {
         show = function(_, w) shown = shown + 1; return w end,
         close = function() end,
-        setDirty = function() end,
+        setDirty = function(_, w, how, region)
+            dirty_calls[#dirty_calls + 1] = { widget = w, mode = how, region = region }
+        end,
         forceRePaint = function() end,
         scheduleIn = function(_, delay, cb) table.insert(scheduled, cb) end,
     }
+    return UIManager
 end
 package.preload["ui/widget/infomessage"] = function()
     local M = {}
@@ -208,7 +212,11 @@ package.preload["ui/shell"] = function()
     function M:new(o)
         captured_shell = o
         shown = shown + 1
-        local instance = { show = function() end, request_close = function() end, _closing = false }
+        local instance
+        instance = {
+            show = function() UIManager.setDirty(nil, instance, "full") end,
+            request_close = function() end, _closing = false,
+        }
         if o.header_factory then
             o.header = o.header_factory(SCREEN_W, instance)
         end
@@ -220,6 +228,14 @@ package.preload["ui/shell"] = function()
             return o.body
         end
         if factory then o.body_factory(SCREEN_W, SCREEN_H - 100, instance) end
+        instance.update_body = function()
+            body_updates = body_updates + 1
+            local body = o.body_factory(SCREEN_W, SCREEN_H - 100, instance)
+            local region = type(body.getCropRegion) == "function"
+                and body:getCropRegion() or nil
+            UIManager.setDirty(nil, instance, "ui", region)
+            return true
+        end
         return instance
     end
     return M
@@ -545,6 +561,13 @@ local view = TodosView:new{
 
 view:show({ allow_network = false })
 assert(shown == 1 and captured_shell and captured_shell.title == "TODO'S", "todos shell missing")
+assert(dirty_calls[#dirty_calls].widget == view.widget
+    and dirty_calls[#dirty_calls].mode == "full", "opening must use one full refresh")
+local repaints_before = #dirty_calls
+local updates_before = body_updates
+view:show({ state = view.last_state, allow_network = false })
+assert(#dirty_calls == repaints_before and body_updates == updates_before,
+    "an unchanged refresh must not repaint the screen")
 assert(captured_shell.body.fits ~= nil, "todos body fit flag missing")
 assert(captured_shell.body.fits == true, "todos body must fit without scrolling")
 assert(captured_shell.body.filler == nil or (captured_shell.body.filler.width or 0) <= 0,
@@ -642,9 +665,15 @@ chip("Pendientes: 2"):onTapChip()
 local casa_chip = chip("#casa: 1")
 assert(casa_chip and type(casa_chip.on_tap) == "function", "tag chip missing")
 assert(type(casa_chip.on_hold) == "function", "tag chip must support long press")
+local updates_before_filter = body_updates
 casa_chip:onTapChip()
 assert(#captured_shell.body.model.todos.items == 1, "chip must filter the task list")
 assert(captured_shell.body.model.todos.active_tag == "casa", "chip must set the active tag")
+assert(body_updates == updates_before_filter + 1 and shown == 1,
+    "filter changes must repaint in place without reopening")
+assert(dirty_calls[#dirty_calls].widget == view.widget
+    and dirty_calls[#dirty_calls].mode == "ui" and dirty_calls[#dirty_calls].region ~= nil,
+    "filter changes must use a regional ui refresh")
 chip("Sin filtro: 2"):onTapChip()
 assert(#captured_shell.body.model.todos.items == 2, "Sin filtro must clear the tag filter")
 

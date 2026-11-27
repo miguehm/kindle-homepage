@@ -421,7 +421,32 @@ if ! grep -q 'todos_timezone' kindlehome.koplugin/lib/config.lua \
     fail=1
 fi
 
+# 11) Minimum screen updates: state changes that keep the layout must reuse
+#     the open Shell and repaint only the body region with a non-flashing "ui"
+#     refresh. Identical renders cost nothing, every 8th update is promoted to
+#     "full" for e-ink ghosting, and only explicit refreshes show the indicator.
+if ! grep -q 'UI_UPDATES_BEFORE_FULL = 8' kindlehome.koplugin/ui/shell.lua \
+        || ! grep -q 'function Shell:_adopt_body' kindlehome.koplugin/ui/shell.lua \
+        || ! grep -q 'function Shell:update_body' kindlehome.koplugin/ui/shell.lua \
+        || ! grep -q 'UIManager:setDirty(self, "ui", region)' kindlehome.koplugin/ui/shell.lua; then
+    echo "FAIL: Shell must swap bodies in place with a regional ui refresh and periodic full"
+    fail=1
+fi
+for view in dashboard todos; do
+    if ! grep -q 'UiSignature' "kindlehome.koplugin/ui/$view.lua" \
+            || ! grep -q '_painted_signature' "kindlehome.koplugin/ui/$view.lua" \
+            || ! grep -q 'force_full' "kindlehome.koplugin/ui/$view.lua"; then
+        echo "FAIL: $view must dedupe identical renders and reserve full rebuilds for layout changes"
+        fail=1
+    fi
+done
+if ! grep -q 'show_indicator' kindlehome.koplugin/main.lua \
+        || ! grep -q 'indicator = false' kindlehome.koplugin/main.lua; then
+    echo "FAIL: only explicit refreshes may paint the Updating indicator"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details, If-Match/304/identity/pagination)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details, If-Match/304/identity/pagination, minimum screen updates)"
 fi
 exit "$fail"

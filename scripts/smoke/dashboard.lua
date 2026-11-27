@@ -142,6 +142,7 @@ assert(bad_time == nil, "invalid timestamp must be omitted")
 -- ---- KOReader module stubs -------------------------------------------------
 local captured, captured_shell, shell_instance, shown, dispatched = nil, nil, nil, 0, {}
 local inputs, tap_icons, notices = {}, {}, {}
+local dirty_calls, body_updates, UIManager = {}, 0, nil
 
 local function geom(o)
     o = o or {}
@@ -179,13 +180,16 @@ package.preload["ui/network/manager"] = function()
     }
 end
 package.preload["ui/uimanager"] = function()
-    return {
+    UIManager = {
         show = function(_, w) shown = shown + 1; return w end,
         close = function() end,
         scheduleIn = function() end,
-        setDirty = function() end,
+        setDirty = function(_, w, how, region)
+            dirty_calls[#dirty_calls + 1] = { widget = w, mode = how, region = region }
+        end,
         forceRePaint = function() end,
     }
+    return UIManager
 end
 package.preload["logger"] = function()
     return { dbg = function() end, info = function() end, warn = function() end, err = function() end }
@@ -401,7 +405,10 @@ package.preload["ui/shell"] = function()
     function M:new(o)
         captured_shell = o
         shown = shown + 1
-        shell_instance = { show = function() end, request_close = function() end, _closing = false }
+        shell_instance = {
+            show = function() UIManager.setDirty(nil, shell_instance, "full") end,
+            request_close = function() end, _closing = false,
+        }
         if o.header_factory then
             captured_header = o.header_factory(SCREEN_W, shell_instance)
         end
@@ -415,6 +422,14 @@ package.preload["ui/shell"] = function()
             end
             o.body = body
             return body
+        end
+        shell_instance.update_body = function()
+            body_updates = body_updates + 1
+            local body = o.body_factory(SCREEN_W, SCREEN_H - 100, shell_instance)
+            local region = type(body.getCropRegion) == "function"
+                and body:getCropRegion() or nil
+            UIManager.setDirty(nil, shell_instance, "ui", region)
+            return true
         end
         return shell_instance
     end
@@ -594,6 +609,13 @@ assert(d.model.hn.refreshed and has_text(body, d.model.hn.refreshed),
     "compact refreshed label must be in the stories header")
 assert(not has_text(body, "Last refreshed:"), "obsolete footer label must be gone")
 assert(shown == 1, "shell not shown")
+assert(dirty_calls[#dirty_calls].widget == shell_instance
+    and dirty_calls[#dirty_calls].mode == "full", "opening must use one full refresh")
+local repaints_before = #dirty_calls
+local updates_before = body_updates
+d:show({ state = d.last_state, allow_network = false })
+assert(#dirty_calls == repaints_before and body_updates == updates_before,
+    "an unchanged refresh must not repaint the screen")
 
 local rows, nav_cells = {}, {}
 for _, input in ipairs(inputs) do
@@ -657,7 +679,11 @@ assert(prev_icon and type(prev_icon.on_tap) == "function", "previous-page contro
 assert(next_icon.alpha == true and prev_icon.alpha == true,
     "inverse pager icons must keep their alpha or they flatten to white and vanish")
 next_icon.on_tap()
-assert(d.hn_page == 2 and shown > 1, "next page must rebuild without refetch")
+assert(d.hn_page == 2 and body_updates > 0 and shown == 1,
+    "next page must repaint in place without refetch or reopening")
+assert(dirty_calls[#dirty_calls].widget == shell_instance
+    and dirty_calls[#dirty_calls].mode == "ui" and dirty_calls[#dirty_calls].region ~= nil,
+    "in-place updates must use a regional ui refresh on the top-level shell")
 assert(d.model.hn.page == 2 and d.model.hn.items[1].rank == 5, "page 2 content wrong")
 prev_icon.on_tap()
 assert(d.hn_page == 1, "previous page must return to page 1")
