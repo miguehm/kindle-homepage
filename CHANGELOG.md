@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.17.0] - 2026-11-26
+
+### Changed
+- **Aligned the hnmd client with backend OpenAPI 1.5.0.** Task writes now send `If-Match` with the task's stored revision. A stale revision (`412`) or a missing precondition (`428`) refreshes the task list and asks the user to repeat the action; the plugin never silently overwrites a change made on another device. New tasks carry a client-generated `id` so a manual retry cannot create a duplicate.
+- **Task lists are paginated.** `/v1/todos` is requested with `limit=500` and `next_offset` is followed up to three pages (deduplicating by task id). The server's global counters stay authoritative when the list is partial. `truncated` is now reported only as the backend's 128 KiB trim, with a separate notice for a partial list.
+- **`GET /v1/top` revalidates with its weak ETag.** On `304` the cached index is kept and only its age is reset; no local data is deleted. Gzip is intentionally not negotiated: all requests send `Accept-Encoding: identity` because the Kindle HTTP path has no inflate step and validates `Content-Length`.
+
+### Added
+- **Timezone setting for TODO'S.** `todos_timezone` (Ajustes → TODO'S → *TODO'S timezone*) accepts an IANA name sent as `tz` on task requests and per-tag Markdown. Empty means the server's `TODO_TIMEZONE` (UTC by default); local due-date classification follows the device's day when a timezone is set.
+- **Server status diagnostic.** Settings → Hacker News → *Server status* reports hnmd's version, readiness, auth state, task count and server time from `GET /v1/status`.
+- **Unified error handling.** JSON error bodies are parsed into typed error codes and fields (`text`, `tags`, `details`, `due_date`, `tz`, `if_match`, `current_revision`), giving actionable messages for validation and revision conflicts.
+
 ## [2.16.0] - 2026-11-26
 
 ### Added

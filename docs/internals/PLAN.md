@@ -707,3 +707,29 @@ repo/
 | 2026-11-21 | After SPDX headers | Linux dev, `luac5.1`, `lua5.1` | Same three gates | PASS | Same output | 53 source files got SPDX headers |
 | 2026-11-21 | After removing development hooks and sanitizing comments | Linux dev, `luac5.1`, `lua5.1` | Same three gates plus marker scan | PASS | All gates OK; no `test-phase3`, phase codes or device chatter in plugin sources | Smoke expectations updated for the removed test-article row |
 | 2026-11-21 | After public docs, CI and doc restructuring | Linux dev, `luac5.1`, `lua5.1` | Same three gates (with `LUA=lua5.1`), relative-link check, CI YAML parse | PASS | All gates OK; no broken relative links; workflow parses | `docs/internals/PLAN.md` and `REVIEW.md` kept as archived historical records |
+
+## 13) Fase 34 — alineación con hnmd 1.5.0 (release 2.17.0)
+
+Estado: **repo PASS (2026-11-26)**; matriz en Kindle PW5 pendiente.
+
+### Decisiones
+- `PATCH`/`DELETE` envían `If-Match: "<revision>"`. Ante `412` se invalida la caché, se recarga la lista y se pide repetir la acción; **no hay reintento automático** para no sobrescribir un cambio ajeno. Sin revisión conocida se falla localmente (`missing_revision`).
+- `POST` genera un `id` de cliente (16 hex) y acepta `200`/`201`. Se mantiene `retries = 0`: el `id` protege el reintento manual y evita duplicar contra servidores ≤1.4.
+- `/todos` usa `limit=500` y sigue `next_offset` hasta 3 páginas, deduplicando por `id`. Si quedan páginas (`partial`) se conservan los `counts` globales del servidor; `truncated` se muestra sólo como recorte de 128 KiB.
+- ETag/304 se implementa **sólo en `/top`** (mayor ahorro, ~128 KiB): el envelope de caché guarda `etag` y `Refresh.load_source` actualiza `fetched_at` conservando el payload. Los artículos no cambian.
+- No se negocia gzip: todas las peticiones envían `Accept-Encoding: identity`. El path de LuaSocket no infla y valida `Content-Length` contra bytes recibidos.
+- `todos_timezone` (IANA, vacío = servidor) se pasa como `tz` en `/todos` y en el Markdown por tag. Con `tz` configurado la clasificación local de vencimientos usa el día local del dispositivo; sin él, UTC como el default del servidor. Validación sintáctica (sin capturas repetidas: Lua 5.1 no las soporta en patrones anclados).
+- `/v1/status` se expone como diagnóstico en Ajustes → Hacker News. Bearer y sin secretos en logs.
+
+### Desviaciones registradas
+- `Cache-Control: private, no-cache` del servidor se interpreta con la política existente del plugin (TTL + revalidación por ETag al expirar), no como revalidación en cada apertura: evita una petición sync en e-ink al abrir el dashboard.
+- Servidores ≤1.4 siguen sirviendo lectura: ignoran `If-Match`, `If-None-Match`, `offset` y `tz`. El cliente degra sin romperse.
+
+### Verificación (2026-11-26, Linux dev, `luac5.1` / `lua5.1`)
+| Gate | Resultado | Evidencia |
+| --- | --- | --- |
+| `./scripts/check_lua51.sh` | PASS | `OK: all kindlehome.koplugin Lua files parse as Lua 5.1 (luac5.1)` |
+| `./scripts/check_invariants.sh` | PASS | Incluye nuevos guards de `If-Match`, `identity`, 304, paginación y `tz`/`status` |
+| `./scripts/smoke_ui.sh` | PASS | **25 smokes**, incluidos `http_conditional.lua`, `todos_conflict.lua`, `todos_pagination.lua` y `hnmd_conditional.lua` |
+
+Pendiente en PW5: toggle/editar/borrar con revisión vigente, `412` simulado, >100 tareas, `/top` 304, key inválida en `/status`, `tz` configurado y escalas de fuente.

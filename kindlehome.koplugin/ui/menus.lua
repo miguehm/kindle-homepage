@@ -9,6 +9,7 @@ local TouchMenu = require("ui/widget/touchmenu")
 local _ = require("gettext")
 
 local Geocoding = require("lib/geocoding")
+local Hnmd = require("lib/hnmd")
 local Theme = require("lib/render/theme")
 local Logger = require("lib/logger")
 local Messages = require("ui/messages")
@@ -200,6 +201,39 @@ function Menus:edit_int(config, key, title, hint, minv, maxv, label, on_done)
     end, { input_type = "number" })
 end
 
+function Menus:edit_todos_timezone(config, on_done)
+    prompt_text(_("TODO'S timezone (IANA)"), config:get("todos_timezone") or "",
+        "Europe/Madrid (empty = server)", function(raw)
+        local value = tostring(raw or ""):match("^%s*(.-)%s*$") or ""
+        if value ~= "" and (#value > 64 or not value:match("^[%w%+%-_/]+$")
+                or value:sub(1, 1) == "/" or value:sub(-1) == "/" or value:find("//", 1, true)) then
+            return false, _("Use an IANA name such as Europe/Madrid, or leave empty.")
+        end
+        config:set("todos_timezone", value)
+        config:flush()
+        Logger.info("menus", "todos_timezone_saved", { set = value ~= "" })
+        if on_done then on_done() end
+        return true, _("TODO'S timezone saved.")
+    end)
+end
+
+function Menus:show_hnmd_status(config)
+    local res = Hnmd.fetch_status(config)
+    if not res.ok then
+        show_info(Messages.for_kind(res.error_kind, _("Server status unavailable.")), 5)
+        return
+    end
+    local p = res.payload or {}
+    local lines = {
+        "hnmd " .. tostring(p.version or "?"),
+        _("Ready: ") .. (p.ready and _("Yes") or _("No")),
+        _("Auth: ") .. (p.auth_enabled and _("On") or _("Off")),
+        _("Tasks: ") .. tostring(p.todo_count or 0),
+        _("Server time: ") .. tostring(p.server_time or "?"),
+    }
+    show_info(table.concat(lines, "\n"), 8)
+end
+
 function Menus:edit_documents_subdir(config, on_done)
     prompt_text(_("Documents subdir"), config:get("documents_subdir") or "KindleHome", "KindleHome", function(val)
         val = tostring(val or ""):gsub("[/\\]", ""):match("^%s*(.-)%s*$") or ""
@@ -360,6 +394,11 @@ function Menus:settings_items(main_instance)
                         callback = function() Menus:edit_int(config, "hnmd_ttl_minutes", _("HN TTL (minutes)"), "30", 1, 10080, _("HN TTL"), function() refresh_dashboard(main_instance) end) end,
                     },
                     {
+                        text = _("Server status"),
+                        keep_menu_open = true,
+                        callback = function() Menus:show_hnmd_status(config) end,
+                    },
+                    {
                         text = _("Manual config note"),
                         keep_menu_open = true,
                         callback = function()
@@ -396,6 +435,16 @@ function Menus:settings_items(main_instance)
                         text_func = function() return _("Due soon window (days): ") .. tostring(config:get("todos_due_soon_days")) end,
                         keep_menu_open = true,
                         callback = function() Menus:edit_int(config, "todos_due_soon_days", _("Due soon window (days)"), "3", 1, 30, _("Due soon"), function() refresh_dashboard(main_instance) end) end,
+                    },
+                    {
+                        text_func = function()
+                            local tz = config:get("todos_timezone") or ""
+                            return _("TODO'S timezone: ") .. (tz == "" and _("server (UTC)") or tz)
+                        end,
+                        keep_menu_open = true,
+                        callback = function()
+                            Menus:edit_todos_timezone(config, function() refresh_dashboard(main_instance) end)
+                        end,
                     },
                     {
                         text = _("Write permissions"),

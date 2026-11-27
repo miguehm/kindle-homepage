@@ -26,6 +26,14 @@ Scope: `kindlehome.koplugin/` (KOReader plugin, Kindle e-ink target). Desktop KO
 ## Config
 - Centralize defaults/validation/sanitization in `lib/config.lua` (`LuaSettings`, `<settings dir>/kindlehome.lua`). Out-of-range/invalid values fall back to defaults.
 
+## hnmd 1.5.0 contract
+- Every `PATCH`/`DELETE` of a task must send `If-Match` with the stored `revision` (strong `"N"` validator). Never silently retry a `412`: refresh the list and let the user repeat the action. `428` means the local task has no usable revision.
+- A `304` from `/v1/top` (or an article) is a successful revalidation: keep the cached payload/local Markdown and only refresh `fetched_at`. Never delete a local `.md` because of `304`, `404` or a network error.
+- Do not negotiate gzip: send `Accept-Encoding: identity`. The Kindle HTTP path has no inflate step and validates `Content-Length` against received bytes.
+- `/v1/todos` pagination: request `limit=500`, follow `next_offset` while `has_more`, cap at three pages, dedupe by `id`, and keep the server's global counters when `partial`. `truncated` means a 128 KiB byte trim, not "more pages".
+- Parse the unified JSON error shape; map `field`/`error` to messages in `ui/messages.lua`. Never log the API key or error payloads that may contain it.
+- `todos_timezone` is an IANA pass-through to `tz` (empty = server default). Validate syntactically; the server returns `400 field: tz` for a name it does not know.
+
 ## Quality
 - No dead code; no silent broad exception swallowing that hides corruption/state bugs.
 - Keep UI messages brief/actionable (no stack traces to end users). Prefer centralized mapping in `ui/messages.lua` for user-facing states/errors.

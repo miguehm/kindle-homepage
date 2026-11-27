@@ -56,6 +56,7 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
 | `hnmd_base_url` | `https://hnmd.miguehm.com/v1` | hnmd API base URL (https only) |
 | `hnmd_api_key` | empty | Bearer token; masked in the UI, never logged |
 | `hnmd_max_items` | `10` | Items requested from `/v1/top` (1–20) |
+| `todos_timezone` | empty | IANA name sent as `tz` for TODO'S; empty uses the server's `TODO_TIMEZONE` (UTC) |
 | `hn_items_per_page` | `4` | Preferred Top Stories rows (1–10, degrades to fit) |
 | `weather_enabled`, `hnmd_enabled` | `true` | Enable each section |
 | `weather_lat`, `weather_lon`, `weather_place_name` | unset | Weather location |
@@ -91,6 +92,14 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
   clickable alt-text links and are never fetched implicitly.
 - The **Kindle Home** Dispatcher action (`kindlehome_show_dashboard`) can be
   assigned to a gesture or Profile.
+- **Settings → Hacker News → Server status** queries `/v1/status` and shows the
+  server version, readiness, auth state, task count and server time (needs the
+  API key when the server requires one).
+- With hnmd 1.5.0 the index is revalidated with its weak `ETag`: an unchanged
+  snapshot returns `304` and the cached list is kept, with only its age reset.
+- Task writes always send `If-Match` with the stored revision. If another device
+  changed the task, the list is refreshed and you are asked to repeat the
+  action; the plugin never silently overwrites it.
 
 ### Troubleshooting
 
@@ -99,6 +108,8 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
 | No menu entry | Folder must be `kindlehome.koplugin` directly under `plugins/`; restart KOReader. Check `crash.log` for a load error. |
 | `401` from hnmd | Check the API key in settings; there is no automatic retry on `401`. |
 | `503`, offline, timeout, `too_large` | Cached content is used when available; retry later. |
+| "Task changed elsewhere" | Another device edited the task. The list was refreshed; repeat the action. |
+| "Showing the first tasks" | More than three pages of tasks exist. The server's counts stay authoritative; refresh after reducing the list. |
 | No article body | hnmd may not have extracted it yet (`no_content`/`warming_up`). A link card is opened; `404` means the server has no body. |
 | Corrupted cache | Removed automatically and regenerated on the next fetch. |
 | Plugin load error mentioning `~`, `//` or `goto` | Lua 5.2+ syntax was introduced; run `./scripts/check_lua51.sh` and reinstall. |
@@ -119,10 +130,12 @@ KOReader writes at `<settings dir>/kindlehome.lua` while KOReader is closed.
   can be filled with the **Today / Tomorrow / +1 week** presets and KOReader's
   native date picker (**Pick…** / **Clear**). Deadlines are shown as
   `Vence: DD-MM-YYYY` in the row. The **Por vencer** horizon is set in Ajustes →
-  TODO'S → *Due soon window (days)* (default 3, range 1–30). It requires backend
-  OpenAPI 1.4.0, which also guarantees that editing a task or clearing its
-  details never erases its tags. The TASKS card header has a two-arrow refresh
-  button and the card fills the available height.
+  TODO'S → *Due soon window (days)* (default 3, range 1–30). Editing a task or
+  clearing its details never erases its tags. The timezone can be set in Ajustes
+  → TODO'S → *TODO'S timezone*; leave it empty to follow the server (UTC by
+  default). **Task writes require hnmd 1.5.0** (`If-Match`); older servers still
+  serve reads. The TASKS card header has a two-arrow refresh button and the card
+  fills the available height.
 - Full internationalization and a screensaver/userpatch integration are not
   implemented.
 - The API key is stored as local plaintext by KOReader's settings system; it

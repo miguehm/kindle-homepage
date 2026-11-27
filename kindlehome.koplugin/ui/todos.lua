@@ -318,6 +318,7 @@ function TodosView:_apply_local(mutation, task)
     local merged = Todos.merge_payload(state.todos.payload, mutation.kind, task, mutation.id, {
         now = os.time(),
         due_days = self.config and self.config:get("todos_due_soon_days") or nil,
+        use_local = (self.config and self.config:get("todos_timezone") or "") ~= "",
     })
     state.todos.payload = merged
     state.todos.line = string.format("TODO'S — %d open, %d done",
@@ -341,6 +342,17 @@ function TodosView:apply_write(run, success_key, mutation)
     end
     if not res.ok then
         self:show_notice(Messages.todos_write(res))
+        if res.error_kind == "revision_conflict" or res.error_kind == "precondition_required"
+                or res.error_kind == "missing_revision" then
+            -- Never silently overwrite a change made on another device: drop
+            -- the stale local copy, reload from the server and ask the user to
+            -- repeat the action with the fresh revision.
+            Logger.warn("todos_view", "write_conflict", {
+                kind = res.error_kind, status = res.status, current_revision = res.current_revision,
+            })
+            if self.paths then pcall(TodosState.invalidate, self.paths) end
+            self:refresh({ allow_network = true })
+        end
         return false
     end
     if mutation then self:_apply_local(mutation, res.task) end
@@ -374,7 +386,7 @@ function TodosView:toggle_task(id)
     end
     local done = task.done and true or false
     self:apply_write(function()
-        return Todos.update(self.config, id, { done = not done })
+        return Todos.update(self.config, id, { done = not done }, { revision = task.revision })
     end, "todos_updated", { kind = "update" })
 end
 
@@ -418,7 +430,7 @@ function TodosView:rename_task(id)
             return true, Messages.for_kind("todos_no_changes")
         end
         return self:apply_write(function()
-            return Todos.update(self.config, id, patch)
+            return Todos.update(self.config, id, patch, { revision = task.revision })
         end, "todos_updated", { kind = "update" }), nil
     end)
 end
@@ -436,8 +448,9 @@ function TodosView:delete_task(id)
         cancel_text = _("Cancel"),
         ok_callback = function()
             UIManager:close(confirm)
-            self:apply_write(function() return Todos.delete_task(self.config, id) end,
-                "todos_deleted", { kind = "delete", id = id })
+            self:apply_write(function()
+                return Todos.delete_task(self.config, id, { revision = task.revision })
+            end, "todos_deleted", { kind = "delete", id = id })
         end,
     }
     UIManager:show(confirm)
@@ -523,6 +536,12 @@ function TodosView:open_tag(tag)
     local content_url = "/v1/todos/tags/" .. tag .. ".md?status=" .. status
     if status == "due_soon" and self.config then
         content_url = content_url .. "&due_days=" .. tostring(self.config:get("todos_due_soon_days"))
+    end
+    local tz = self.config and self.config:get("todos_timezone") or ""
+    if type(tz) == "string" and tz ~= "" then
+        content_url = content_url .. "&tz=" .. tostring(tz):gsub("([^%w%-_~%.])", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
     end
     local item = {
         id = "todos-tag-" .. tag,

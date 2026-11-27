@@ -132,7 +132,7 @@ local function clamp_items(n)
     return math.floor(n)
 end
 
-local function fetch_index_at(config, url, opts, max_items)
+local function fetch_index_at(config, url, opts, max_items, base)
     opts = opts or {}
     local timeout_s = opts.timeout_s or (config and config:get("http_timeout_s")) or 10
     local max_bytes = opts.max_bytes or (config and config:get("index_max_bytes")) or 131072
@@ -144,12 +144,20 @@ local function fetch_index_at(config, url, opts, max_items)
         retries = 1,
         bearer_token = (type(api_key) == "string" and api_key ~= "") and api_key or nil,
         accept = "application/json",
+        if_none_match = opts.etag,
     })
 
     if not res.ok then
         Logger.warn("hnmd", "index_failed", { kind = res.error_kind, status = res.status })
         return res
     end
+
+    if res.not_modified then
+        Logger.info("hnmd", "index_not_modified", {})
+        return { ok = true, status = 304, not_modified = true }
+    end
+
+    local etag = res.headers and (res.headers["etag"] or res.headers["ETag"]) or nil
 
     local data = res.json
     if type(data) ~= "table" then
@@ -177,6 +185,10 @@ local function fetch_index_at(config, url, opts, max_items)
         generated_at = to_str(data.generated_at),
         next_refresh_at = to_str(data.next_refresh_at),
         refresh_interval_seconds = to_num(data.refresh_interval_seconds),
+        offset = tonumber(data.offset),
+        limit = tonumber(data.limit),
+        has_more = data.has_more and true or false,
+        next_offset = tonumber(data.next_offset),
         returned_count = to_num(data.returned_count) or #normalized,
         truncated = data.truncated and true or false,
         items = normalized,
@@ -188,6 +200,7 @@ local function fetch_index_at(config, url, opts, max_items)
         ok = true,
         status = res.status,
         payload = payload,
+        etag = etag,
         fetched_at = os.time(),
     }
 end
@@ -199,7 +212,44 @@ function Hnmd.fetch_index(config, opts)
         return { ok = false, error_kind = "parse", error = "bad_base_url" }
     end
     local max_items = clamp_items(config and config:get("hnmd_max_items"))
-    return fetch_index_at(config, base .. "/top?limit=" .. tostring(max_items), opts, max_items)
+    return fetch_index_at(config, base .. "/top?limit=" .. tostring(max_items), opts, max_items, base)
+end
+
+-- hnmd 1.5.0 diagnostic endpoint. Bearer-protected like the rest of /v1; only
+-- non-sensitive metadata is returned to the UI.
+function Hnmd.fetch_status(config, opts)
+    opts = opts or {}
+    local base = normalize_base_url(config and config:get("hnmd_base_url"))
+    if not base then
+        return { ok = false, error_kind = "parse", error = "bad_base_url" }
+    end
+    local api_key = config and config:get("hnmd_api_key") or ""
+    local res = Http.get_json(base .. "/status", {
+        timeout_s = opts.timeout_s or (config and config:get("http_timeout_s")) or 10,
+        max_bytes = opts.max_bytes or 32768,
+        retries = 0,
+        bearer_token = (type(api_key) == "string" and api_key ~= "") and api_key or nil,
+        accept = "application/json",
+    })
+    if not res.ok then
+        Logger.warn("hnmd", "status_failed", { kind = res.error_kind, status = res.status })
+        return res
+    end
+    local data = res.json
+    if type(data) ~= "table" or to_num(data.schema_version) ~= 1 then
+        return { ok = false, error_kind = "parse", error = "invalid_status", status = res.status }
+    end
+    local payload = {
+        version = to_str(data.version) or "",
+        ready = data.ready and true or false,
+        auth_enabled = data.auth_enabled and true or false,
+        snapshot_generated_at = to_str(data.snapshot_generated_at),
+        next_refresh_at = to_str(data.next_refresh_at),
+        refresh_interval_seconds = to_num(data.refresh_interval_seconds),
+        todo_count = to_num(data.todo_count),
+        server_time = to_str(data.server_time) or "",
+    }
+    return { ok = true, status = res.status, payload = payload }
 end
 
 -- Downloads the Markdown body to `tmp_path`. The caller owns the tmp file and

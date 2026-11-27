@@ -451,6 +451,8 @@ function DashboardModel.build_todos(state, opts)
                    due_soon = counts.due_soon or 0, overdue = counts.overdue or 0 },
         refreshed = refreshed,
         truncated = payload.truncated and true or false,
+        partial = payload.partial and true or false,
+        visible_count = #tasks,
         tags = chips,
         status_chips = status_chips,
         active_tag = filter,

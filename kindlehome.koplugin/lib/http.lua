@@ -37,6 +37,48 @@ local function result_error(kind, detail, status, headers)
     return { ok = false, error_kind = kind, error = detail, status = status, headers = headers }
 end
 
+-- hnmd 1.5.0 uses one JSON shape for every error. Keep the status-derived
+-- error_kind as the stable client contract, but surface the machine-readable
+-- fields so callers can react to field validation and revision conflicts.
+local function parse_error_object(res)
+    local body = type(res.body) == "string" and res.body or ""
+    if body == "" or not body:find("{", 1, true) then return nil end
+    local ok, decoded = pcall(rapidjson.decode, body)
+    if not ok or type(decoded) ~= "table" then return nil end
+    return decoded
+end
+
+local function apply_error_details(res)
+    local info = parse_error_object(res)
+    if not info then return res end
+    if info.error ~= nil then res.error_code = tostring(info.error) end
+    if info.message ~= nil then res.message = tostring(info.message) end
+    if info.field ~= nil then res.error_field = tostring(info.field) end
+    if info.item_id ~= nil then res.item_id = tostring(info.item_id) end
+    if info.task_id ~= nil then res.task_id = tostring(info.task_id) end
+    local rev = tonumber(info.current_revision)
+    if rev then res.current_revision = rev end
+    local retry = tonumber(info.retry_after_seconds)
+    if retry then res.retry_after_seconds = retry end
+    return res
+end
+
+local function status_error(code, body, resp_headers, status_line)
+    local kind
+    if code == 401 then kind = "http_401"
+    elseif code == 404 then kind = "http_404"
+    elseif code == 503 then kind = "http_503"
+    elseif code == 428 then kind = "precondition_required"
+    elseif code == 412 then kind = "revision_conflict"
+    elseif code == 403 then kind = "forbidden"
+    elseif code == 405 then kind = "method_not_allowed"
+    else kind = "http_other" end
+    return apply_error_details({
+        ok = false, status = code, headers = resp_headers, body = body,
+        error_kind = kind, error = status_line,
+    })
+end
+
 local function read_limited_body(response, max_bytes)
     if type(response) == "string" then
         if #response > max_bytes then
@@ -86,12 +128,15 @@ local function do_write(url, opts, method, max_request_bytes)
     local headers = {
         ["user-agent"] = opts.user_agent or USER_AGENT,
         ["accept"] = opts.accept or "application/json",
+        ["accept-encoding"] = opts.accept_encoding or "identity",
         ["content-type"] = content_type or "application/json",
         ["content-length"] = tostring(#body),
     }
     if opts.bearer_token and opts.bearer_token ~= "" then
         headers["authorization"] = "Bearer " .. opts.bearer_token
     end
+    if opts.if_match then headers["if-match"] = tostring(opts.if_match) end
+    if opts.if_none_match then headers["if-none-match"] = tostring(opts.if_none_match) end
     if type(opts.headers) == "table" then
         for k, v in pairs(opts.headers) do headers[k] = v end
     end
@@ -147,14 +192,8 @@ local function do_write(url, opts, method, max_request_bytes)
         return result_error(resp_err or "too_large", "response exceeded max_bytes", code, resp_headers)
     end
 
-    if code == 401 then
-        return { ok = false, status = 401, headers = resp_headers, body = resp_body, error_kind = "http_401", error = status_line }
-    elseif code == 404 then
-        return { ok = false, status = 404, headers = resp_headers, body = resp_body, error_kind = "http_404", error = status_line }
-    elseif code == 503 then
-        return { ok = false, status = 503, headers = resp_headers, body = resp_body, error_kind = "http_503", error = status_line }
-    elseif code < 200 or code >= 300 then
-        return { ok = false, status = code, headers = resp_headers, body = resp_body, error_kind = "http_other", error = status_line }
+    if code < 200 or code >= 300 then
+        return status_error(code, resp_body, resp_headers, status_line)
     end
 
     return { ok = true, status = code, headers = resp_headers, body = resp_body }
@@ -167,10 +206,13 @@ local function do_get(url, opts)
     local headers = {
         ["user-agent"] = opts.user_agent or USER_AGENT,
         ["accept"] = opts.accept or "*/*",
+        ["accept-encoding"] = opts.accept_encoding or "identity",
     }
     if opts.bearer_token and opts.bearer_token ~= "" then
         headers["authorization"] = "Bearer " .. opts.bearer_token
     end
+    if opts.if_none_match then headers["if-none-match"] = tostring(opts.if_none_match) end
+    if opts.if_match then headers["if-match"] = tostring(opts.if_match) end
     if type(opts.headers) == "table" then
         for k, v in pairs(opts.headers) do headers[k] = v end
     end
@@ -231,14 +273,14 @@ local function do_get(url, opts)
         return result_error("network", "no_status:" .. tostring(r2), nil, resp_headers)
     end
 
-    if code == 401 then
-        return { ok = false, status = 401, headers = resp_headers, body = body, error_kind = "http_401", error = status_line }
-    elseif code == 404 then
-        return { ok = false, status = 404, headers = resp_headers, body = body, error_kind = "http_404", error = status_line }
-    elseif code == 503 then
-        return { ok = false, status = 503, headers = resp_headers, body = body, error_kind = "http_503", error = status_line }
-    elseif code < 200 or code >= 300 then
-        return { ok = false, status = code, headers = resp_headers, body = body, error_kind = "http_other", error = status_line }
+    -- A conditional read that matched is a successful revalidation, not an
+    -- error. Callers keep their cached payload/body when not_modified is set.
+    if code == 304 then
+        return { ok = true, status = 304, headers = resp_headers, not_modified = true }
+    end
+
+    if code < 200 or code >= 300 then
+        return status_error(code, body, resp_headers, status_line)
     end
 
     return { ok = true, status = code, headers = resp_headers, body = body }
@@ -282,10 +324,13 @@ local function do_get_to_file(url, opts)
     local headers = {
         ["user-agent"] = opts.user_agent or USER_AGENT,
         ["accept"] = opts.accept or "*/*",
+        ["accept-encoding"] = opts.accept_encoding or "identity",
     }
     if opts.bearer_token and opts.bearer_token ~= "" then
         headers["authorization"] = "Bearer " .. opts.bearer_token
     end
+    if opts.if_none_match then headers["if-none-match"] = tostring(opts.if_none_match) end
+    if opts.if_match then headers["if-match"] = tostring(opts.if_match) end
     if type(opts.headers) == "table" then
         for k, v in pairs(opts.headers) do headers[k] = v end
     end
@@ -365,15 +410,16 @@ local function do_get_to_file(url, opts)
         return fail("network", "no_status:" .. tostring(r2), nil, resp_headers)
     end
 
+    -- Nothing was written to `path` on a 304; drop the empty temp file. The
+    -- caller keeps its existing canonical Markdown copy.
+    if code == 304 then
+        pcall(os.remove, path)
+        return { ok = true, status = 304, headers = resp_headers, not_modified = true, bytes = 0 }
+    end
+
     if code < 200 or code >= 300 then
-        if code == 401 then
-            return fail("http_401", status_line, code, resp_headers)
-        elseif code == 404 then
-            return fail("http_404", status_line, code, resp_headers)
-        elseif code == 503 then
-            return fail("http_503", status_line, code, resp_headers)
-        end
-        return fail("http_other", status_line, code, resp_headers)
+        pcall(os.remove, path)
+        return status_error(code, "", resp_headers, status_line)
     end
 
     local declared = resp_headers and resp_headers["content-length"]
@@ -461,18 +507,19 @@ end
 
 function Http.request_json(url, opts)
     local res = Http.request(url, opts)
-    if not res.ok then return res end
+    if res.not_modified then return res end
     local ok_decode, decoded = pcall(rapidjson.decode, res.body or "")
-    if not ok_decode then
-        return result_error("parse", "invalid_json", res.status, res.headers)
+    if ok_decode and type(decoded) == "table" then
+        res.json = decoded
+        return res
     end
-    res.json = decoded
-    return res
+    if not res.ok then return res end
+    return result_error("parse", "invalid_json", res.status, res.headers)
 end
 
 function Http.get_json(url, opts)
     local res = Http.get(url, opts)
-    if not res.ok then
+    if not res.ok or res.not_modified then
         return res
     end
     local ok_decode, decoded = pcall(rapidjson.decode, res.body or "")

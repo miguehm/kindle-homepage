@@ -240,7 +240,11 @@ function TodosCard.build(model, config, inner_w, callbacks, fill_height)
     end
     if model.truncated then
         table.insert(content, DesignText.span(config, Theme.space.sm))
-        table.insert(content, DesignText.box("Task list truncated on the server.", content_w, config, "body_sm", false, Theme.color.muted))
+        table.insert(content, DesignText.box("Server trimmed the task list at 128 KiB.", content_w, config, "body_sm", false, Theme.color.muted))
+    end
+    if model.partial then
+        table.insert(content, DesignText.span(config, Theme.space.sm))
+        table.insert(content, DesignText.box("Showing the first tasks; the list is large. Refresh to load more.", content_w, config, "body_sm", false, Theme.color.muted))
     end
 
     if model.pages > 1 then

@@ -64,7 +64,7 @@ function Refresh.load_source(cache, opts)
         return { ok = false, error_kind = "budget_exceeded", error = "refresh budget exceeded" }
     end
 
-    local ok_fetch, fetch_res = pcall(opts.fetch_fn)
+    local ok_fetch, fetch_res = pcall(opts.fetch_fn, cached)
     if not ok_fetch then
         Logger.warn("refresh", "fetch_exception", { source = source, err = tostring(fetch_res) })
         if cached then
@@ -75,6 +75,31 @@ function Refresh.load_source(cache, opts)
         return { ok = false, error_kind = "exception", error = tostring(fetch_res) }
     end
 
+    -- A 304 means the cached body is still current. Refresh only its timestamp
+    -- and TTL so the next decision is made from a fresh age, never dropping
+    -- the payload (hnmd 1.5.0 migration rule).
+    if fetch_res and fetch_res.not_modified then
+        if not cached then
+            return { ok = false, from_cache = false, stale = false,
+                     error_kind = "unexpected_not_modified", error = "304 without cached payload" }
+        end
+        cached.fetched_at = opts.fetched_at or now_epoch()
+        cache:write(name, {
+            ttl_seconds = ttl,
+            source = source,
+            status = cached.status == "error" and "ok" or cached.status,
+            error = cached.error,
+            etag = cached.etag,
+            payload = cached.payload,
+            fetched_at = cached.fetched_at,
+        })
+        local env = cache:read(name)
+        return {
+            ok = true, from_cache = true, stale = false, revalidated = true,
+            envelope = env or cached,
+        }
+    end
+
     if fetch_res and fetch_res.ok then
         local envelope_opts = {
             ttl_seconds = ttl,
@@ -82,6 +107,7 @@ function Refresh.load_source(cache, opts)
             status = "ok",
             payload = fetch_res.payload or fetch_res.json or fetch_res.body,
             fetched_at = fetch_res.fetched_at or now_epoch(),
+            etag = fetch_res.etag,
         }
         cache:write(name, envelope_opts)
         local env = cache:read(name)

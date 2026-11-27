@@ -37,6 +37,7 @@ local DEFAULTS = {
     todos_include_tags = true,
     todos_ttl_minutes = 5,
     todos_due_soon_days = 3, -- "por vencer" horizon for TODO'S chips (1..30)
+    todos_timezone = "",     -- IANA name sent as `tz`; empty = server TODO_TIMEZONE
     index_max_bytes = 131072,   -- 128 KiB: /top metadata only (no article bodies)
     article_max_bytes = 524288, -- 512 KiB per downloaded Markdown article
     -- Network
@@ -166,6 +167,15 @@ local function sanitize(key, value, default)
         return clamp_int(value, 1, 10080, default) -- up to 7 days
     elseif key == "todos_due_soon_days" then
         return clamp_int(value, 1, 30, default)
+    elseif key == "todos_timezone" then
+        local s = as_string(value, default)
+        s = s:match("^%s*(.-)%s*$") or ""
+        if s == "" then return "" end
+        if #s > 64 or not s:match("^[%w%+%-_/]+$")
+                or s:sub(1, 1) == "/" or s:sub(-1) == "/" or s:find("//", 1, true) then
+            return default
+        end
+        return s
     elseif key == "http_timeout_s" then
         return clamp_int(value, 1, 60, default)
     elseif key == "index_max_bytes" then

@@ -36,6 +36,12 @@ local MAP = {
     todos_invalid_due_date = "Invalid due date. Use YYYY-MM-DD.",
     todos_no_changes = "No changes.",
     todos_write_failed = "Could not save the task. Try again.",
+    todos_revision_conflict = "Task changed elsewhere. List refreshed — please repeat.",
+    todos_precondition_required = "Task data was stale. List refreshed — please repeat.",
+    todos_invalid_timezone = "Invalid timezone. Use an IANA name such as Europe/Madrid.",
+    todos_invalid_due_days = "Due soon window must be 1–30 days.",
+    todos_invalid_details = "Details must be at most 1000 bytes.",
+    todos_invalid_field = "Invalid task field. Check the value and try again.",
     todos_details_saved = "Task details saved.",
     todos_details_invalid = "Details must be at most 1000 bytes.",
     todos_no_details = "No details for this task.",
@@ -96,13 +102,22 @@ end
 function M.todos_write(res)
     if not res or res.ok then return nil end
     if res.error_kind == "http_401" then return MAP.http_401 end
-    if res.status == 403 then return MAP.todos_write_forbidden end
+    if res.error_kind == "revision_conflict" then return MAP.todos_revision_conflict end
+    if res.error_kind == "precondition_required" or res.error_kind == "missing_revision" then
+        return MAP.todos_precondition_required
+    end
+    if res.error_kind == "forbidden" or res.status == 403 then return MAP.todos_write_forbidden end
     if res.error_kind == "invalid_tags" then return MAP.todos_invalid_tags end
     if res.error_kind == "invalid_due_date" then return MAP.todos_invalid_due_date end
+    if res.error_kind == "invalid_timezone" then return MAP.todos_invalid_timezone end
+    if res.error_kind == "invalid_due_days" then return MAP.todos_invalid_due_days end
+    if res.error_kind == "invalid_details" then return MAP.todos_invalid_details end
+    if res.error_kind == "invalid_field" then return MAP.todos_invalid_field end
     if res.status == 400 or res.error_kind == "invalid_text" then return MAP.todos_invalid_text end
     if res.status == 413 then return MAP.too_large end
     if res.status == 404 then return MAP.not_found end
     if res.error_kind == "http_503" then return MAP.http_503 end
+    if res.error_kind == "method_not_allowed" then return MAP.http_other end
     if res.error_kind == "timeout" or res.error_kind == "network" then return MAP.todos_write_failed end
     if res.error_kind == "parse" then return MAP.parse end
     return MAP.todos_write_failed

@@ -11,6 +11,39 @@ local ID_PATTERN = "^[A-Za-z0-9_%-]+$"
 local TAG_PATTERN = "^[a-z0-9][a-z0-9_%-]*$"
 local DUE_PATTERN = "^(%d%d%d%d)%-(%d%d)%-(%d%d)$"
 local DEFAULT_DUE_DAYS = 3
+local DEFAULT_PAGE_LIMIT = 500
+local MAX_PAGES = 3
+
+-- hnmd 1.5.0 accepts a strong ETag ("N") or a weak one in If-Match. We store
+-- `revision` in the normalized task, so a strong validator is always available.
+local function if_match_for(opts)
+    opts = type(opts) == "table" and opts or {}
+    if opts.if_match ~= nil and opts.if_match ~= "" then
+        return tostring(opts.if_match)
+    end
+    local revision = tonumber(opts.revision)
+    if revision then
+        return string.format('"%d"', math.floor(revision))
+    end
+    return nil
+end
+
+-- Deterministic, URL-safe id for idempotent creation (hnmd 1.5.0). The format
+-- stays inside the server's ^[A-Za-z0-9_-]{1,64}$ pattern.
+local function new_task_id()
+    local t = tonumber(os.time()) or 0
+    local r = math.random(0, 2147483647)
+    local function pair(n)
+        return string.format("%04x%04x", math.floor(n / 65536) % 65536, n % 65536)
+    end
+    return pair(t) .. pair(r)
+end
+
+math.randomseed((tonumber(os.time()) or 1) + math.floor((os.clock() or 0) * 1000))
+
+function Todos.new_task_id()
+    return new_task_id()
+end
 
 local function to_str(v)
     if v == nil then return nil end
@@ -59,12 +92,15 @@ function Todos.valid_due_date(value)
     return err == nil
 end
 
-function Todos.due_bounds(now, due_days)
+-- With a configured IANA timezone the device's local day matches the server's
+-- `tz` interpretation; without one both sides use UTC (TODO_TIMEZONE default).
+function Todos.due_bounds(now, due_days, use_local)
     now = tonumber(now) or os.time()
     due_days = tonumber(due_days) or DEFAULT_DUE_DAYS
     if due_days < 1 then due_days = 1 end
     if due_days > 30 then due_days = 30 end
-    return os.date("!%Y-%m-%d", now), os.date("!%Y-%m-%d", now + due_days * 86400)
+    local fmt = use_local and "%Y-%m-%d" or "!%Y-%m-%d"
+    return os.date(fmt, now), os.date(fmt, now + due_days * 86400)
 end
 
 function Todos.classify_due(due, today, limit)
@@ -205,8 +241,9 @@ end
 -- authoritative task for create/update; delete needs only the id.
 function Todos.merge_payload(payload, action, task, id, opts)
     opts = opts or {}
-    local today, limit = Todos.due_bounds(opts.now, opts.due_days)
+    local today, limit = Todos.due_bounds(opts.now, opts.due_days, opts.use_local)
     payload = payload or {}
+    local partial = payload.partial and true or false
     local items = {}
     for _, raw in ipairs(payload.items or {}) do
         local normalized = normalize_task(raw)
@@ -236,30 +273,38 @@ function Todos.merge_payload(payload, action, task, id, opts)
     end
     table.sort(items, sort_tasks)
 
-    local counts = { open = 0, done = 0, total = #items, due_soon = 0, overdue = 0 }
-    local by_tag = {}
-    for _, item in ipairs(items) do
-        local class = item.done and nil or Todos.classify_due(item.due_date, today, limit)
-        if item.done then counts.done = counts.done + 1 else counts.open = counts.open + 1 end
-        if class == "due_soon" then counts.due_soon = counts.due_soon + 1
-        elseif class == "overdue" then counts.overdue = counts.overdue + 1 end
-        for _, tag in ipairs(item.tags or {}) do
-            local entry = by_tag[tag]
-            if not entry then
-                entry = { tag = tag, open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
-                by_tag[tag] = entry
+    local counts, tags
+    if partial then
+        -- The item list is only a window; server counters are global and must
+        -- not be recomputed from it after a local write.
+        counts = normalize_counts(payload.counts)
+        tags = normalize_tag_counts(payload.tags)
+    else
+        counts = { open = 0, done = 0, total = #items, due_soon = 0, overdue = 0 }
+        local by_tag = {}
+        for _, item in ipairs(items) do
+            local class = item.done and nil or Todos.classify_due(item.due_date, today, limit)
+            if item.done then counts.done = counts.done + 1 else counts.open = counts.open + 1 end
+            if class == "due_soon" then counts.due_soon = counts.due_soon + 1
+            elseif class == "overdue" then counts.overdue = counts.overdue + 1 end
+            for _, tag in ipairs(item.tags or {}) do
+                local entry = by_tag[tag]
+                if not entry then
+                    entry = { tag = tag, open = 0, done = 0, total = 0, due_soon = 0, overdue = 0 }
+                    by_tag[tag] = entry
+                end
+                if item.done then entry.done = entry.done + 1 else entry.open = entry.open + 1 end
+                if class == "due_soon" then entry.due_soon = entry.due_soon + 1
+                elseif class == "overdue" then entry.overdue = entry.overdue + 1 end
+                entry.total = entry.total + 1
             end
-            if item.done then entry.done = entry.done + 1 else entry.open = entry.open + 1 end
-            if class == "due_soon" then entry.due_soon = entry.due_soon + 1
-            elseif class == "overdue" then entry.overdue = entry.overdue + 1 end
-            entry.total = entry.total + 1
         end
+        local names = {}
+        for name in pairs(by_tag) do table.insert(names, name) end
+        table.sort(names)
+        tags = {}
+        for _, name in ipairs(names) do table.insert(tags, by_tag[name]) end
     end
-    local names = {}
-    for name in pairs(by_tag) do table.insert(names, name) end
-    table.sort(names)
-    local tags = {}
-    for _, name in ipairs(names) do table.insert(tags, by_tag[name]) end
 
     return {
         schema_version = payload.schema_version or Todos.API_VERSION,
@@ -267,8 +312,13 @@ function Todos.merge_payload(payload, action, task, id, opts)
         filter = payload.filter or { status = "all" },
         counts = counts,
         tags = tags,
+        offset = payload.offset,
+        limit = payload.limit,
+        has_more = payload.has_more and true or false,
+        next_offset = payload.next_offset,
         returned_count = #items,
         truncated = payload.truncated and true or false,
+        partial = partial,
         items = items,
         source_base_url = payload.source_base_url,
     }
@@ -283,15 +333,37 @@ local function request_opts(config, opts)
         retries = 1,
         bearer_token = (type(api_key) == "string" and api_key ~= "") and api_key or nil,
         accept = "application/json",
+        if_match = opts.if_match,
+        if_none_match = opts.if_none_match,
     }
 end
 
--- The HTTP layer returns 400 bodies as text. Surface the server's field name
--- as an error_kind so ui/messages.lua can show an actionable notice.
-local function tag_write_error(res)
-    if res.ok or res.status ~= 400 or type(res.body) ~= "string" then return res end
-    if res.body:find('"due_date"', 1, true) then
-        res.error_kind = "invalid_due_date"
+-- hnmd 1.5.0 returns one JSON error shape. Map `field` to the existing
+-- validation error kinds so ui/messages.lua can show an actionable notice.
+local FIELD_ERRORS = {
+    text = "invalid_text",
+    tags = "invalid_tags",
+    details = "invalid_details",
+    due_date = "invalid_due_date",
+    tz = "invalid_timezone",
+    due_days = "invalid_due_days",
+    limit = "invalid_limit",
+    offset = "invalid_offset",
+    id = "invalid_task_id",
+}
+
+local function classify_write_error(res)
+    if res.ok then return res end
+    local code = res.error_code or ""
+    if code == "precondition_required" or code == "revision_conflict"
+            or code == "forbidden" then
+        res.error_kind = code
+    elseif res.status == 403 then
+        res.error_kind = "forbidden"
+    elseif code == "invalid_request" or res.status == 400 then
+        res.error_kind = FIELD_ERRORS[res.error_field]
+            or (res.error_field and "invalid_field")
+            or "invalid_text"
     end
     return res
 end
@@ -325,48 +397,108 @@ function Todos.fetch_index(config, opts)
             or opts.status == "due_soon" or opts.status == "overdue" then
         status = opts.status
     end
-    local url = base .. "/todos?status=" .. urlencode(status)
     local tag = to_str(opts.tag)
-    if tag and tag ~= "" then url = url .. "&tag=" .. urlencode(tag) end
     local due_days = tonumber(opts.due_days)
-    if due_days then url = url .. "&due_days=" .. tostring(due_days) end
-
-    local res = Http.get_json(url, request_opts(config, opts))
-    if not res.ok then
-        Logger.warn("todos", "index_failed", { kind = res.error_kind, status = res.status })
-        return res
+    local tz = to_str(config and config:get("todos_timezone")) or ""
+    -- Lua 5.1 patterns cannot repeat a capture, so validate the segments with
+    -- a flat character class plus structural checks instead.
+    if #tz > 64 or not tz:match("^[%w%+%-_/]+$")
+            or tz:sub(1, 1) == "/" or tz:sub(-1) == "/" or tz:find("//", 1, true) then
+        tz = ""
     end
 
-    local data = res.json
-    if type(data) ~= "table" then
-        return { ok = false, error_kind = "parse", error = "invalid_response" }
-    end
-    if to_num(data.schema_version) ~= Todos.API_VERSION then
-        return { ok = false, error_kind = "parse", error = "unsupported_schema" }
-    end
-    if type(data.items) ~= "table" or type(data.counts) ~= "table" then
-        return { ok = false, error_kind = "parse", error = "missing_fields" }
+    -- hnmd 1.5.0 paginates /todos. Follow next_offset so the UI list matches
+    -- the server's global counters, with a hard page cap for e-ink memory and
+    -- the shared refresh budget.
+    local max_pages = tonumber(opts.max_pages) or MAX_PAGES
+    if max_pages < 1 then max_pages = 1 end
+    if max_pages > 10 then max_pages = 10 end
+    local items, seen, first = {}, {}, nil
+    local offset, pages = 0, 0
+    local has_more, next_offset, byte_trimmed, partial = false, nil, false, false
+
+    while true do
+        local url = base .. "/todos?status=" .. urlencode(status)
+            .. "&limit=" .. tostring(DEFAULT_PAGE_LIMIT)
+            .. "&offset=" .. tostring(offset)
+        if tag and tag ~= "" then url = url .. "&tag=" .. urlencode(tag) end
+        if due_days then url = url .. "&due_days=" .. tostring(due_days) end
+        if tz ~= "" then url = url .. "&tz=" .. urlencode(tz) end
+
+        local res = Http.get_json(url, request_opts(config, opts))
+        if not res.ok then
+            if pages == 0 then
+                Logger.warn("todos", "index_failed", { kind = res.error_kind, status = res.status })
+                return res
+            end
+            Logger.warn("todos", "page_failed", { kind = res.error_kind, page = pages })
+            partial = true
+            break
+        end
+
+        local data = res.json
+        if type(data) ~= "table" then
+            return { ok = false, error_kind = "parse", error = "invalid_response" }
+        end
+        if pages == 0 then
+            first = data
+            if to_num(data.schema_version) ~= Todos.API_VERSION then
+                return { ok = false, error_kind = "parse", error = "unsupported_schema" }
+            end
+            if type(data.items) ~= "table" or type(data.counts) ~= "table" then
+                return { ok = false, error_kind = "parse", error = "missing_fields" }
+            end
+        elseif type(data.items) ~= "table" then
+            partial = true
+            break
+        end
+
+        for _, raw in ipairs(data.items) do
+            local task = normalize_task(raw)
+            if task and not seen[task.id] then
+                seen[task.id] = true
+                table.insert(items, task)
+            end
+        end
+
+        has_more = data.has_more and true or false
+        next_offset = tonumber(data.next_offset)
+        byte_trimmed = byte_trimmed or (data.truncated and true or false)
+        pages = pages + 1
+
+        if not has_more then break end
+        if not next_offset or next_offset <= offset then
+            partial = true
+            break
+        end
+        if pages >= max_pages then
+            partial = true
+            break
+        end
+        offset = next_offset
     end
 
-    local items = {}
-    for _, raw in ipairs(data.items) do
-        local task = normalize_task(raw)
-        if task then table.insert(items, task) end
-    end
+    local data = first
     local filter = type(data.filter) == "table" and data.filter or {}
     local payload = {
         schema_version = Todos.API_VERSION,
         generated_at = to_str(data.generated_at),
-        filter = { tag = to_str(filter.tag), status = to_str(filter.status) or status },
+        filter = { tag = to_str(filter.tag), status = to_str(filter.status) or status,
+                   due_days = tonumber(filter.due_days) },
         counts = normalize_counts(data.counts),
         tags = normalize_tag_counts(data.tags),
-        returned_count = to_num(data.returned_count),
-        truncated = data.truncated and true or false,
+        offset = tonumber(data.offset) or 0,
+        limit = tonumber(data.limit) or DEFAULT_PAGE_LIMIT,
+        has_more = has_more,
+        next_offset = next_offset,
+        returned_count = #items,
+        truncated = byte_trimmed,
+        partial = partial,
         items = items,
         source_base_url = base,
     }
-    Logger.info("todos", "index_ok", { count = #items, status = res.status })
-    return { ok = true, status = res.status, payload = payload, fetched_at = os.time() }
+    Logger.info("todos", "index_ok", { count = #items, pages = pages, partial = partial })
+    return { ok = true, payload = payload, fetched_at = os.time() }
 end
 
 function Todos.create(config, text, tags, details, due_date, opts)
@@ -377,7 +509,9 @@ function Todos.create(config, text, tags, details, due_date, opts)
     if type(text) ~= "string" or text == "" then
         return { ok = false, error_kind = "parse", error = "invalid_text" }
     end
-    local payload = { text = text }
+    -- hnmd 1.5.0 accepts a client-generated id: a manual retry after a lost
+    -- response returns 200 with the stored task instead of creating a duplicate.
+    local payload = { id = new_task_id(), text = text }
     if type(tags) == "table" and #tags > 0 then payload.tags = tags end
     if details ~= nil then
         if type(details) ~= "string" or #details > 1000 then
@@ -394,7 +528,7 @@ function Todos.create(config, text, tags, details, due_date, opts)
     end
     local res = Http.request_json(base .. "/todos/tasks", write_opts(config, opts, "POST", payload))
     if not res.ok then
-        tag_write_error(res)
+        classify_write_error(res)
         Logger.warn("todos", "create_failed", { kind = res.error_kind, status = res.status })
         return res
     end
@@ -402,8 +536,8 @@ function Todos.create(config, text, tags, details, due_date, opts)
     if not task then
         return { ok = false, error_kind = "parse", error = "invalid_task", status = res.status }
     end
-    Logger.info("todos", "create_ok", { id = task.id })
-    return { ok = true, status = res.status, task = task }
+    Logger.info("todos", "create_ok", { id = task.id, status = res.status })
+    return { ok = true, status = res.status, task = task, existed = res.status == 200 }
 end
 
 function Todos.update(config, id, patch, opts)
@@ -452,9 +586,17 @@ function Todos.update(config, id, patch, opts)
         return { ok = false, error_kind = "parse", error = "empty_patch" }
     end
 
-    local res = Http.request_json(base .. "/todos/tasks/" .. urlencode(id), write_opts(config, opts, "PATCH", body))
+    local if_match = if_match_for(opts)
+    if not if_match then
+        -- hnmd 1.5.0 rejects writes without If-Match with 428; fail locally so
+        -- the UI can refresh and retry with a known revision.
+        return { ok = false, error_kind = "missing_revision", error = "missing_revision" }
+    end
+    local write_opts_for_patch = write_opts(config, opts, "PATCH", body)
+    write_opts_for_patch.if_match = if_match
+    local res = Http.request_json(base .. "/todos/tasks/" .. urlencode(id), write_opts_for_patch)
     if not res.ok then
-        tag_write_error(res)
+        classify_write_error(res)
         Logger.warn("todos", "update_failed", { kind = res.error_kind, status = res.status })
         return res
     end
@@ -474,8 +616,15 @@ function Todos.delete_task(config, id, opts)
     if not valid_id(id) then
         return { ok = false, error_kind = "parse", error = "invalid_id" }
     end
-    local res = Http.request(base .. "/todos/tasks/" .. urlencode(id), write_opts(config, opts, "DELETE", nil))
+    local if_match = if_match_for(opts)
+    if not if_match then
+        return { ok = false, error_kind = "missing_revision", error = "missing_revision" }
+    end
+    local write_opts_for_delete = write_opts(config, opts, "DELETE", nil)
+    write_opts_for_delete.if_match = if_match
+    local res = Http.request(base .. "/todos/tasks/" .. urlencode(id), write_opts_for_delete)
     if not res.ok then
+        classify_write_error(res)
         Logger.warn("todos", "delete_failed", { kind = res.error_kind, status = res.status })
         return res
     end

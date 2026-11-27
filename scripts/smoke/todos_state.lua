@@ -93,7 +93,8 @@ local paths = {}
 
 local first = TodosState.load(config, paths, { allow_network = true })
 assert(first.status == "ok" and first.payload.counts.open == 2, "first load failed")
-assert(#calls == 1 and calls[1].url == "https://example.com/v1/todos?status=all", "fetch URL wrong")
+assert(#calls == 1 and calls[1].url == "https://example.com/v1/todos?status=all&limit=500&offset=0",
+    "fetch URL wrong")
 assert(type(first.fetched_at) == "number", "fetched_at missing")
 
 calls = {}

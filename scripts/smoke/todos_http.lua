@@ -99,8 +99,27 @@ assert(#requests == 1, "401 must never be retried")
 reset()
 plans = { { code = 403, chunks = { '{"error":"forbidden"}' }, headers = {} } }
 local forbidden = Http.patch_json("https://example.com/v1/todos/tasks/abc", { done = true }, opts)
-assert(not forbidden.ok and forbidden.status == 403 and forbidden.error_kind == "http_other", "PATCH 403 mapping failed")
+assert(not forbidden.ok and forbidden.status == 403 and forbidden.error_kind == "forbidden", "PATCH 403 mapping failed")
 assert(last_request().method == "PATCH", "PATCH method missing")
+assert(last_request().headers["accept-encoding"] == "identity", "gzip must not be negotiated")
+
+reset()
+plans = { { code = 428, chunks = { '{"error":"precondition_required","message":"If-Match header is required","field":"if_match"}' }, headers = {} } }
+next_decode = { error = "precondition_required", field = "if_match" }
+local missing_match = Http.patch_json("https://example.com/v1/todos/tasks/abc", { done = true }, opts)
+assert(not missing_match.ok and missing_match.error_kind == "precondition_required"
+    and missing_match.error_code == "precondition_required" and missing_match.error_field == "if_match",
+    "PATCH 428 mapping failed")
+assert(#requests == 1, "428 must never be retried")
+
+reset()
+plans = { { code = 412, chunks = { '{"error":"revision_conflict","message":"task revision does not match","current_revision":3}' }, headers = {} } }
+next_decode = { error = "revision_conflict", current_revision = 3 }
+local conflict = Http.patch_json("https://example.com/v1/todos/tasks/abc", { done = true }, opts)
+assert(not conflict.ok and conflict.error_kind == "revision_conflict"
+    and conflict.current_revision == 3, "PATCH 412 mapping failed")
+assert(conflict.json and conflict.json.current_revision == 3, "error JSON must be parsed on failure")
+assert(#requests == 1, "412 must never be retried")
 
 reset()
 plans = { { code = 204, chunks = {}, headers = {} } }

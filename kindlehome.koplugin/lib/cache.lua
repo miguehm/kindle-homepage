@@ -100,6 +100,7 @@ local function is_valid_envelope(env)
     if type(env.source) ~= "string" then return false, "bad_source" end
     local st = env.status
     if st ~= "ok" and st ~= "stale" and st ~= "error" then return false, "bad_status" end
+    if env.etag ~= nil and type(env.etag) ~= "string" then return false, "bad_etag" end
     return true
 end
 
@@ -156,6 +157,7 @@ function Cache:write(name, opts)
         source = tostring(opts.source or name),
         status = opts.status or "ok",
         error = opts.error,
+        etag = opts.etag,
         payload = opts.payload,
     }
     local ok_enc, encoded = pcall(rapidjson.encode, envelope)

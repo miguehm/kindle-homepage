@@ -18,6 +18,15 @@ package.preload["ui/uimanager"] = function()
     }
 end
 
+package.preload["lib/hnmd"] = function()
+    return {
+        fetch_status = function()
+            return { ok = true, payload = { version = "1.5.0", ready = true,
+                auth_enabled = true, todo_count = 2, server_time = "2026-11-26T00:00:00Z" } }
+        end,
+    }
+end
+
 package.preload["device"] = function()
     return {
         screen = {

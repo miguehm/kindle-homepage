@@ -380,7 +380,38 @@ if grep -rn 'Http\.' --include='*.lua' kindlehome.koplugin/ui >/dev/null; then
     fail=1
 fi
 
+# hnmd 1.5.0 contract: every task write needs If-Match, conditional reads keep
+# local content on 304, gzip is never negotiated and pagination is bounded.
+if ! grep -q 'if-match' kindlehome.koplugin/lib/http.lua \
+        || ! grep -q 'if_match_for' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'revision = task.revision' kindlehome.koplugin/ui/todos.lua; then
+    echo "FAIL: task writes must send If-Match with the stored revision"
+    fail=1
+fi
+if ! grep -q 'accept-encoding.*identity' kindlehome.koplugin/lib/http.lua; then
+    echo "FAIL: gzip must not be negotiated (no inflate path on Kindle)"
+    fail=1
+fi
+if ! grep -q 'not_modified' kindlehome.koplugin/lib/http.lua \
+        || ! grep -q 'fetch_res.not_modified' kindlehome.koplugin/lib/refresh.lua \
+        || ! grep -q 'opts.etag' kindlehome.koplugin/lib/hnmd.lua; then
+    echo "FAIL: 304 revalidation must preserve cached payloads"
+    fail=1
+fi
+if ! grep -q 'next_offset' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'MAX_PAGES' kindlehome.koplugin/lib/todos.lua \
+        || ! grep -q 'payload.partial' kindlehome.koplugin/lib/dashboard_model.lua; then
+    echo "FAIL: /todos pagination must be bounded and reported to the UI"
+    fail=1
+fi
+if ! grep -q 'todos_timezone' kindlehome.koplugin/lib/config.lua \
+        || ! grep -q 'edit_todos_timezone' kindlehome.koplugin/ui/menus.lua \
+        || ! grep -q 'fetch_status' kindlehome.koplugin/lib/hnmd.lua; then
+    echo "FAIL: timezone and /status support must be wired"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details, If-Match/304/identity/pagination)"
 fi
 exit "$fail"

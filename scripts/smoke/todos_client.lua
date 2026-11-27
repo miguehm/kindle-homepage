@@ -70,7 +70,12 @@ next_json = {
 }
 local index = Todos.fetch_index(config, { status = "all" })
 assert(index.ok, "todos index failed")
-assert(last_call().url == "https://hnmd.miguehm.com/v1/todos?status=all", "todos index URL wrong")
+assert(last_call().url == "https://hnmd.miguehm.com/v1/todos?status=all&limit=500&offset=0",
+    "todos index URL wrong")
+assert(index.payload.offset == 0 and index.payload.limit == 500
+    and index.payload.has_more == false and index.payload.partial == false,
+    "pagination fields missing from payload")
+assert(index.payload.returned_count == 2, "returned_count must reflect collected items")
 assert(index.payload.counts.open == 2 and #index.payload.tags == 1, "counts/tags normalization failed")
 assert(#index.payload.items == 2 and index.payload.items[1].tags[1] == "casa", "tasks normalization failed")
 assert(index.payload.items[1].details == "Llamar a la tienda\nAntes de las 18:00", "details normalization failed")
@@ -85,8 +90,18 @@ assert(index.payload.tags[1].due_soon == 1, "tag due counts normalization failed
 reset()
 next_json = { schema_version = 1, counts = {}, tags = {}, items = {} }
 Todos.fetch_index(config, { status = "due_soon", due_days = 7 })
-assert(last_call().url == "https://hnmd.miguehm.com/v1/todos?status=due_soon&due_days=7",
+assert(last_call().url == "https://hnmd.miguehm.com/v1/todos?status=due_soon&limit=500&offset=0&due_days=7",
     "due_days must be sent to the API")
+
+reset()
+cfg_values.todos_timezone = "Europe/Madrid"
+next_json = { schema_version = 1, counts = {}, tags = {}, items = {} }
+Todos.fetch_index(config, { status = "all" })
+assert(last_call().url:sub(-#("&tz=Europe%2FMadrid")) == "&tz=Europe%2FMadrid",
+    "configured IANA timezone must be URL-encoded into the request")
+cfg_values.todos_timezone = "bad zone"
+Todos.fetch_index(config, { status = "all" })
+assert(last_call().url:find("&tz=", 1, true) == nil, "invalid timezone must not be sent")
 
 reset()
 next_json = { schema_version = 99, items = {} }
@@ -105,6 +120,8 @@ assert(created.ok and created.task.id == "new123" and created.task.details == "n
 assert(last_call().url == "https://hnmd.miguehm.com/v1/todos/tasks", "create URL wrong")
 assert(last_call().opts.method == "POST" and last_call().opts.retries == 0, "create method/retry wrong")
 assert(last_call().opts.json_body.text == "Comprar leche #casa", "create text missing")
+assert(last_call().opts.json_body.id:match("^[%w%-_]+$") ~= nil, "client idempotency id missing")
+assert(#last_call().opts.json_body.id <= 64, "client id too long")
 assert(last_call().opts.json_body.details == "nota", "create details missing")
 assert(last_call().opts.bearer_token == cfg_values.hnmd_api_key, "create bearer missing")
 
@@ -123,38 +140,48 @@ assert(#calls == 1, "invalid due date must not reach transport")
 
 reset()
 next_json = { id = "new123", title = "Comprar leche", tags = { "casa" }, done = true, revision = 2 }
-local updated = Todos.update(config, "new123", { done = true })
+local updated = Todos.update(config, "new123", { done = true }, { revision = 2 })
 assert(updated.ok and updated.task.done == true, "update failed")
 assert(last_call().opts.method == "PATCH", "update method wrong")
+assert(last_call().opts.if_match == '"2"', "PATCH must send If-Match with the stored revision")
 assert(last_call().url == "https://hnmd.miguehm.com/v1/todos/tasks/new123", "update URL wrong")
 assert(last_call().opts.json_body.done == true, "update payload wrong")
 
+local no_revision = Todos.update(config, "new123", { done = false })
+assert(not no_revision.ok and no_revision.error_kind == "missing_revision",
+    "writes without a revision must fail locally")
+assert(#calls == 1, "missing revision must not reach transport")
+
 reset()
 next_json = { id = "new123", title = "Comprar leche", tags = { "casa" }, details = "", revision = 3 }
-local cleared = Todos.update(config, "new123", { details = "" })
+local cleared = Todos.update(config, "new123", { details = "" }, { revision = 2 })
 assert(cleared.ok and cleared.task.details == "", "details patch failed")
 assert(last_call().opts.json_body.details == "", "details patch payload missing")
 
 reset()
 next_json = { id = "new123", title = "Comprar leche", tags = { "casa" }, due_date = "2026-12-01", revision = 4 }
-local due_patch = Todos.update(config, "new123", { due_date = "2026-12-01" })
+local due_patch = Todos.update(config, "new123", { due_date = "2026-12-01" }, { revision = 3 })
 assert(due_patch.ok and due_patch.task.due_date == "2026-12-01", "due patch failed")
 assert(last_call().opts.json_body.due_date == "2026-12-01", "due patch payload missing")
-Todos.update(config, "new123", { due_date = "" })
+Todos.update(config, "new123", { due_date = "" }, { revision = 4 })
 assert(last_call().opts.json_body.due_date == "", "clearing a due date must send an empty string")
-local bad_due_patch = Todos.update(config, "new123", { due_date = "2026-02-30" })
+local bad_due_patch = Todos.update(config, "new123", { due_date = "2026-02-30" }, { revision = 4 })
 assert(not bad_due_patch.ok and bad_due_patch.error_kind == "invalid_due_date",
     "invalid due date patch must be rejected")
 
 reset()
-local bad_id = Todos.update(config, "bad id", { done = true })
+local bad_id = Todos.update(config, "bad id", { done = true }, { revision = 1 })
 assert(not bad_id.ok and bad_id.error_kind == "parse", "invalid task id must be rejected")
 assert(#calls == 0, "invalid task id must not reach transport")
 
 reset()
-local deleted = Todos.delete_task(config, "new123")
+local deleted = Todos.delete_task(config, "new123", { revision = 4 })
 assert(deleted.ok and deleted.status == 200, "delete failed")
 assert(last_call().opts.method == "DELETE", "delete method wrong")
+assert(last_call().opts.if_match == '"4"', "DELETE must send If-Match")
+local no_delete_revision = Todos.delete_task(config, "new123")
+assert(not no_delete_revision.ok and no_delete_revision.error_kind == "missing_revision",
+    "DELETE without revision must fail locally")
 
 local parsed = assert(Todos.parse_tags("#Casa, urgente casa"))
 assert(#parsed == 2 and parsed[1] == "casa" and parsed[2] == "urgente", "tag parsing failed")
@@ -163,7 +190,7 @@ assert(Todos.parse_tags("bad!tag") == nil, "invalid tag must be rejected")
 
 reset()
 next_json = { id = "new123", title = "Tarea", tags = {}, details = "", done = false, revision = 4 }
-local tags_cleared = Todos.update(config, "new123", { tags = {} })
+local tags_cleared = Todos.update(config, "new123", { tags = {} }, { revision = 5 })
 assert(tags_cleared.ok, "clearing tags failed")
 assert(type(last_call().opts.json_body.tags) == "table"
     and #last_call().opts.json_body.tags == 0, "empty tags patch missing")
