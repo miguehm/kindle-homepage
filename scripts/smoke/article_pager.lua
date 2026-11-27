@@ -143,17 +143,6 @@ assert(pager:onPagerTap(nil, { pos = { x = 500, y = 500 } }) == true
 assert(pager:onPagerTap(nil, { pos = { x = 300, y = 500 } }) == true
     and pager.htmlbox_widget.page_number == 1, "the left third must page back")
 
--- Links win over page turns.
-local tapped_link = nil
-local linked = Pager:new{
-    width = 1200, height = 1400, body = "body", css = "css", font_size = 42,
-    on_link = function(link) tapped_link = link end,
-}
-linked.htmlbox_widget.getLinkByPosition = function() return { uri = "https://example.com" } end
-assert(linked:onPagerTap(nil, { pos = { x = 900, y = 500 } }) == true
-    and tapped_link and tapped_link.uri == "https://example.com"
-    and linked.htmlbox_widget.page_number == 1, "a tap on a link must follow it, not turn the page")
-
 -- Position memory: start on the remembered page and report changes.
 local reported = nil
 local resumed = Pager:new{

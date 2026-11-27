@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.20.1] - 2026-11-27
+
+### Fixed
+- **Dashboard did not open on Kindle** (`ffi/blitbuffer.lua: attempt to index local 'color' (a nil value)`). The new touch-slot widget compared its background color with `nil`; on LuaJIT colors are FFI cdata and that comparison runs the color's `__eq`, which raises. Colors are now tested by truthiness.
+- The fallback reader no longer double-checks links with screen coordinates; `HtmlBoxWidget` already follows tapped links before the pager sees the tap.
+
+### Added
+- The UI smoke tests also run under LuaJIT with cdata colors that behave like KOReader's, and `check_invariants.sh` rejects any color compared with `nil`.
+
 ## [2.20.0] - 2026-11-27
 
 ### Changed
@@ -17,7 +26,7 @@
 - **Swipe left/right** to page Top Stories and TASKS.
 - **Live clock** on the dashboard, updated each minute while it is visible.
 - **Notice boxes with Retry** for offline and error states; a cold start says `Not loaded yet` instead of `HN unavailable`.
-- **Fallback reader:** links win over page turns, the page is remembered for the session, and external links are copied to the clipboard.
+- **Fallback reader:** taps outside links turn the page (left third back), the page is remembered for the session, and external links are copied to the clipboard.
 
 ### Fixed
 - The gap between the header's settings and close icons collapsed to 1 px.

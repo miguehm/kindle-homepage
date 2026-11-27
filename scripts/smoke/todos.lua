@@ -56,7 +56,7 @@ package.preload["ui/widget/infomessage"] = function()
     return M
 end
 package.preload["ffi/blitbuffer"] = function()
-    return { COLOR_WHITE = 255, COLOR_BLACK = 0, COLOR_GRAY_6 = 102, COLOR_GRAY_E = 238 }
+    return dofile(PLUGIN .. "../scripts/smoke/blitbuffer_stub.lua")
 end
 package.preload["ui/font"] = function()
     return { getFace = function(name, size) return { name = name, size = size } end }

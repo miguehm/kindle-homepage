@@ -48,7 +48,9 @@ function TapIcon:init()
         dimen = Geom:new{ w = w, h = h },
         self.glyph,
     }
-    if self.background ~= nil then
+    -- Truthiness, not `~= nil`: under LuaJIT a color is FFI cdata and
+    -- comparing it with nil runs its __eq metamethod, which errors.
+    if self.background then
         slot = FrameContainer:new{
             margin = 0,
             padding = 0,

@@ -447,7 +447,16 @@ if ! grep -q 'show_indicator' kindlehome.koplugin/main.lua \
     fail=1
 fi
 
+# 12) On device (LuaJIT) Blitbuffer colors are FFI cdata: `color ~= nil` or
+#     `color == nil` runs the cdata __eq metamethod and raises. Test colors by
+#     truthiness instead.
+if grep -rnE '(background|color|fgcolor|bgcolor)[[:space:]]*[~=]=[[:space:]]*nil' --include='*.lua' \
+        kindlehome.koplugin/ui kindlehome.koplugin/lib >/dev/null; then
+    echo "FAIL: never compare a Blitbuffer color with nil (cdata __eq raises on device)"
+    fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details, If-Match/304/identity/pagination, minimum screen updates)"
+    echo "OK: plugin invariants (native scroll bodies, opaque shell, top-level repaint target, menu registration, streamed downloads, safe content root, sharp dashboard widgets, in-dashboard settings, visible pager icons, configurable Top Stories rows and persistent page, ephemeral article HTML, safe image links, todos writes, nav, refresh and details, If-Match/304/identity/pagination, minimum screen updates, no cdata nil comparisons)"
 fi
 exit "$fail"

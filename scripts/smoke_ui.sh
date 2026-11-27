@@ -25,7 +25,18 @@ for test_file in scripts/smoke/dashboard.lua scripts/smoke/todos.lua scripts/smo
         status=1
     fi
 done
+# The device runs LuaJIT, where Blitbuffer colors are FFI cdata (see
+# scripts/smoke/blitbuffer_stub.lua). Re-run the widget-tree smokes there so
+# cdata-only failures (e.g. comparing a color with nil) are caught offline.
+if [ "$lua_bin" != "luajit" ] && command -v luajit >/dev/null 2>&1; then
+    for test_file in scripts/smoke/dashboard.lua scripts/smoke/todos.lua; do
+        if ! ( cd "$plugin_dir" && LUA_PATH="./?.lua;;" luajit "$root_dir/$test_file" "$plugin_dir" ); then
+            echo "FAIL: $test_file (luajit)"
+            status=1
+        fi
+    done
+fi
 if [ "$status" -eq 0 ]; then
-    echo "OK: UI smoke tests ($lua_bin)"
+    echo "OK: UI smoke tests ($lua_bin, plus luajit cdata colors when available)"
 fi
 exit "$status"

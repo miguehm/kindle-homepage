@@ -127,18 +127,11 @@ function ArticleHtmlPager:onPagerSwipe(_, ges)
     return false
 end
 
--- Links win over page turns; otherwise the left third goes back and the
--- right two thirds go forward (forward is the common action).
+-- Taps on links never reach this handler: HtmlBoxWidget (a child) follows
+-- them first through html_link_tapped_callback. Other taps turn the page:
+-- the left third goes back, the right two thirds go forward.
 function ArticleHtmlPager:onPagerTap(_, ges)
     if not ges.pos then return false end
-    local htmlbox = self.htmlbox_widget
-    if htmlbox and type(htmlbox.getLinkByPosition) == "function" and type(self.on_link) == "function" then
-        local ok, link = pcall(function() return htmlbox:getLinkByPosition(ges.pos) end)
-        if ok and link then
-            self.on_link(link)
-            return true
-        end
-    end
     if ges.pos.x < Screen:getWidth() / 3 then
         return self:scrollText(-1)
     end
